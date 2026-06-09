@@ -1,0 +1,7 @@
+zdim: ${mode.vae.zdim}
+channels: [16, 32, 64, 128, 256]
+batch_size: ${mode.vae.batch_size}
+epochs: ${mode.vae.epochs}
+lr: 1.0e-4
+beta_max: 1.0
+warmup_frac: 0.2

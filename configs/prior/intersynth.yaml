@@ -1,0 +1,3 @@
+mechanisms: [severity, location, network, mixed]
+confound_strength: 1.0
+noise: 0.05

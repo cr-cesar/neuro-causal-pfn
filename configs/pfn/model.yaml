@@ -1,0 +1,14 @@
+d_x: ${mode.pfn.d_x}
+d_model: ${mode.pfn.d_model}
+n_layers: ${mode.pfn.n_layers}
+n_heads: ${mode.pfn.n_heads}
+n_bins: ${mode.pfn.n_bins}
+sigma: 0.02
+context_min: ${mode.pfn.context_min}
+context_max: ${mode.pfn.context_max}
+n_query: ${mode.pfn.n_query}
+batch_size: ${mode.pfn.batch_size}
+iters: ${mode.pfn.iters}
+lr: 3.0e-4
+weight_decay: 0.01
+grad_clip: 1.0

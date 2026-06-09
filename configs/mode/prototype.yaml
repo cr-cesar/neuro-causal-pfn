@@ -1,0 +1,7 @@
+# CPU o GPU pequena, datos reducidos, redes pequenas
+name: prototype
+device: cpu
+resolution: [48, 56, 48]
+vae:  {zdim: 16, batch_size: 2, epochs: 5}
+pfn:  {d_x: 16, d_model: 128, n_layers: 2, n_heads: 4, n_bins: 256,
+       context_min: 64, context_max: 256, n_query: 16, batch_size: 8, iters: 2000}

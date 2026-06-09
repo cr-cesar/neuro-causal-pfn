@@ -1,0 +1,13 @@
+# Composicion por defecto. El interruptor mode=prototype o mode=full
+# reconfigura toda la ejecucion. Estos archivos reflejan las funciones
+# prototype_config y full_config de los modulos de entrenamiento.
+defaults:
+  - mode: prototype
+  - data: lesion
+  - vae: lesion_vae
+  - prior: intersynth
+  - pfn: model
+  - _self_
+
+seed: 0
+out_dir: outputs/${mode.name}

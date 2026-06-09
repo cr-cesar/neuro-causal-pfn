@@ -1,0 +1,13 @@
+name: neuro-causal-pfn-proto
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - numpy>=1.26
+      - scipy>=1.13
+      - scikit-learn>=1.4
+      - torch==2.3.1
+      - einops>=0.8.0
+      - pytest>=8.0
