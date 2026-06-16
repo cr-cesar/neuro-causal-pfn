@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# salidas de entrenamiento y datos
+outputs/
+data/
+*.pt
+*.ckpt
+*.npz
+*.nii
+*.nii.gz
+
+# herramientas
+.pytest_cache/
+.ipynb_checkpoints/
+wandb/
+.DS_Store
