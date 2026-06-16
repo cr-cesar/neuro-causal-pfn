@@ -1,12 +1,15 @@
-"""Dataset de mascaras de lesion.
+"""Datasets de volumenes 3D.
 
-Carga mascaras NIfTI binarias desde un directorio. Si el directorio no existe o
-esta vacio, sintetiza mascaras tipo lesion (elipsoides aleatorios) para que el
-modo prototipo se ejecute sin los datos reales preprocesados.
+LesionMaskDataset carga mascaras NIfTI desde un directorio. Con binarize=True
+umbraliza a una mascara binaria (lesion); con binarize=False conserva los
+valores continuos, que es lo que necesita el disconnectoma (un mapa de
+probabilidad en [0, 1]). Si el directorio no existe, sintetiza volumenes para
+que el prototipo corra: un campo suave en [0, 1] que, umbralizado, da una lesion
+binaria y, sin umbralizar, sirve como disconnectoma sintetico.
 
-Cuando los archivos siguen el patron lesion{id}_{age}_{sex}.nii.gz, las
-covariables clinicas (edad y sexo) se extraen del nombre y quedan disponibles,
-alineadas con el orden de las mascaras, mediante clinical_matrix().
+PairedLesionDisconnectomeDataset empareja lesion y disconnectoma por el id del
+nombre de archivo (lesion{id}_{age}_{sex}.nii.gz, compartido por ambas
+modalidades), de modo que la fusion de las dos representaciones es por paciente.
 """
 import glob
 import os
@@ -21,17 +24,45 @@ from .clinical import (CLINICAL_DIM, build_clinical_vector, parse_lesion_filenam
 from .transforms import binarize, pad_or_crop
 
 
+def _soft_field(in_shape: Tuple[int, int, int], seed: int) -> np.ndarray:
+    """Campo suave en [0, 1] tipo lesion. Vale 1 en el nucleo, 0.5 en el borde
+    del elipsoide y decae fuera, de modo que umbralizar en 0.5 recupera el
+    interior del elipsoide."""
+    rng = np.random.default_rng(seed)
+    vol = np.zeros(in_shape, dtype=np.float32)
+    zz, yy, xx = np.indices(in_shape)
+    for _ in range(int(rng.integers(1, 3))):
+        c = [int(rng.integers(int(0.3 * s), int(0.7 * s) + 1)) for s in in_shape]
+        r = [int(rng.integers(max(3, int(0.05 * s)), int(0.18 * s) + 1)) for s in in_shape]
+        e = (((zz - c[0]) / r[0]) ** 2 + ((yy - c[1]) / r[1]) ** 2 + ((xx - c[2]) / r[2]) ** 2)
+        vol = np.maximum(vol, np.clip(1.5 - e, 0.0, 1.0))
+    return vol
+
+
+def _load_nifti(path: str, in_shape: Tuple[int, int, int]) -> np.ndarray:
+    import nibabel as nib
+
+    vol = np.asarray(nib.load(path).get_fdata(), dtype=np.float32)
+    return pad_or_crop(vol, in_shape)
+
+
+def _list_nifti(root: Optional[str]):
+    paths = []
+    if root and os.path.isdir(root):
+        for pat in ("*.nii", "*.nii.gz"):
+            paths.extend(glob.glob(os.path.join(root, pat)))
+    return sorted(paths)
+
+
 class LesionMaskDataset(Dataset):
     def __init__(self, root: Optional[str] = None,
                  in_shape: Tuple[int, int, int] = (96, 112, 96),
-                 n_synth: int = 64, seed: int = 0, with_clinical: bool = False):
+                 n_synth: int = 64, seed: int = 0, with_clinical: bool = False,
+                 binarize: bool = True):
         self.in_shape = tuple(int(s) for s in in_shape)
         self.with_clinical = with_clinical
-        self.paths = []
-        if root and os.path.isdir(root):
-            for pat in ("*.nii", "*.nii.gz"):
-                self.paths.extend(glob.glob(os.path.join(root, pat)))
-            self.paths = sorted(self.paths)
+        self.binarize = binarize
+        self.paths = _list_nifti(root)
         self.synthetic = len(self.paths) == 0
         self.seed = seed
         self.n = n_synth if self.synthetic else len(self.paths)
@@ -41,45 +72,85 @@ class LesionMaskDataset(Dataset):
         return self.n
 
     def clinical_matrix(self) -> np.ndarray:
-        """Matriz [N, CLINICAL_DIM] alineada con las mascaras. Para datos reales
-        se parsea del nombre de archivo; en modo sintetico se genera al azar."""
         if self._clinical is None:
             if self.synthetic:
                 self._clinical = synthesize_clinical(self.n, CLINICAL_DIM, self.seed)
             else:
-                rows = []
-                for p in self.paths:
-                    meta = parse_lesion_filename(p)
-                    rows.append(build_clinical_vector(meta["age"], meta["sex"]))
+                rows = [build_clinical_vector(*_age_sex(p)) for p in self.paths]
                 self._clinical = np.stack(rows, axis=0)
         return self._clinical
 
-    def _make_synth(self, idx: int) -> np.ndarray:
-        rng = np.random.default_rng(self.seed + 1000 + idx)
-        vol = np.zeros(self.in_shape, dtype=np.float32)
-        zz, yy, xx = np.indices(self.in_shape)
-        for _ in range(int(rng.integers(1, 3))):
-            center = [int(rng.integers(int(0.3 * s), int(0.7 * s) + 1)) for s in self.in_shape]
-            radius = [int(rng.integers(max(3, int(0.05 * s)), int(0.18 * s) + 1)) for s in self.in_shape]
-            ellipsoid = (((zz - center[0]) / radius[0]) ** 2
-                         + ((yy - center[1]) / radius[1]) ** 2
-                         + ((xx - center[2]) / radius[2]) ** 2)
-            vol[ellipsoid <= 1.0] = 1.0
-        return vol
-
     def _load_volume(self, idx: int) -> np.ndarray:
         if self.synthetic:
-            vol = self._make_synth(idx)
+            vol = _soft_field(self.in_shape, self.seed + 1000 + idx)
         else:
-            import nibabel as nib
-
-            vol = np.asarray(nib.load(self.paths[idx]).get_fdata(), dtype=np.float32)
-            vol = pad_or_crop(vol, self.in_shape)
-        return binarize(vol)
+            vol = _load_nifti(self.paths[idx], self.in_shape)
+        return binarize(vol) if self.binarize else vol.astype(np.float32)
 
     def __getitem__(self, idx: int):
         vol = torch.from_numpy(self._load_volume(idx)).unsqueeze(0)  # [1, D, H, W]
         if self.with_clinical:
-            clinical = torch.from_numpy(self.clinical_matrix()[idx])
-            return vol, clinical
+            return vol, torch.from_numpy(self.clinical_matrix()[idx])
         return vol
+
+
+class PairedLesionDisconnectomeDataset(Dataset):
+    """Empareja lesion (binaria) y disconnectoma (continuo) por id de paciente."""
+
+    def __init__(self, lesion_root: Optional[str] = None,
+                 disconnectome_root: Optional[str] = None,
+                 in_shape: Tuple[int, int, int] = (96, 112, 96),
+                 n_synth: int = 64, seed: int = 0, with_clinical: bool = False):
+        self.in_shape = tuple(int(s) for s in in_shape)
+        self.with_clinical = with_clinical
+        self.seed = seed
+        les = _list_nifti(lesion_root)
+        dis = _list_nifti(disconnectome_root)
+        self.synthetic = len(les) == 0 or len(dis) == 0
+        if self.synthetic:
+            self.n = n_synth
+            self.pairs = None
+            self._ids = [f"synth{i:04d}" for i in range(self.n)]
+        else:
+            les_by_id = {parse_lesion_filename(p)["id"]: p for p in les}
+            dis_by_id = {parse_lesion_filename(p)["id"]: p for p in dis}
+            common = sorted(set(les_by_id) & set(dis_by_id))
+            self.pairs = [(les_by_id[i], dis_by_id[i]) for i in common]
+            self._ids = common
+            self.n = len(self.pairs)
+        self._clinical = None
+
+    def __len__(self) -> int:
+        return self.n
+
+    def ids(self):
+        return list(self._ids)
+
+    def clinical_matrix(self) -> np.ndarray:
+        if self._clinical is None:
+            if self.synthetic:
+                self._clinical = synthesize_clinical(self.n, CLINICAL_DIM, self.seed)
+            else:
+                rows = [build_clinical_vector(*_age_sex(lp)) for lp, _ in self.pairs]
+                self._clinical = np.stack(rows, axis=0)
+        return self._clinical
+
+    def _load_pair(self, idx: int):
+        if self.synthetic:
+            soft = _soft_field(self.in_shape, self.seed + 1000 + idx)
+            return binarize(soft), soft.astype(np.float32)
+        lp, dp = self.pairs[idx]
+        return binarize(_load_nifti(lp, self.in_shape)), _load_nifti(dp, self.in_shape).astype(np.float32)
+
+    def __getitem__(self, idx: int):
+        les, dis = self._load_pair(idx)
+        les_t = torch.from_numpy(les).unsqueeze(0)
+        dis_t = torch.from_numpy(dis).unsqueeze(0)
+        if self.with_clinical:
+            return les_t, dis_t, torch.from_numpy(self.clinical_matrix()[idx])
+        return les_t, dis_t
+
+
+def _age_sex(path: str):
+    meta = parse_lesion_filename(path)
+    return meta["age"], meta["sex"]

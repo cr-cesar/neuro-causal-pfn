@@ -40,3 +40,24 @@ def vae_loss(logits: torch.Tensor, target: torch.Tensor, mu: torch.Tensor,
     parts.update({"rec": float(rec.detach()), "kl": float(kl.detach()),
                   "beta": float(beta), "total": float(total.detach())})
     return total, parts
+
+
+def mse_recon_loss(logits: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """Reconstruccion continua: MSE entre la salida sigmoide y el mapa objetivo.
+
+    Para el disconnectoma el objetivo es un mapa de probabilidad continuo en
+    [0, 1], no una mascara binaria, asi que la reconstruccion se mide con MSE
+    sobre la probabilidad predicha (sigmoide de los logits) y no con BCE mas Dice.
+    """
+    return F.mse_loss(torch.sigmoid(logits), target)
+
+
+def vae_loss_mse(logits: torch.Tensor, target: torch.Tensor, mu: torch.Tensor,
+                 logvar: torch.Tensor, beta: float = 1.0):
+    """Objetivo del VAE para entradas continuas: L = MSE + beta * D_KL."""
+    rec = mse_recon_loss(logits, target)
+    kl = kl_standard_normal(mu, logvar)
+    total = rec + beta * kl
+    parts = {"mse": float(rec.detach()), "rec": float(rec.detach()),
+             "kl": float(kl.detach()), "beta": float(beta), "total": float(total.detach())}
+    return total, parts

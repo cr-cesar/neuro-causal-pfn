@@ -23,10 +23,10 @@ cambian los valores de configuracion.
     configs/                  perfiles de configuracion (Hydra) para prototipo y completo
     src/neurocausalpfn/
       data/                   carga de NIfTI, transformaciones, covariables clinicas
-      vae/                    VAE 3D, perdidas (BCE + Dice + KL), DAFT, exportacion
+      vae/                    VAE 3D, perdidas (BCE + Dice + KL y MSE continua), fusion de modalidades, exportacion
       prior/                  generador InterSynth, confusion, verificador R1/R2, cohorte
-      pfn/                    tokens, mascara de atencion, cabeza CEPO-PPD, transformer, inferencia
-      train/                  entrenamiento de la Etapa 1 y de la Etapa 2
+      pfn/                    tokens, mascara de atencion, cabeza CEPO-PPD, transformer (lineal y estilo TabICL), inferencia
+      train/                  entrenamiento de la Etapa 1 (dos modalidades) y de la Etapa 2, cableado real
       eval/                   root-PEHE, exactitud prescriptiva, cobertura
     tests/                    pruebas unitarias y prueba de humo de extremo a extremo
     scripts/                  ejecucion en prototipo y plantilla para el cluster
@@ -71,7 +71,7 @@ Disposicion de carpetas (todo bajo `data/`, que esta en el `.gitignore`):
     data/
       lesions/          mascaras de lesion (lesions.zip de Giles)  -> entrada de la Etapa 1
       atlases/          parcelacion funcional y subdivisiones        -> solo si se usa InterSynth real
-      disconnectomes/   opcional                                     -> representacion alternativa
+      disconnectomes/   mapas de disconexion continuos (0..1)        -> segunda modalidad, emparejada por id
       representation/   representation_{hash}.npz (Z + clinico)      -> puente Etapa 1 a Etapa 2
 
 El dataset de lesiones (`LesionMaskDataset`) busca mascaras NIfTI en el
@@ -85,6 +85,29 @@ patron `lesion{id}_{age}_{sex}.nii.gz` y el literal `NA` cuando faltan. El
 parser de `data/clinical.py` los extrae y construye un vector de covariables con
 indicadores de dato faltante; `LesionMaskDataset.clinical_matrix()` devuelve esa
 matriz alineada con el orden de las mascaras.
+
+## Las dos modalidades: lesion y disconnectoma
+
+Cada paciente puede entrar por dos imagenes complementarias, cada una con su
+propio VAE en la Etapa 1:
+
+- Lesion: una mascara binaria. Reconstruccion con BCE mas Dice suave
+  (`vae_loss`), porque el primer plano es una fraccion minuscula del volumen.
+- Disconnectoma: un mapa continuo de probabilidad de desconexion en [0, 1], ya
+  calculado por el laboratorio (estilo BCBtoolkit) en MNI a 2mm. Reconstruccion
+  con MSE sobre la probabilidad predicha (`vae_loss_mse`), sin binarizar.
+
+Se entrenan con el mismo punto de entrada, cambiando la modalidad:
+
+    python -m neurocausalpfn.train.train_vae --mode full --representation lesion
+    python -m neurocausalpfn.train.train_vae --mode full --representation disconnectome
+
+El disconnectoma comparte el patron de nombre `lesion{id}_{age}_{sex}.nii.gz`,
+asi que `PairedLesionDisconnectomeDataset` empareja lesion y disconnectoma por id
+de paciente. La fusion de los dos latentes (`vae/fusion.py`) ofrece tres
+variantes listas para comparar, elegidas por `fusion_mode`: `lesion` (solo el
+latente de la lesion), `disconnectome` (solo el del disconnectoma) y `both` (la
+concatenacion de ambos, que duplica la dimension de la covariable).
 
 ## El prior de la Etapa 2: sintetico o InterSynth
 
@@ -109,6 +132,21 @@ en `cfg["prior"]["kind"]`:
   son las etiquetas 1 y 2. La modalidad es `receptor` (receptoma de Hansen)
   o `genetics` (transcriptoma de Allen), elegible por configuracion.
 
+## Cableado de la Etapa 2 sobre datos reales (run_stage2_real)
+
+`train/run_stage2_real.py` une las dos etapas sobre datos reales: carga los
+encoders congelados, calcula el latente de cada paciente (lesion y, segun la
+variante, disconnectoma), los fusiona, y construye el Neuro-Prior anatomico
+pasando esos latentes como `z_pool` y las lesiones en su rejilla nativa para los
+solapamientos con el atlas. Despues entrena el transformer y guarda el
+checkpoint. La inferencia sobre datos reales (`infer_cate_real`) toma una cohorte
+observada como contexto (latentes, tratamiento y desenlace) y devuelve el efecto
+individualizado de cada paciente nuevo con un intervalo creible.
+
+El trabajo completo del cluster esta en `scripts/run_full_cluster.sbatch`:
+entrena los dos VAEs (con `--resume` para reanudar si el trabajo se corta) y
+luego ejecuta `run_stage2_real`.
+
 ## Notas de implementacion
 
 - El encoder del VAE se congela tras la Etapa 1; su salida se exporta una sola
@@ -117,13 +155,20 @@ en `cfg["prior"]["kind"]`:
 - El objetivo del transformer es la perdida de histograma sobre el resultado
   potencial esperado condicional verdadero, con la longitud de contexto en
   curriculo de menor a mayor.
-- El esqueleto usa proyecciones lineales para las filas y un softmax estandar en
-  la atencion. Para los contextos grandes del modo completo se sustituiran por la
-  codificacion tabular de columna y luego fila y por una atencion mas estable.
+- Hay dos codificadores para el transformer, elegibles por `cfg["pfn"]["arch"]`:
+  `linear` (una proyeccion por fila, util como linea base y para el prototipo) y
+  `tabicl` (estilo TabICL), que primero hace atencion por columna a traves de las
+  muestras, de modo que cada celda se vuelve consciente de toda su variable, y
+  luego atencion por fila entre pacientes. Ambas etapas comparten la mascara de
+  solo contexto, asi que ninguna prediccion de consulta depende de otra. La
+  atencion sigue siendo densa; para los contextos grandes del modo completo se
+  sustituiria por una atencion mas eficiente.
 
 ## Puntos abiertos
 
 Quedan por confirmar la identidad del ensayo de validacion, la escala del
 objetivo de precision, el tamano del transformer (a justificar con la ablacion
-de backbone), la licencia del VAE de referencia y la procedencia del
-disconectoma. El detalle esta en el documento del plan de implementacion.
+de backbone) y la licencia del VAE de referencia. La procedencia del
+disconnectoma ya esta resuelta: el laboratorio dispone de los mapas continuos,
+emparejados por id con las lesiones. El detalle esta en el documento del plan de
+implementacion.

@@ -27,13 +27,30 @@ from ..pfn.tokens import to_tensors
 log = get_logger()
 
 
+def build_model(cfg: Dict, d_x: int):
+    """Construye el transformer de la Etapa 2 segun la arquitectura pedida:
+    'linear' (proyeccion por fila) o 'tabicl' (atencion por columna y luego por
+    fila)."""
+    p = cfg["pfn"]
+    if p.get("arch", "linear") == "tabicl":
+        from ..pfn.tabicl_model import NeuroCausalPFNTabICL
+
+        return NeuroCausalPFNTabICL(
+            d_x=d_x, d_model=p["d_model"], n_row_layers=p["n_layers"],
+            n_col_layers=p.get("n_col_layers", 2), n_heads=p["n_heads"],
+            n_bins=p["n_bins"], sigma=p["sigma"])
+    return NeuroCausalPFN(
+        d_x=d_x, d_model=p["d_model"], n_layers=p["n_layers"], n_heads=p["n_heads"],
+        n_bins=p["n_bins"], sigma=p["sigma"])
+
+
 def prototype_config() -> Dict:
     return {
         "seed": 0,
         "out_dir": "outputs/pfn_prototype",
         "prior": {"kind": "synthetic"},
         "pfn": {"d_x": 16, "d_model": 128, "n_layers": 2, "n_heads": 4,
-                "n_bins": 256, "sigma": 0.02,
+                "n_bins": 256, "sigma": 0.02, "arch": "linear", "n_col_layers": 2,
                 "context_min": 64, "context_max": 256, "n_query": 16,
                 "batch_size": 8, "iters": 2000,
                 "lr": 3e-4, "weight_decay": 0.01, "grad_clip": 1.0},
@@ -54,7 +71,7 @@ def full_config() -> Dict:
                   "modality": "receptor",
                   "pool_size": 4000, "unobserved_strength": 0.0},
         "pfn": {"d_x": 104, "d_model": 512, "n_layers": 12, "n_heads": 8,
-                "n_bins": 1024, "sigma": 0.02,
+                "n_bins": 1024, "sigma": 0.02, "arch": "tabicl", "n_col_layers": 3,
                 "context_min": 1000, "context_max": 20000, "n_query": 64,
                 "batch_size": 8, "iters": 162000,
                 "lr": 3e-4, "weight_decay": 0.01, "grad_clip": 1.0},
@@ -99,12 +116,11 @@ def run_pfn(cfg: Dict):
     p = cfg["pfn"]
 
     prior_obj, d_x, is_intersynth = _build_prior(cfg)
-    model = NeuroCausalPFN(d_x=d_x, d_model=p["d_model"], n_layers=p["n_layers"],
-                           n_heads=p["n_heads"], n_bins=p["n_bins"], sigma=p["sigma"]).to(device)
+    model = build_model(cfg, d_x).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=p["lr"], weight_decay=p["weight_decay"])
     n_params = sum(t.numel() for t in model.parameters())
-    log.info("PFN: %.2fM parametros, d_x=%d, %d capas, prior=%s",
-             n_params / 1e6, d_x, p["n_layers"], "intersynth" if is_intersynth else "synthetic")
+    log.info("PFN: %.2fM parametros, d_x=%d, arch=%s, prior=%s",
+             n_params / 1e6, d_x, p.get("arch", "linear"), "intersynth" if is_intersynth else "synthetic")
 
     history = []
     model.train()
@@ -161,9 +177,13 @@ if __name__ == "__main__":
     ap.add_argument("--mode", default="prototype", choices=["prototype", "full"])
     ap.add_argument("--prior", default=None, choices=["synthetic", "intersynth"],
                     help="sobrescribe cfg['prior']['kind']")
+    ap.add_argument("--arch", default=None, choices=["linear", "tabicl"],
+                    help="sobrescribe cfg['pfn']['arch']")
     args = ap.parse_args()
     cfg = prototype_config() if args.mode == "prototype" else full_config()
     if args.prior is not None:
         cfg.setdefault("prior", {})["kind"] = args.prior
+    if args.arch is not None:
+        cfg["pfn"]["arch"] = args.arch
     trained, _ = run_pfn(cfg)
     log.info("evaluacion rapida: %s", quick_eval(trained, cfg))
