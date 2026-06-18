@@ -21,8 +21,8 @@ def _write_nifti(path, arr):
 
 
 def test_mse_recon_zero_on_perfect_match():
-    target = torch.rand(2, 1, 6, 6, 6) * 0.8 + 0.1          # valores en (0.1, 0.9)
-    logits = torch.log(target / (1.0 - target))             # la sigmoide recupera el objetivo
+    target = torch.rand(2, 1, 6, 6, 6) * 0.8 + 0.1          # values in (0.1, 0.9)
+    logits = torch.log(target / (1.0 - target))             # the sigmoid recovers the target
     mu = torch.zeros(2, 4)
     logvar = torch.zeros(2, 4)
     _, parts = vae_loss_mse(logits, target, mu, logvar, beta=0.0)
@@ -39,7 +39,7 @@ def test_paired_dataset_matches_by_id():
                          (rng.random(shape) > 0.7).astype(np.float32))
             _write_nifti(os.path.join(dis_dir, f"lesion{i:04d}_70_M.nii.gz"),
                          rng.random(shape).astype(np.float32))
-        # un id extra solo en lesiones: no debe emparejar
+        # an extra id only in lesions: it must not pair
         _write_nifti(os.path.join(les_dir, "lesion0009_NA_NA.nii.gz"),
                      (rng.random(shape) > 0.7).astype(np.float32))
 
@@ -48,8 +48,8 @@ def test_paired_dataset_matches_by_id():
         assert ds.ids() == ["0001", "0002", "0003"]
         les, dis = ds[0]
         assert les.shape == (1, *shape) and dis.shape == (1, *shape)
-        assert set(torch.unique(les).tolist()).issubset({0.0, 1.0})  # lesion binaria
-        assert torch.unique(dis).numel() > 2                          # disconnectoma continuo
+        assert set(torch.unique(les).tolist()).issubset({0.0, 1.0})  # binary lesion
+        assert torch.unique(dis).numel() > 2                          # continuous disconnectome
         assert float(dis.max()) <= 1.0
         assert ds.clinical_matrix().shape[0] == 3
 
@@ -68,7 +68,7 @@ def test_disconnectome_vae_runs_with_mse():
         cfg["out_dir"] = out
         _, hist = run_vae(cfg)
         assert "mse" in hist[-1] and np.isfinite(hist[-1]["mse"])
-        assert "bce" not in hist[-1]                       # MSE continuo, no BCE+Dice
+        assert "bce" not in hist[-1]                       # continuous MSE, not BCE+Dice
         assert os.path.exists(os.path.join(out, "vae_disconnectome.pt"))
 
 
@@ -79,9 +79,9 @@ def test_fusion_modes_and_dims():
     assert fuse_representation(None, z_dis, "disconnectome").shape == (5, 6)
     assert fuse_representation(z_les, z_dis, "both").shape == (5, 14)
     with pytest.raises(ValueError):
-        fuse_representation(z_les, np.ones((4, 6)), "both")   # no alineados
+        fuse_representation(z_les, np.ones((4, 6)), "both")   # not aligned
     with pytest.raises(ValueError):
-        fuse_representation(None, None, "both")               # faltan ambos
+        fuse_representation(None, None, "both")               # both missing
 
 
 def test_stage2_real_wiring_and_inference():
@@ -102,7 +102,7 @@ def test_stage2_real_wiring_and_inference():
         "device": "cpu", "log_every": 50,
     }
     prior = build_real_prior(cfg, les_vae, dis_vae)
-    assert prior.d_x == 8                                   # 2 * zdim en el modo both
+    assert prior.d_x == 8                                   # 2 * zdim in the both mode
     model = build_model(cfg, prior.d_x)
     batch = to_tensors(prior.sample_batch(2, n_context=16))
     loss = model.head.loss(model(batch["Xc"], batch["Tc"], batch["Yc"], batch["Xq"], batch["Tq"]),

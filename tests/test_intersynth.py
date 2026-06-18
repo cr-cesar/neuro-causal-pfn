@@ -1,4 +1,4 @@
-"""Pruebas del mecanismo InterSynth con sustrato anatomico."""
+"""Tests of the InterSynth mechanism with an anatomical substrate."""
 import math
 
 import numpy as np
@@ -22,9 +22,9 @@ def test_atlas_synthetic_shapes():
 def test_susceptibility_and_threshold():
     atlas = FunctionalAtlas.synthetic(shape=(32, 36, 32), seed=1)
     dgp = InterSynthDGP(atlas, np.random.default_rng(1))
-    assert dgp.susceptibility(0.5, 0.0) == 0          # toca sobre todo la subred A
-    assert dgp.susceptibility(0.0, 0.5) == 1          # toca sobre todo la subred B
-    assert dgp.susceptibility(0.01, 0.0) is None      # por debajo del umbral del 5%
+    assert dgp.susceptibility(0.5, 0.0) == 0          # mostly affects subnetwork A
+    assert dgp.susceptibility(0.0, 0.5) == 1          # mostly affects subnetwork B
+    assert dgp.susceptibility(0.01, 0.0) is None      # below the 5% threshold
 
 
 def test_mu_ordering_and_cate_sign():
@@ -32,9 +32,9 @@ def test_mu_ordering_and_cate_sign():
     dgp = InterSynthDGP(atlas, np.random.default_rng(2))
     s = 0
     t_star = dgp.optimal_treatment(s)
-    assert dgp.mu(s, t_star) > dgp.mu(s, 1 - t_star)  # el tratamiento adecuado mejora el desenlace
-    assert dgp.mu(None, 0) == dgp.mu(None, 1)          # sin susceptibilidad, el tratamiento no cambia nada
-    assert abs(dgp.cate(None)) < 1e-9                  # CATE cero si no es susceptible
+    assert dgp.mu(s, t_star) > dgp.mu(s, 1 - t_star)  # the appropriate treatment improves the outcome
+    assert dgp.mu(None, 0) == dgp.mu(None, 1)          # without susceptibility, the treatment changes nothing
+    assert abs(dgp.cate(None)) < 1e-9                  # CATE zero if not susceptible
 
 
 def test_intersynth_cohort_batch_and_ignorability():
@@ -44,8 +44,8 @@ def test_intersynth_cohort_batch_and_ignorability():
     batch = prior.sample_batch(3, n_context=48)
     assert batch["Xc"].shape == (3, 48, prior.d_x)
     assert batch["mu_q"].shape == (3, 8)
-    assert ((batch["Yc"] == 0) | (batch["Yc"] == 1)).all()   # desenlace binario
-    # el prior por defecto es ignorable por construccion
+    assert ((batch["Yc"] == 0) | (batch["Yc"] == 1)).all()   # binary outcome
+    # the default prior is ignorable by construction
     assert verify_identifiability(batch["Tc"][0], batch["Xc"][0], None, None, U=None)
 
 

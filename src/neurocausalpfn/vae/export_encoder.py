@@ -1,10 +1,10 @@
-"""Congelado y exportacion de la representacion de la Etapa 1.
+"""Freezing and export of the Stage 1 representation.
 
-Calcula el codigo de la cohorte una sola vez con el encoder congelado y lo
-escribe a disco junto con las covariables clinicas. El nombre del archivo
-incluye un hash de los pesos del encoder, de modo que cualquier resultado de la
-Etapa 2 es trazable hasta una representacion exacta. Soporta una o dos
-modalidades (lesion y disconectoma); con ambas, los codigos se concatenan.
+Computes the cohort code once with the frozen encoder and writes it to disk
+along with the clinical covariates. The filename includes a hash of the encoder
+weights, so that any Stage 2 result is traceable back to an exact representation.
+Supports one or two modalities (lesion and disconnectome); with both, the codes
+are concatenated.
 """
 import hashlib
 import os

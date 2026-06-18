@@ -1,13 +1,13 @@
-"""Ensamblado de lotes para el transformer.
+"""Batch assembly for the transformer.
 
-Convierte el lote numpy que produce la cohorte en tensores de torch. Cada
-paciente de contexto lleva sus covariables, su tratamiento y su resultado; cada
-paciente de consulta lleva solo sus covariables y el tratamiento de interes. La
-construccion concreta de los tokens (la concatenacion y la proyeccion lineal) la
-realiza el modelo; aqui solo se preparan los tensores.
+Converts the numpy batch produced by the cohort into torch tensors. Each context
+patient carries its covariates, its treatment and its outcome; each query patient
+carries only its covariates and the treatment of interest. The concrete
+construction of the tokens (the concatenation and the linear projection) is done
+by the model; here only the tensors are prepared.
 
-En modo completo, las proyecciones lineales de este esqueleto se sustituirian
-por la codificacion tabular de columna y luego fila descrita en el plan.
+In full mode, the linear projections of this skeleton would be replaced by the
+column-then-row tabular encoding described in the plan.
 """
 from typing import Dict
 

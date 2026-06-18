@@ -4,25 +4,25 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=48G
 #SBATCH --time=48:00:00
-# Plantilla para el cluster de UCL. Ajusta particion y cuenta segun proceda.
-# Requiere los datos reales colocados en:
-#   data/lesions/         mascaras de lesion (binarias, MNI 2mm)
-#   data/disconnectomes/  mapas de disconexion (continuos, MNI 2mm), mismo id por paciente
-#   data/atlases/         parcelacion funcional y subdivisiones de Giles
+# Template for the UCL cluster. Adjust partition and account as appropriate.
+# Requires the real data placed in:
+#   data/lesions/         lesion masks (binary, MNI 2mm)
+#   data/disconnectomes/  disconnection maps (continuous, MNI 2mm), same id per patient
+#   data/atlases/         functional parcellation and Giles subdivisions
 set -euo pipefail
 export PYTHONPATH="${PYTHONPATH:-}:$(pwd)/src"
 
-# Etapa 1: dos VAEs entrenados por separado, cada uno con su perdida y exportando
-# sus latentes congelados (lesion: BCE mas Dice; disconnectoma: MSE continuo).
+# Stage 1: two VAEs trained separately, each with its own loss and exporting
+# their frozen latents (lesion: BCE plus Dice; disconnectome: continuous MSE).
 python -m neurocausalpfn.train.train_vae --mode full --representation lesion
 python -m neurocausalpfn.train.train_vae --mode full --representation disconnectome
 
-# Etapa 2: cablea los latentes reales como covariable del Neuro-Prior y entrena
-# el transformer con la codificacion tabular estilo TabICL. fusion_mode en
-# stage2_real_config elige la variante: lesion, disconnectome o both.
+# Stage 2: wires the real latents as the Neuro-Prior covariate and trains
+# the transformer with the TabICL-style tabular encoding. fusion_mode in
+# stage2_real_config chooses the variant: lesion, disconnectome or both.
 python -m neurocausalpfn.train.run_stage2_real
 
-# Para reanudar la Etapa 1 si el trabajo se corta, anadir --resume con la ruta
-# del checkpoint, por ejemplo:
+# To resume Stage 1 if the job is interrupted, add --resume with the checkpoint
+# path, for example:
 #   python -m neurocausalpfn.train.train_vae --mode full --representation lesion \
 #       --resume outputs/vae_full_lesion/vae_lesion_last.pt

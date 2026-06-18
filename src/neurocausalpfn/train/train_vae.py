@@ -1,15 +1,15 @@
-"""Entrenamiento de la Etapa 1 (los autoencoders).
+"""Stage 1 training (the autoencoders).
 
-Un unico punto de entrada sirve a las dos modalidades y a los dos modos de
-ejecucion; solo cambian los valores de configuracion.
+A single entry point serves both modalities and both execution modes; only the
+configuration values change.
 
-- representation = "lesion": entrada binaria, reconstruccion con BCE mas Dice.
-- representation = "disconnectome": entrada continua en [0, 1], reconstruccion
-  con MSE (sin binarizar).
+- representation = "lesion": binary input, reconstruction with BCE plus Dice.
+- representation = "disconnectome": continuous input in [0, 1], reconstruction
+  with MSE (without binarizing).
 
-Incluye un corte de validacion para vigilar la reconstruccion y elegir el mejor
-checkpoint, guardado del ultimo estado para reanudar en el cluster, y una
-exportacion opcional de los latentes congelados al terminar.
+Includes a validation split to monitor reconstruction and pick the best
+checkpoint, saving of the last state to resume on the cluster, and an optional
+export of the frozen latents at the end.
 """
 import os
 from typing import Dict
@@ -46,9 +46,9 @@ def full_config() -> Dict:
     return {
         "seed": 0,
         "out_dir": "outputs/vae_full",
-        "representation": "lesion",   # cambiar a "disconnectome" para la otra modalidad
-        "resume": None,               # ruta a un checkpoint para reanudar
-        "export": True,               # exporta los latentes congelados al terminar
+        "representation": "lesion",   # change to "disconnectome" for the other modality
+        "resume": None,               # path to a checkpoint to resume from
+        "export": True,               # exports the frozen latents at the end
         "data": {"root": "data/lesions", "resolution": [96, 112, 96],
                  "n_synth": 0, "val_frac": 0.1},
         "vae": {"zdim": 50, "channels": [16, 32, 64, 128, 256],
@@ -62,7 +62,7 @@ def _split_indices(n: int, val_frac: float, seed: int):
     idx = np.random.default_rng(seed).permutation(n)
     n_val = int(val_frac * n)
     if n_val < 1:
-        return idx, idx   # cohorte pequena: validar sobre el mismo conjunto
+        return idx, idx   # small cohort: validate on the same set
     return idx[n_val:], idx[:n_val]
 
 
@@ -98,8 +98,8 @@ def run_vae(cfg: Dict):
     train_idx, val_idx = _split_indices(len(dataset), cfg["data"].get("val_frac", 0.1), cfg["seed"])
     train_loader = DataLoader(Subset(dataset, train_idx), batch_size=cfg["vae"]["batch_size"], shuffle=True)
     val_loader = DataLoader(Subset(dataset, val_idx), batch_size=cfg["vae"]["batch_size"], shuffle=False)
-    log.info("VAE (%s): %d volumenes (%s), resolucion %s, %d entrenamiento / %d validacion",
-             representation, len(dataset), "sinteticos" if dataset.synthetic else "reales",
+    log.info("VAE (%s): %d volumes (%s), resolution %s, %d training / %d validation",
+             representation, len(dataset), "synthetic" if dataset.synthetic else "real",
              in_shape, len(train_idx), len(val_idx))
 
     model = ConvVAE3D(zdim=cfg["vae"]["zdim"], in_shape=in_shape,
@@ -113,7 +113,7 @@ def run_vae(cfg: Dict):
         opt.load_state_dict(ckpt["opt"])
         start_epoch = ckpt.get("epoch", -1) + 1
         best_val = ckpt.get("best_val", float("inf"))
-        log.info("reanudando desde %s en la epoca %d", cfg["resume"], start_epoch)
+        log.info("resuming from %s at epoch %d", cfg["resume"], start_epoch)
 
     epochs = cfg["vae"]["epochs"]
     warmup_epochs = max(1, int(cfg["vae"]["warmup_frac"] * epochs))
@@ -127,7 +127,7 @@ def run_vae(cfg: Dict):
         va = _epoch(model, val_loader, loss_fn, beta, device, opt=None)
         tr["val_total"] = va["total"]
         history.append(tr)
-        log.info("epoca %d/%d  beta=%.2f  rec=%.4f  kl=%.3f  train=%.4f  val=%.4f",
+        log.info("epoch %d/%d  beta=%.2f  rec=%.4f  kl=%.3f  train=%.4f  val=%.4f",
                  epoch + 1, epochs, tr["beta"], tr["rec"], tr["kl"], tr["total"], va["total"])
 
         ckpt = {"epoch": epoch, "state_dict": model.state_dict(), "opt": opt.state_dict(),
@@ -138,7 +138,7 @@ def run_vae(cfg: Dict):
             ckpt["best_val"] = best_val
             torch.save(ckpt, best_path)
 
-    log.info("mejor checkpoint en %s (val=%.4f)", best_path, best_val)
+    log.info("best checkpoint at %s (val=%.4f)", best_path, best_val)
 
     if cfg.get("export"):
         from ..vae.export_encoder import export_representation
@@ -146,7 +146,7 @@ def run_vae(cfg: Dict):
         full_loader = DataLoader(dataset, batch_size=cfg["vae"]["batch_size"], shuffle=False)
         rep_path = export_representation(model, full_loader, cfg["out_dir"],
                                          clinical=dataset.clinical_matrix(), device=device)
-        log.info("representacion exportada en %s", rep_path)
+        log.info("representation exported to %s", rep_path)
 
     return model, history
 

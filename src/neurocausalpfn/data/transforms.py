@@ -1,13 +1,13 @@
-"""Transformaciones de volumen: relleno o recorte a una forma objetivo y
-binarizacion. Operan sobre arreglos numpy [D, H, W]."""
+"""Volume transformations: padding or cropping to a target shape and
+binarization. They operate on numpy arrays [D, H, W]."""
 from typing import Tuple
 
 import numpy as np
 
 
 def pad_or_crop(vol: np.ndarray, target: Tuple[int, int, int]) -> np.ndarray:
-    """Centra el volumen en una caja de la forma objetivo, rellenando con ceros
-    o recortando segun haga falta en cada eje."""
+    """Centers the volume in a box of the target shape, padding with zeros or
+    cropping as needed along each axis."""
     target = tuple(int(t) for t in target)
     out = np.zeros(target, dtype=vol.dtype)
     src_slices, dst_slices = [], []

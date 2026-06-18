@@ -1,15 +1,15 @@
-"""Datasets de volumenes 3D.
+"""3D volume datasets.
 
-LesionMaskDataset carga mascaras NIfTI desde un directorio. Con binarize=True
-umbraliza a una mascara binaria (lesion); con binarize=False conserva los
-valores continuos, que es lo que necesita el disconnectoma (un mapa de
-probabilidad en [0, 1]). Si el directorio no existe, sintetiza volumenes para
-que el prototipo corra: un campo suave en [0, 1] que, umbralizado, da una lesion
-binaria y, sin umbralizar, sirve como disconnectoma sintetico.
+LesionMaskDataset loads NIfTI masks from a directory. With binarize=True it
+thresholds to a binary mask (lesion); with binarize=False it keeps the
+continuous values, which is what the disconnectome needs (a probability map in
+[0, 1]). If the directory does not exist, it synthesizes volumes so that the
+prototype runs: a smooth field in [0, 1] that, thresholded, gives a binary
+lesion and, without thresholding, serves as a synthetic disconnectome.
 
-PairedLesionDisconnectomeDataset empareja lesion y disconnectoma por el id del
-nombre de archivo (lesion{id}_{age}_{sex}.nii.gz, compartido por ambas
-modalidades), de modo que la fusion de las dos representaciones es por paciente.
+PairedLesionDisconnectomeDataset pairs lesion and disconnectome by the id in the
+filename (lesion{id}_{age}_{sex}.nii.gz, shared by both modalities), so that the
+fusion of the two representations is per patient.
 """
 import glob
 import os
@@ -25,9 +25,9 @@ from .transforms import binarize, pad_or_crop
 
 
 def _soft_field(in_shape: Tuple[int, int, int], seed: int) -> np.ndarray:
-    """Campo suave en [0, 1] tipo lesion. Vale 1 en el nucleo, 0.5 en el borde
-    del elipsoide y decae fuera, de modo que umbralizar en 0.5 recupera el
-    interior del elipsoide."""
+    """Smooth lesion-like field in [0, 1]. Equals 1 in the core, 0.5 at the
+    ellipsoid border and decays outside, so that thresholding at 0.5 recovers the
+    interior of the ellipsoid."""
     rng = np.random.default_rng(seed)
     vol = np.zeros(in_shape, dtype=np.float32)
     zz, yy, xx = np.indices(in_shape)
@@ -95,7 +95,7 @@ class LesionMaskDataset(Dataset):
 
 
 class PairedLesionDisconnectomeDataset(Dataset):
-    """Empareja lesion (binaria) y disconnectoma (continuo) por id de paciente."""
+    """Pairs lesion (binary) and disconnectome (continuous) by patient id."""
 
     def __init__(self, lesion_root: Optional[str] = None,
                  disconnectome_root: Optional[str] = None,

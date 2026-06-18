@@ -1,174 +1,172 @@
 # Neuro-Causal-PFN
 
-Modelo fundacional causal basado en neuroimagen para la estimacion de efectos
-individualizados del tratamiento en el ictus isquemico, a partir de la anatomia
-de la lesion y mediante in-context learning. El proyecto tiene dos etapas que se
-entrenan en secuencia y luego se componen:
+Causal foundation model based on neuroimaging for estimating individualized
+treatment effects in ischemic stroke, derived from lesion anatomy and using
+in-context learning. The project has two stages that are trained in sequence and
+then composed:
 
-- Etapa 1: dos autoencoders variacionales convolucionales 3D comprimen una
-  mascara de lesion y un mapa de disconectoma en un codigo compacto.
-- Etapa 2: un transformer entrenado desde cero con la metodologia de
-  prior-fitted network sobre una cohorte sintetica con resultados
-  contrafactuales conocidos (el Neuro-Prior), que devuelve para cada paciente la
-  distribucion del resultado potencial esperado condicional bajo tratamiento y
-  bajo control. La diferencia es el efecto del tratamiento individualizado.
+- Stage 1: two 3D convolutional variational autoencoders compress a lesion mask
+  and a disconnectome map into a compact code.
+- Stage 2: a transformer trained from scratch with the prior-fitted network
+  methodology on a synthetic cohort with known counterfactual outcomes (the
+  Neuro-Prior), which returns for each patient the distribution of the expected
+  conditional potential outcome under treatment and under control. The
+  difference is the individualized treatment effect.
 
-Un unico codigo corre en dos modos a partir del mismo fuente. El modo prototipo
-funciona en CPU con datos reducidos y mascaras sinteticas, sin necesidad de los
-datos reales ni del cluster. El modo completo escala a los nodos V100. Solo
-cambian los valores de configuracion.
+A single codebase runs in two modes from the same source. Prototype mode runs on
+CPU with reduced data and synthetic masks, without needing the real data or the
+cluster. Full mode scales to the V100 nodes. Only the configuration values
+change.
 
-## Estructura
+## Structure
 
-    configs/                  perfiles de configuracion (Hydra) para prototipo y completo
+    configs/                  configuration profiles (Hydra) for prototype and full
     src/neurocausalpfn/
-      data/                   carga de NIfTI, transformaciones, covariables clinicas
-      vae/                    VAE 3D, perdidas (BCE + Dice + KL y MSE continua), fusion de modalidades, exportacion
-      prior/                  generador InterSynth, confusion, verificador R1/R2, cohorte
-      pfn/                    tokens, mascara de atencion, cabeza CEPO-PPD, transformer (lineal y estilo TabICL), inferencia
-      train/                  entrenamiento de la Etapa 1 (dos modalidades) y de la Etapa 2, cableado real
-      eval/                   root-PEHE, exactitud prescriptiva, cobertura
-    tests/                    pruebas unitarias y prueba de humo de extremo a extremo
-    scripts/                  ejecucion en prototipo y plantilla para el cluster
+      data/                   NIfTI loading, transforms, clinical covariates
+      vae/                    3D VAE, losses (BCE + Dice + KL and continuous MSE), modality fusion, export
+      prior/                  InterSynth generator, confounding, R1/R2 verifier, cohort
+      pfn/                    tokens, attention mask, CEPO-PPD head, transformer (linear and TabICL-style), inference
+      train/                  training of Stage 1 (two modalities) and Stage 2, real wiring
+      eval/                   root-PEHE, prescriptive accuracy, coverage
+    tests/                    unit tests and end-to-end smoke test
+    scripts/                  prototype run and cluster template
 
-## Instalacion
+## Installation
 
-Modo prototipo (CPU):
+Prototype mode (CPU):
 
     conda env create -f env/environment.prototype.yml
     conda activate neuro-causal-pfn-proto
     pip install -e .
 
-Para los datos reales en NIfTI y las lineas base causales se anaden los extras:
+For the real NIfTI data and the causal baselines, add the extras:
 
     pip install -e ".[imaging,baselines,cluster]"
 
-## Ejecucion rapida (prueba de humo)
+## Quick run (smoke test)
 
     bash scripts/run_prototype.sh
 
-Esto entrena la Etapa 1 y la Etapa 2 en modo prototipo en CPU en segundos, con
-datos sinteticos. Tambien se puede llamar a cada etapa por separado:
+This trains Stage 1 and Stage 2 in prototype mode on CPU in seconds, with
+synthetic data. Each stage can also be called separately:
 
     python -m neurocausalpfn.train.train_vae --mode prototype
     python -m neurocausalpfn.train.train_pfn --mode prototype
 
-## Pruebas
+## Tests
 
     pip install pytest
     PYTHONPATH=src pytest -q
 
-Las dos pruebas mas importantes son la de la mascara de atencion (que el peso de
-una consulta sobre otra sea exactamente cero) y la del verificador de
-identificabilidad (que acepte un proceso ignorable y rechace uno con un
-confundidor no observado), porque esa ultima operacionaliza el requisito de
-convergencia del prior-fitted network.
+The two most important tests are the attention-mask test (that the weight of one
+query on another is exactly zero) and the identifiability-verifier test (that it
+accepts an ignorable process and rejects one with an unobserved confounder),
+because the latter operationalizes the convergence requirement of the
+prior-fitted network.
 
-## Datos
+## Data
 
-Disposicion de carpetas (todo bajo `data/`, que esta en el `.gitignore`):
+Folder layout (everything under `data/`, which is in `.gitignore`):
 
     data/
-      lesions/          mascaras de lesion (lesions.zip de Giles)  -> entrada de la Etapa 1
-      atlases/          parcelacion funcional y subdivisiones        -> solo si se usa InterSynth real
-      disconnectomes/   mapas de disconexion continuos (0..1)        -> segunda modalidad, emparejada por id
-      representation/   representation_{hash}.npz (Z + clinico)      -> puente Etapa 1 a Etapa 2
+      lesions/          lesion masks (lesions.zip from Giles)        -> Stage 1 input
+      atlases/          functional parcellation and subdivisions     -> only if real InterSynth is used
+      disconnectomes/   continuous disconnection maps (0..1)         -> second modality, paired by id
+      representation/   representation_{hash}.npz (Z + clinical)     -> Stage 1 to Stage 2 bridge
 
-El dataset de lesiones (`LesionMaskDataset`) busca mascaras NIfTI en el
-directorio indicado en `configs/data/lesion.yaml` (`root: data/lesions`). Si no
-existen, sintetiza mascaras tipo lesion para que el prototipo corra. Las
-mascaras de Giles ya estan en MNI a 91x109x91; el codigo las rellena a
-96x112x96 y las binariza, asi que no hace falta mas preprocesado para el VAE.
+The lesion dataset (`LesionMaskDataset`) looks for NIfTI masks in the directory
+given in `configs/data/lesion.yaml` (`root: data/lesions`). If none exist, it
+synthesizes lesion-like masks so the prototype can run. The Giles masks are
+already in MNI at 91x109x91; the code pads them to 96x112x96 and binarizes them,
+so no further preprocessing is needed for the VAE.
 
-La edad y el sexo no vienen en una tabla sino en el nombre de archivo, con el
-patron `lesion{id}_{age}_{sex}.nii.gz` y el literal `NA` cuando faltan. El
-parser de `data/clinical.py` los extrae y construye un vector de covariables con
-indicadores de dato faltante; `LesionMaskDataset.clinical_matrix()` devuelve esa
-matriz alineada con el orden de las mascaras.
+Age and sex do not come in a table but in the filename, with the pattern
+`lesion{id}_{age}_{sex}.nii.gz` and the literal `NA` when missing. The parser in
+`data/clinical.py` extracts them and builds a covariate vector with missing-data
+indicators; `LesionMaskDataset.clinical_matrix()` returns that matrix aligned
+with the order of the masks.
 
-## Las dos modalidades: lesion y disconnectoma
+## The two modalities: lesion and disconnectome
 
-Cada paciente puede entrar por dos imagenes complementarias, cada una con su
-propio VAE en la Etapa 1:
+Each patient can enter through two complementary images, each with its own VAE in
+Stage 1:
 
-- Lesion: una mascara binaria. Reconstruccion con BCE mas Dice suave
-  (`vae_loss`), porque el primer plano es una fraccion minuscula del volumen.
-- Disconnectoma: un mapa continuo de probabilidad de desconexion en [0, 1], ya
-  calculado por el laboratorio (estilo BCBtoolkit) en MNI a 2mm. Reconstruccion
-  con MSE sobre la probabilidad predicha (`vae_loss_mse`), sin binarizar.
+- Lesion: a binary mask. Reconstruction with BCE plus soft Dice (`vae_loss`),
+  because the foreground is a tiny fraction of the volume.
+- Disconnectome: a continuous disconnection-probability map in [0, 1], already
+  computed by the lab (BCBtoolkit style) in MNI at 2mm. Reconstruction with MSE
+  on the predicted probability (`vae_loss_mse`), without binarizing.
 
-Se entrenan con el mismo punto de entrada, cambiando la modalidad:
+They are trained with the same entry point, changing the modality:
 
     python -m neurocausalpfn.train.train_vae --mode full --representation lesion
     python -m neurocausalpfn.train.train_vae --mode full --representation disconnectome
 
-El disconnectoma comparte el patron de nombre `lesion{id}_{age}_{sex}.nii.gz`,
-asi que `PairedLesionDisconnectomeDataset` empareja lesion y disconnectoma por id
-de paciente. La fusion de los dos latentes (`vae/fusion.py`) ofrece tres
-variantes listas para comparar, elegidas por `fusion_mode`: `lesion` (solo el
-latente de la lesion), `disconnectome` (solo el del disconnectoma) y `both` (la
-concatenacion de ambos, que duplica la dimension de la covariable).
+The disconnectome shares the name pattern `lesion{id}_{age}_{sex}.nii.gz`, so
+`PairedLesionDisconnectomeDataset` pairs lesion and disconnectome by patient id.
+The fusion of the two latents (`vae/fusion.py`) offers three variants ready to
+compare, chosen by `fusion_mode`: `lesion` (only the lesion latent),
+`disconnectome` (only the disconnectome latent) and `both` (the concatenation of
+the two, which doubles the covariate dimension).
 
-## El prior de la Etapa 2: sintetico o InterSynth
+## The Stage 2 prior: synthetic or InterSynth
 
-El transformer se entrena sobre un prior de procesos, elegido por configuracion
-en `cfg["prior"]["kind"]`:
+The transformer is trained on a process prior, chosen by configuration in
+`cfg["prior"]["kind"]`:
 
-- `synthetic`: el generador ligero (`prior/intersynth.py`), que muestrea
-  covariables gaussianas desde cero. Es el de por defecto y el que usan el
-  prototipo y la prueba de humo.
-- `intersynth`: el mecanismo anatomico real (`prior/intersynth_atlas.py` mas
-  `prior/atlas.py`), que cruza cada lesion con la parcelacion funcional para
-  fabricar la verdad de terreno: deficit por solapamiento de al menos el 5% con
-  una subred, susceptibilidad al tratamiento segun la subred (transcriptomica o
-  receptomica) dominante, desenlace por combinacion de efecto del tratamiento y
-  recuperacion espontanea, y asignacion con confusion observada (distancia del
-  centroide) u opcionalmente no observada. El covariable que ve el transformer es
-  el latente del encoder si se pasa `z_pool`, o las covariables observadas en su
-  defecto. Para activarlo: `--prior intersynth`, con `atlas_dir` apuntando a
-  `data/atlases`. El cargador lee la estructura real de Giles:
-  `functional_parcellation_2mm.nii.gz` (redes etiquetadas 1..K) y
-  `2mm_parcellations/{modality}/` con un archivo por red cuyas dos subredes
-  son las etiquetas 1 y 2. La modalidad es `receptor` (receptoma de Hansen)
-  o `genetics` (transcriptoma de Allen), elegible por configuracion.
+- `synthetic`: the lightweight generator (`prior/intersynth.py`), which samples
+  Gaussian covariates from scratch. It is the default and the one used by the
+  prototype and the smoke test.
+- `intersynth`: the real anatomical mechanism (`prior/intersynth_atlas.py` plus
+  `prior/atlas.py`), which intersects each lesion with the functional
+  parcellation to fabricate the ground truth: deficit from an overlap of at least
+  5% with a subnetwork, treatment susceptibility according to the dominant
+  subnetwork (transcriptomic or receptomic), outcome from a combination of
+  treatment effect and spontaneous recovery, and assignment with observed
+  confounding (centroid distance) or optionally unobserved. The covariate seen by
+  the transformer is the encoder latent if `z_pool` is passed, or the observed
+  covariates otherwise. To enable it: `--prior intersynth`, with `atlas_dir`
+  pointing to `data/atlases`. The loader reads the real Giles structure:
+  `functional_parcellation_2mm.nii.gz` (networks labeled 1..K) and
+  `2mm_parcellations/{modality}/` with one file per network whose two subnetworks
+  are labels 1 and 2. The modality is `receptor` (Hansen receptome) or `genetics`
+  (Allen transcriptome), selectable by configuration.
 
-## Cableado de la Etapa 2 sobre datos reales (run_stage2_real)
+## Stage 2 wiring on real data (run_stage2_real)
 
-`train/run_stage2_real.py` une las dos etapas sobre datos reales: carga los
-encoders congelados, calcula el latente de cada paciente (lesion y, segun la
-variante, disconnectoma), los fusiona, y construye el Neuro-Prior anatomico
-pasando esos latentes como `z_pool` y las lesiones en su rejilla nativa para los
-solapamientos con el atlas. Despues entrena el transformer y guarda el
-checkpoint. La inferencia sobre datos reales (`infer_cate_real`) toma una cohorte
-observada como contexto (latentes, tratamiento y desenlace) y devuelve el efecto
-individualizado de cada paciente nuevo con un intervalo creible.
+`train/run_stage2_real.py` joins the two stages on real data: it loads the frozen
+encoders, computes each patient's latent (lesion and, depending on the variant,
+disconnectome), fuses them, and builds the anatomical Neuro-Prior by passing
+those latents as `z_pool` and the lesions on their native grid for the overlaps
+with the atlas. It then trains the transformer and saves the checkpoint.
+Inference on real data (`infer_cate_real`) takes an observed cohort as context
+(latents, treatment and outcome) and returns the individualized effect of each
+new patient with a credible interval.
 
-El trabajo completo del cluster esta en `scripts/run_full_cluster.sbatch`:
-entrena los dos VAEs (con `--resume` para reanudar si el trabajo se corta) y
-luego ejecuta `run_stage2_real`.
+The full cluster job is in `scripts/run_full_cluster.sbatch`: it trains the two
+VAEs (with `--resume` to resume if the job is interrupted) and then runs
+`run_stage2_real`.
 
-## Notas de implementacion
+## Implementation notes
 
-- El encoder del VAE se congela tras la Etapa 1; su salida se exporta una sola
-  vez y se versiona por un hash de los pesos, de modo que cada resultado de la
-  Etapa 2 es trazable hasta una representacion exacta.
-- El objetivo del transformer es la perdida de histograma sobre el resultado
-  potencial esperado condicional verdadero, con la longitud de contexto en
-  curriculo de menor a mayor.
-- Hay dos codificadores para el transformer, elegibles por `cfg["pfn"]["arch"]`:
-  `linear` (una proyeccion por fila, util como linea base y para el prototipo) y
-  `tabicl` (estilo TabICL), que primero hace atencion por columna a traves de las
-  muestras, de modo que cada celda se vuelve consciente de toda su variable, y
-  luego atencion por fila entre pacientes. Ambas etapas comparten la mascara de
-  solo contexto, asi que ninguna prediccion de consulta depende de otra. La
-  atencion sigue siendo densa; para los contextos grandes del modo completo se
-  sustituiria por una atencion mas eficiente.
+- The VAE encoder is frozen after Stage 1; its output is exported once and
+  versioned by a hash of the weights, so that every Stage 2 result is traceable
+  back to an exact representation.
+- The transformer objective is the histogram loss over the true expected
+  conditional potential outcome, with the context length on a curriculum from
+  shorter to longer.
+- There are two encoders for the transformer, selectable by `cfg["pfn"]["arch"]`:
+  `linear` (one projection per row, useful as a baseline and for the prototype)
+  and `tabicl` (TabICL style), which first applies column-wise attention across
+  the samples, so that each cell becomes aware of its whole variable, and then
+  row-wise attention across patients. Both stages share the context-only mask, so
+  no query prediction depends on another. The attention is still dense; for the
+  large contexts of full mode it would be replaced by a more efficient attention.
 
-## Puntos abiertos
+## Open points
 
-Quedan por confirmar la identidad del ensayo de validacion, la escala del
-objetivo de precision, el tamano del transformer (a justificar con la ablacion
-de backbone) y la licencia del VAE de referencia. La procedencia del
-disconnectoma ya esta resuelta: el laboratorio dispone de los mapas continuos,
-emparejados por id con las lesiones. El detalle esta en el documento del plan de
-implementacion.
+Still to be confirmed: the identity of the validation trial, the scale of the
+precision target, the size of the transformer (to be justified with the backbone
+ablation) and the license of the reference VAE. The provenance of the
+disconnectome is already resolved: the lab has the continuous maps, paired by id
+with the lesions. The detail is in the implementation plan document.

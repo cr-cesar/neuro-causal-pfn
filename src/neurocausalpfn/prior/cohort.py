@@ -1,9 +1,9 @@
-"""Cohorte del Neuro-Prior.
+"""Neuro-Prior cohort.
 
-Itera sobre procesos generadores de datos sinteticos, los filtra con el
-verificador de identificabilidad y apila contextos y consultas en lotes para
-entrenar el transformer. Devuelve arreglos numpy; la conversion a tensores se
-hace en la capa del modelo para que este modulo no dependa de torch.
+Iterates over synthetic data-generating processes, filters them with the
+identifiability verifier and stacks contexts and queries into batches to train
+the transformer. Returns numpy arrays; the conversion to tensors is done in the
+model layer so that this module does not depend on torch.
 """
 from typing import Dict, Sequence
 
@@ -25,16 +25,16 @@ class NeuroPrior:
         self.mechanisms = tuple(mechanisms)
 
     def _one(self) -> Dict[str, np.ndarray]:
-        # reintenta hasta obtener un proceso que pasa la puerta R1/R2.
-        # Los procesos son ignorables por construccion (U=None); el filtro
-        # rechaza sobre todo violaciones de positividad en la muestra.
+        # retries until obtaining a process that passes the R1/R2 gate.
+        # The processes are ignorable by construction (U=None); the filter
+        # mostly rejects positivity violations in the sample.
         for _ in range(64):
             mech = str(self.rng.choice(self.mechanisms))
             dgp = SyntheticDGP(self.d_x, self.rng, mechanism=mech)
             data = make_dataset(dgp, self.n_context, self.n_query, self.rng)
             if verify_identifiability(data["Tc"], data["Xc"], None, None, U=None):
                 return data
-        return data  # devuelve el ultimo si el reintento se agota
+        return data  # returns the last one if the retries are exhausted
 
     def sample_batch(self, batch_size: int) -> Dict[str, np.ndarray]:
         items = [self._one() for _ in range(batch_size)]
@@ -43,8 +43,8 @@ class NeuroPrior:
 
 
 def build_synthetic_lesion_pool(n: int, shape=(48, 56, 48), seed: int = 0) -> np.ndarray:
-    """Conjunto de mascaras sinteticas para ejecutar InterSynth sin datos reales.
-    En la tuberia real, este conjunto se sustituye por las mascaras de Giles."""
+    """Set of synthetic masks to run InterSynth without real data.
+    In the real pipeline, this set is replaced by the Giles masks."""
     from ..data.nifti_dataset import LesionMaskDataset
 
     ds = LesionMaskDataset(root=None, in_shape=shape, n_synth=n, seed=seed)
@@ -52,15 +52,15 @@ def build_synthetic_lesion_pool(n: int, shape=(48, 56, 48), seed: int = 0) -> np
 
 
 class NeuroPriorInterSynth:
-    """Cohorte del Neuro-Prior con sustrato anatomico (InterSynth).
+    """Neuro-Prior cohort with anatomical substrate (InterSynth).
 
-    Precomputa, una sola vez, los solapamientos y centroides de cada lesion del
-    conjunto. Cada lote muestrea una condicion (un proceso del prior) y, a partir
-    de indices del conjunto, construye contexto y consultas con resultados
-    potenciales conocidos. El covariable X es el latente del encoder si se
-    proporciona z_pool; en su defecto, las fracciones de solapamiento observadas
-    mas el centroide normalizado, que es una covariable puramente observada y por
-    tanto mantiene la ignorabilidad por construccion.
+    Precomputes, only once, the overlaps and centroids of each lesion in the
+    set. Each batch samples a condition (a process of the prior) and, from
+    indices of the set, builds context and queries with known potential
+    outcomes. The covariate X is the encoder latent if z_pool is provided;
+    otherwise, the observed overlap fractions plus the normalized centroid,
+    which is a purely observed covariate and therefore preserves ignorability
+    by construction.
     """
 
     def __init__(self, atlas: FunctionalAtlas, lesion_pool: np.ndarray, seed: int = 0,

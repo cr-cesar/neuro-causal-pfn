@@ -36,8 +36,8 @@ def test_tabicl_forward_and_train():
 
 
 def test_tabicl_query_independence():
-    # la mascara causal aisla las consultas: perturbar una consulta no afecta a otra,
-    # mientras que cambiar el contexto si cambia las predicciones.
+    # the causal mask isolates the queries: perturbing one query does not affect another,
+    # while changing the context does change the predictions.
     torch.manual_seed(0)
     d_x = 4
     model = NeuroCausalPFNTabICL(d_x=d_x, d_model=24, n_row_layers=1, n_col_layers=1,
@@ -48,12 +48,12 @@ def test_tabicl_query_independence():
         Xq2 = Xq.clone(); Xq2[:, 2, :] += 5.0
         Tq2 = Tq.clone(); Tq2[:, 2] = 1.0 - Tq2[:, 2]
         pert = model(Xc, Tc, Yc, Xq2, Tq2)
-        assert torch.allclose(base[:, 0], pert[:, 0], atol=1e-5)      # consulta 0 intacta
-        assert not torch.allclose(base[:, 2], pert[:, 2], atol=1e-4)  # consulta 2 cambia
+        assert torch.allclose(base[:, 0], pert[:, 0], atol=1e-5)      # query 0 intact
+        assert not torch.allclose(base[:, 2], pert[:, 2], atol=1e-4)  # query 2 changes
 
         Yc2 = Yc.clone(); Yc2[:, 0] += 1.0
         ctx_changed = model(Xc, Tc, Yc2, Xq, Tq)
-        assert not torch.allclose(base[:, 0], ctx_changed[:, 0], atol=1e-4)  # el contexto influye
+        assert not torch.allclose(base[:, 0], ctx_changed[:, 0], atol=1e-4)  # the context has influence
 
 
 def test_build_model_selects_arch():

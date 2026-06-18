@@ -1,16 +1,15 @@
-"""Generador sintetico estilo InterSynth adaptado a los latentes del VAE.
+"""InterSynth-style synthetic generator adapted to the VAE latents.
 
-Cada proceso generador de datos muestrea un modelo de resultado bajo control y
-bajo tratamiento, y un modelo de propension que depende solo de las covariables
-observadas, lo que garantiza la ignorabilidad por construccion. El efecto del
-tratamiento es heterogeneo. La confusion se induce a traves de las covariables
-observadas correlacionando la propension con el pronostico, segun el mecanismo
-elegido (gravedad, localizacion, red o una mezcla).
+Each data-generating process samples an outcome model under control and under
+treatment, and a propensity model that depends only on the observed covariates,
+which guarantees ignorability by construction. The treatment effect is
+heterogeneous. Confounding is induced through the observed covariates by
+correlating the propensity with the prognosis, according to the chosen
+mechanism (severity, location, network or a mixture).
 
-Los resultados potenciales esperados condicionales mu_0(x) y mu_1(x) son
-sigmoides, por lo que viven en el intervalo unidad y sirven tanto de objetivo
-continuo en el entrenamiento como de probabilidad de buen desenlace en el
-despliegue.
+The expected conditional potential outcomes mu_0(x) and mu_1(x) are sigmoids,
+so they live in the unit interval and serve both as a continuous target in
+training and as the probability of a good outcome in deployment.
 """
 from typing import Dict
 
@@ -29,13 +28,13 @@ class SyntheticDGP:
         self.d_x = int(d_x)
         self.mechanism = mechanism
         scale = 1.0 / np.sqrt(self.d_x)
-        # modelo de resultado bajo control y efecto heterogeneo del tratamiento
+        # outcome model under control and heterogeneous treatment effect
         self.w0 = rng.normal(0.0, 1.0, self.d_x) * scale
         self.b0 = float(rng.normal(0.0, 0.5))
         self.delta = rng.normal(0.0, 1.0, self.d_x) * scale
         self.b1 = self.b0 + float(rng.normal(0.0, 0.5))
-        # la propension depende solo de X (ignorable). La confusion observada se
-        # induce alineando parte de w_prop con el pronostico.
+        # the propensity depends only on X (ignorable). The observed confounding
+        # is induced by aligning part of w_prop with the prognosis.
         if mechanism in ("severity", "mixed"):
             direction = self.w0.copy()
         else:
@@ -66,9 +65,9 @@ def sample_covariates(n: int, d_x: int, rng: np.random.Generator) -> np.ndarray:
 
 def make_dataset(dgp: SyntheticDGP, n_context: int, n_query: int,
                  rng: np.random.Generator) -> Dict[str, np.ndarray]:
-    """Construye un contexto observacional y un conjunto de consultas con el
-    resultado potencial esperado condicional verdadero para el tratamiento
-    consultado, mas mu_0 y mu_1 para evaluar el efecto del tratamiento."""
+    """Builds an observational context and a set of queries with the true
+    expected conditional potential outcome for the queried treatment, plus
+    mu_0 and mu_1 to evaluate the treatment effect."""
     Xc = sample_covariates(n_context, dgp.d_x, rng)
     Tc, Yc = dgp.sample_observed(Xc, rng)
     Xq = sample_covariates(n_query, dgp.d_x, rng)

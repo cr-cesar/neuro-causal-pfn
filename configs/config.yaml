@@ -1,6 +1,6 @@
-# Composicion por defecto. El interruptor mode=prototype o mode=full
-# reconfigura toda la ejecucion. Estos archivos reflejan las funciones
-# prototype_config y full_config de los modulos de entrenamiento.
+# Default composition. The mode=prototype or mode=full switch
+# reconfigures the entire run. These files mirror the prototype_config
+# and full_config functions of the training modules.
 defaults:
   - mode: prototype
   - data: lesion

@@ -5,7 +5,7 @@ dependencies:
   - python=3.10
   - pip
   - pip:
-      # torch para V100 (sm_70) con la compilacion CUDA 11.8 (indice externo)
+      # torch for V100 (sm_70) with the CUDA 11.8 build (external index)
       # pip install torch==2.3.1 --index-url https://download.pytorch.org/whl/cu118
       - torch==2.3.1
       - numpy==1.26.*

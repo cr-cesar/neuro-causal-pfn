@@ -1,12 +1,12 @@
-"""Cabeza CEPO-PPD y perdida de histograma.
+"""CEPO-PPD head and histogram loss.
 
-El eje del resultado potencial esperado condicional se discretiza en L bins.
-Cada token de consulta se proyecta a L logits y un softmax forma una
-distribucion sobre bins. El valor verdadero se convierte en un objetivo suave
-colocando una gaussiana estrecha a su alrededor e integrando sobre los bins, y
-el entrenamiento minimiza la entropia cruzada entre ese objetivo y la prediccion.
-A medida que la gaussiana se estrecha y crece el numero de bins, esto recupera
-la verosimilitud logaritmica negativa del valor verdadero.
+The expected conditional potential outcome axis is discretized into L bins. Each
+query token is projected to L logits and a softmax forms a distribution over
+bins. The ground-truth value is converted into a soft target by placing a narrow
+gaussian around it and integrating over the bins, and training minimizes the
+cross-entropy between that target and the prediction. As the gaussian narrows and
+the number of bins grows, this recovers the negative log-likelihood of the
+ground-truth value.
 """
 import torch
 import torch.nn as nn
@@ -27,7 +27,7 @@ class CEPOHead(nn.Module):
         return 0.5 * (self.edges[1:] + self.edges[:-1])
 
     def target_hist(self, mu: torch.Tensor) -> torch.Tensor:
-        """Objetivo suavizado con gaussiana, normalizado sobre los bins."""
+        """Gaussian-smoothed target, normalized over the bins."""
         c = self.centers
         dist = torch.distributions.Normal(mu.unsqueeze(-1), self.sigma)
         w = torch.exp(dist.log_prob(c))

@@ -1,9 +1,9 @@
-"""Condicionamiento clinico mediante el Dynamic Affine Feature-map Transform.
+"""Clinical conditioning via the Dynamic Affine Feature-map Transform.
 
-A partir de un mapa de caracteristicas dentro de un bloque residual y un vector
-de covariables clinicas, una pequena red de cuello de botella predice una escala
-y un desplazamiento por canal. Generaliza la modulacion lineal por
-caracteristicas. Si el condicionamiento ayuda se decide de forma empirica en E5.
+From a feature map inside a residual block and a vector of clinical covariates, a
+small bottleneck network predicts a per-channel scale and shift. It generalizes
+feature-wise linear modulation. Whether the conditioning helps is decided
+empirically in E5.
 """
 import torch
 import torch.nn as nn
