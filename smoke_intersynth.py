@@ -11,5 +11,5 @@ cfg["pfn"]["n_query"] = 8
 cfg["out_dir"] = "outputs/pfn_intersynth_realatlas"
 
 model, hist = run_pfn(cfg)
-print("ultimas perdidas:", [round(h["loss"], 3) for h in hist[-5:]])
+print("last losses:", [round(h["loss"], 3) for h in hist[-5:]])
 print("root_PEHE:", round(quick_eval(model, cfg, n_eval=12)["root_pehe"], 4))

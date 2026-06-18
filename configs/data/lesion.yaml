@@ -1,5 +1,5 @@
-root: data/lesions          # vacio o inexistente -> mascaras sinteticas
+root: data/lesions          # empty or nonexistent -> synthetic masks
 resolution: ${mode.resolution}
-n_synth: 64                 # solo se usa en modo sintetico
+n_synth: 64                 # only used in synthetic mode
 clinical_path: null
 clinical_dim: 4

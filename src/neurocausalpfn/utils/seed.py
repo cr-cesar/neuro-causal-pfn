@@ -1,4 +1,4 @@
-"""Fijacion determinista de semillas en random, numpy y torch."""
+"""Deterministic seeding for random, numpy and torch."""
 import os
 import random
 
@@ -6,8 +6,8 @@ import numpy as np
 
 
 def set_seed(seed: int = 0) -> None:
-    """Fija la semilla en las librerias relevantes. torch se importa de forma
-    perezosa para que el resto del paquete pueda usarse sin torch instalado."""
+    """Sets the seed in the relevant libraries. torch is imported lazily so the
+    rest of the package can be used without torch installed."""
     random.seed(seed)
     np.random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)

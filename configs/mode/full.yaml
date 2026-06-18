@@ -1,4 +1,4 @@
-# Nodos V100, datos completos, redes completas
+# V100 nodes, full data, full networks
 name: full
 device: cuda
 resolution: [96, 112, 96]

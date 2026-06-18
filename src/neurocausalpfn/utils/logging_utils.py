@@ -1,4 +1,4 @@
-"""Registro sencillo y reutilizable para entrenamiento y evaluacion."""
+"""Simple, reusable logging for training and evaluation."""
 import logging
 
 

@@ -1,13 +1,13 @@
-"""El transformer causal de la Etapa 2.
+"""The Stage 2 causal transformer.
 
-Entrenado desde cero con la metodologia de prior-fitted network sobre el
-Neuro-Prior. Embebe las filas de contexto y de consulta, las concatena, aplica
-un codificador transformer bajo la mascara de atencion asimetrica y proyecta los
-tokens de consulta a la distribucion CEPO-PPD por bins.
+Trained from scratch with the prior-fitted network methodology on the
+Neuro-Prior. It embeds the context and query rows, concatenates them, applies a
+transformer encoder under the asymmetric attention mask and projects the query
+tokens to the binned CEPO-PPD distribution.
 
-La configuracion por defecto (12 capas, 8 cabezas, ancho 512) es la del plan y
-debe leerse como una hipotesis a comprobar con la ablacion de backbone (E7), no
-como un diseno cerrado. El modo prototipo usa una red mucho mas pequena.
+The default configuration (12 layers, 8 heads, width 512) is the one from the
+plan and should be read as a hypothesis to be checked with the backbone ablation
+(E7), not as a closed design. Prototype mode uses a much smaller network.
 """
 import torch
 import torch.nn as nn
@@ -24,8 +24,8 @@ class NeuroCausalPFN(nn.Module):
         super().__init__()
         if dim_feedforward is None:
             dim_feedforward = 4 * d_model
-        self.ctx_emb = nn.Linear(d_x + 2, d_model)   # covariables, tratamiento, resultado
-        self.qry_emb = nn.Linear(d_x + 1, d_model)   # covariables, tratamiento
+        self.ctx_emb = nn.Linear(d_x + 2, d_model)   # covariates, treatment, outcome
+        self.qry_emb = nn.Linear(d_x + 1, d_model)   # covariates, treatment
         layer = nn.TransformerEncoderLayer(
             d_model=d_model, nhead=n_heads, dim_feedforward=dim_feedforward,
             dropout=dropout, activation="gelu", batch_first=True, norm_first=True)

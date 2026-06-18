@@ -1,18 +1,17 @@
-"""Covariables clinicas: parseo del nombre de archivo y construccion del vector.
+"""Clinical covariates: filename parsing and vector construction.
 
-En los datos de Giles, la edad y el sexo no vienen en una tabla aparte sino
-codificados en el propio nombre del archivo, con el patron
-lesion{arbitrary_id}_{age}_{sex}.nii.gz, y con el literal NA cuando el dato no
-esta disponible. Este modulo extrae esos campos, los normaliza y construye un
-vector de covariables de dimension fija que incluye un indicador de dato
-faltante por cada variable, de modo que el modelo distingue un valor real de una
-imputacion.
+In the Giles data, age and sex do not come in a separate table but encoded in
+the filename itself, with the pattern lesion{arbitrary_id}_{age}_{sex}.nii.gz,
+and with the literal NA when the data is not available. This module extracts
+those fields, normalizes them and builds a fixed-dimension covariate vector that
+includes a missing-data indicator for each variable, so that the model
+distinguishes a real value from an imputation.
 
-Convenciones (documentadas y ajustables a la cohorte local):
-- edad: normalizada como (edad - AGE_MEAN) / AGE_SD; faltante a 0.0 con indicador 1.
-- sexo: varon a +0.5, mujer a -0.5; faltante a 0.0 con indicador 1.
-Tokens de sexo aceptados: M, F, MALE, FEMALE (y, por compatibilidad, 1 y 0,
-asumiendo 1 = varon y 0 = mujer). Cualquier otro token se trata como faltante.
+Conventions (documented and adjustable to the local cohort):
+- age: normalized as (age - AGE_MEAN) / AGE_SD; missing to 0.0 with indicator 1.
+- sex: male to +0.5, female to -0.5; missing to 0.0 with indicator 1.
+Accepted sex tokens: M, F, MALE, FEMALE (and, for compatibility, 1 and 0,
+assuming 1 = male and 0 = female). Any other token is treated as missing.
 """
 import os
 import re
@@ -20,9 +19,9 @@ from typing import Dict, List, Optional
 
 import numpy as np
 
-AGE_MEAN = 65.0   # media aproximada en cohortes de ictus; ajustar a los datos locales
+AGE_MEAN = 65.0   # approximate mean in stroke cohorts; adjust to the local data
 AGE_SD = 15.0
-CLINICAL_DIM = 4  # [edad_norm, edad_faltante, sexo_val, sexo_faltante]
+CLINICAL_DIM = 4  # [age_norm, age_missing, sex_val, sex_missing]
 
 _MALE = {"M", "MALE", "1"}
 _FEMALE = {"F", "FEMALE", "0"}
@@ -39,12 +38,12 @@ def _strip_nifti_ext(name: str) -> str:
 
 
 def parse_lesion_filename(name: str) -> Dict[str, object]:
-    """Extrae id, edad y sexo de lesion{id}_{age}_{sex}.nii.gz.
+    """Extracts id, age and sex from lesion{id}_{age}_{sex}.nii.gz.
 
-    Los dos ultimos campos separados por guion bajo son edad y sexo; todo lo
-    anterior (sin el prefijo 'lesion') es el id, de modo que el id puede contener
-    guiones bajos sin romper el parseo. Devuelve age como float o None, y sex como
-    'M', 'F' o None."""
+    The last two underscore-separated fields are age and sex; everything before
+    (without the 'lesion' prefix) is the id, so that the id can contain
+    underscores without breaking the parsing. Returns age as float or None, and
+    sex as 'M', 'F' or None."""
     stem = _strip_nifti_ext(name)
     parts = stem.split("_")
     age_raw = parts[-2] if len(parts) >= 2 else "NA"
@@ -73,7 +72,7 @@ def parse_lesion_filename(name: str) -> Dict[str, object]:
 
 
 def build_clinical_vector(age: Optional[float], sex: Optional[str]) -> np.ndarray:
-    """Vector [CLINICAL_DIM] con indicadores de dato faltante."""
+    """Vector [CLINICAL_DIM] with missing-data indicators."""
     if age is None:
         age_norm, age_missing = 0.0, 1.0
     else:
@@ -88,7 +87,7 @@ def build_clinical_vector(age: Optional[float], sex: Optional[str]) -> np.ndarra
 
 
 def clinical_from_paths(paths: List[str]) -> np.ndarray:
-    """Matriz [N, CLINICAL_DIM] parseada de una lista de nombres de archivo."""
+    """Matrix [N, CLINICAL_DIM] parsed from a list of filenames."""
     rows = [build_clinical_vector(*(lambda m: (m["age"], m["sex"]))(parse_lesion_filename(p)))
             for p in paths]
     if not rows:
@@ -97,7 +96,7 @@ def clinical_from_paths(paths: List[str]) -> np.ndarray:
 
 
 def synthesize_clinical(n: int, d: int = CLINICAL_DIM, seed: int = 0) -> np.ndarray:
-    """Covariables sinteticas para el modo prototipo sin datos reales."""
+    """Synthetic covariates for prototype mode without real data."""
     rng = np.random.default_rng(seed)
     return rng.normal(0.0, 1.0, size=(n, d)).astype(np.float32)
 

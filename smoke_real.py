@@ -3,13 +3,13 @@ import numpy as np
 from neurocausalpfn.data.nifti_dataset import LesionMaskDataset
 from neurocausalpfn.train.train_vae import prototype_config, run_vae
 
-# 1) comprobar que detecta y lee tus lesiones reales, y que parsea edad y sexo
+# 1) check that it detects and reads your real lesions, and that it parses age and sex
 ds = LesionMaskDataset(root="data/lesions", in_shape=(96, 112, 96))
-print("lesiones detectadas:", len(ds), "| sintetico?", ds.synthetic)
-print("forma de un volumen:", tuple(ds[0].shape))
-print("covariables clinicas [N,4]:\n", np.round(ds.clinical_matrix(), 3))
+print("detected lesions:", len(ds), "| synthetic?", ds.synthetic)
+print("shape of a volume:", tuple(ds[0].shape))
+print("clinical covariates [N,4]:\n", np.round(ds.clinical_matrix(), 3))
 
-# 2) entrenar el VAE unas pocas epocas, solo para ver que corre y la perdida es finita
+# 2) train the VAE for a few epochs, just to see that it runs and the loss is finite
 cfg = prototype_config()
 cfg["data"]["root"] = "data/lesions"
 cfg["data"]["n_synth"] = 0

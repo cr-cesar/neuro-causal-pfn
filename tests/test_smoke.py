@@ -1,8 +1,8 @@
-"""Prueba de humo de principio a fin en modo prototipo.
+"""End-to-end smoke test in prototype mode.
 
-Corre en CPU en segundos y confirma que ambas etapas se entrenan, que las
-perdidas son finitas y que la inferencia del efecto del tratamiento produce
-salidas con la forma correcta.
+Runs on CPU in seconds and confirms that both stages train, that the
+losses are finite and that the treatment-effect inference produces
+outputs with the correct shape.
 """
 import math
 

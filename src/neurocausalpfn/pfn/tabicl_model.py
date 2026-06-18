@@ -1,23 +1,23 @@
-"""Transformer causal de la Etapa 2 con codificacion tabular estilo TabICL.
+"""Stage 2 causal transformer with TabICL-style tabular encoding.
 
-En lugar de embeber cada fila con una sola proyeccion lineal, se trata la
-cohorte como una tabla y se razona en dos etapas:
+Instead of embedding each row with a single linear projection, the cohort is
+treated as a table and reasoning proceeds in two stages:
 
-1. Atencion por columna a traves de las muestras: para cada variable (columna),
-   cada celda atiende a esa misma variable en el resto de pacientes, de modo que
-   su embedding se vuelve consciente de la distribucion de toda la variable.
-2. Atencion por fila entre pacientes: tras colapsar las columnas en un vector por
-   fila, los pacientes interactuan en contexto para la prediccion.
+1. Column-wise attention across the samples: for each variable (column), each
+   cell attends to that same variable in the rest of the patients, so that its
+   embedding becomes aware of the distribution of the whole variable.
+2. Row-wise attention between patients: after collapsing the columns into a
+   per-row vector, the patients interact in context for the prediction.
 
-Ambas etapas usan la misma mascara asimetrica de solo contexto a lo largo del
-eje de muestras, asi que ninguna prediccion de consulta depende de otra consulta
-y no hay fuga del resultado. La columna del resultado en las filas de consulta
-es desconocida, por lo que se sustituye por un embedding de mascara aprendido.
+Both stages use the same asymmetric context-only mask along the sample axis, so
+no query prediction depends on another query and there is no outcome leakage. The
+outcome column in the query rows is unknown, so it is replaced by a learned mask
+embedding.
 
-Nota de escala: la atencion estandar es cuadratica en el numero de filas y de
-columnas; para los contextos grandes del modo completo se sustituiria por una
-atencion mas eficiente. El esqueleto actual usa atencion densa, suficiente para
-el prototipo y para validar la arquitectura.
+Scaling note: standard attention is quadratic in the number of rows and columns;
+for the large contexts of full mode it would be replaced by a more efficient
+attention. The current skeleton uses dense attention, sufficient for the
+prototype and for validating the architecture.
 """
 import torch
 import torch.nn as nn
@@ -33,15 +33,15 @@ class NeuroCausalPFNTabICL(nn.Module):
                  lo: float = 0.0, hi: float = 1.0, sigma: float = 0.02):
         super().__init__()
         self.d_x = int(d_x)
-        self.n_cols = int(d_x) + 2          # covariables, tratamiento, resultado
-        self.y_col = int(d_x) + 1           # indice de la columna del resultado
+        self.n_cols = int(d_x) + 2          # covariates, treatment, outcome
+        self.y_col = int(d_x) + 1           # index of the outcome column
         if dim_feedforward is None:
             dim_feedforward = 4 * d_model
 
-        self.value_proj = nn.Linear(1, d_model)            # embebe el valor escalar de cada celda
-        self.col_embed = nn.Parameter(torch.zeros(self.n_cols, d_model))  # identidad de cada columna
+        self.value_proj = nn.Linear(1, d_model)            # embeds the scalar value of each cell
+        self.col_embed = nn.Parameter(torch.zeros(self.n_cols, d_model))  # identity of each column
         nn.init.normal_(self.col_embed, std=0.02)
-        self.y_mask = nn.Parameter(torch.zeros(d_model))   # resultado desconocido en las consultas
+        self.y_mask = nn.Parameter(torch.zeros(d_model))   # unknown outcome in the queries
         nn.init.normal_(self.y_mask, std=0.02)
 
         def _encoder(n_layers: int) -> nn.TransformerEncoder:
@@ -73,12 +73,12 @@ class NeuroCausalPFNTabICL(nn.Module):
         B, n_rows, n_cols, d_model = cells.shape
         mask = context_only_mask(nc, n_rows, device=cells.device, dtype=cells.dtype)
 
-        # 1) atencion por columna a traves de las muestras
+        # 1) column-wise attention across the samples
         col_in = cells.permute(0, 2, 1, 3).reshape(B * n_cols, n_rows, d_model)
         col_out = self.col_encoder(col_in, mask=mask)
         cells = col_out.reshape(B, n_cols, n_rows, d_model).permute(0, 2, 1, 3)
 
-        # 2) colapso de columnas y atencion por fila entre pacientes
+        # 2) column collapse and row-wise attention between patients
         rows = cells.mean(dim=2)                                            # [B, n_rows, d_model]
         rows = self.row_encoder(rows, mask=mask)
         return self.head(rows[:, nc:])                                      # [B, nq, n_bins]

@@ -1,4 +1,4 @@
-# CPU o GPU pequena, datos reducidos, redes pequenas
+# CPU or small GPU, reduced data, small networks
 name: prototype
 device: cpu
 resolution: [48, 56, 48]

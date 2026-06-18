@@ -21,5 +21,5 @@ def test_reject_unobserved_confounding():
 def test_reject_positivity_violation():
     rng = np.random.default_rng(2)
     X = rng.normal(size=(50, 8))
-    W = np.ones(50)  # todos tratados, sin solapamiento
+    W = np.ones(50)  # all treated, no overlap
     assert not verify_identifiability(W, X, None, None, U=None)

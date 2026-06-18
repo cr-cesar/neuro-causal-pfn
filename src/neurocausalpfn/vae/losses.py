@@ -1,15 +1,15 @@
-"""Funciones de perdida de la Etapa 1.
+"""Stage 1 loss functions.
 
-El objetivo de reconstruccion combina entropia cruzada binaria con un termino
-de Dice suave, porque los voxeles de primer plano son una fraccion minuscula del
-volumen y una entropia cruzada pura es casi degenerada ante ese desequilibrio.
+The reconstruction objective combines binary cross-entropy with a soft Dice
+term, because the foreground voxels are a tiny fraction of the volume and a pure
+cross-entropy is almost degenerate under that imbalance.
 """
 import torch
 import torch.nn.functional as F
 
 
 def soft_dice_loss(logits: torch.Tensor, target: torch.Tensor, eps: float = 1.0) -> torch.Tensor:
-    """Dice suave sobre probabilidades sigmoides. Vale 0 en mascaras identicas."""
+    """Soft Dice over sigmoid probabilities. Equals 0 for identical masks."""
     p = torch.sigmoid(logits).flatten(1)
     t = target.flatten(1)
     num = 2.0 * (p * t).sum(1) + eps
@@ -26,14 +26,14 @@ def bce_dice_loss(logits: torch.Tensor, target: torch.Tensor,
 
 
 def kl_standard_normal(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
-    """Divergencia KL en forma cerrada frente a una normal estandar."""
+    """Closed-form KL divergence against a standard normal."""
     return (-0.5 * (1.0 + logvar - mu.pow(2) - logvar.exp()).sum(1)).mean()
 
 
 def vae_loss(logits: torch.Tensor, target: torch.Tensor, mu: torch.Tensor,
              logvar: torch.Tensor, beta: float = 1.0,
              w_bce: float = 1.0, w_dice: float = 1.0):
-    """Objetivo completo de la Etapa 1: L = L_rec + beta * D_KL."""
+    """Full Stage 1 objective: L = L_rec + beta * D_KL."""
     rec, parts = bce_dice_loss(logits, target, w_bce, w_dice)
     kl = kl_standard_normal(mu, logvar)
     total = rec + beta * kl
@@ -43,18 +43,18 @@ def vae_loss(logits: torch.Tensor, target: torch.Tensor, mu: torch.Tensor,
 
 
 def mse_recon_loss(logits: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-    """Reconstruccion continua: MSE entre la salida sigmoide y el mapa objetivo.
+    """Continuous reconstruction: MSE between the sigmoid output and the target map.
 
-    Para el disconnectoma el objetivo es un mapa de probabilidad continuo en
-    [0, 1], no una mascara binaria, asi que la reconstruccion se mide con MSE
-    sobre la probabilidad predicha (sigmoide de los logits) y no con BCE mas Dice.
+    For the disconnectome the target is a continuous probability map in [0, 1],
+    not a binary mask, so the reconstruction is measured with MSE over the
+    predicted probability (sigmoid of the logits) and not with BCE plus Dice.
     """
     return F.mse_loss(torch.sigmoid(logits), target)
 
 
 def vae_loss_mse(logits: torch.Tensor, target: torch.Tensor, mu: torch.Tensor,
                  logvar: torch.Tensor, beta: float = 1.0):
-    """Objetivo del VAE para entradas continuas: L = MSE + beta * D_KL."""
+    """VAE objective for continuous inputs: L = MSE + beta * D_KL."""
     rec = mse_recon_loss(logits, target)
     kl = kl_standard_normal(mu, logvar)
     total = rec + beta * kl

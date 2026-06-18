@@ -1,10 +1,10 @@
-"""Mecanismos de confusion y un generador con confusion no observada.
+"""Confounding mechanisms and a generator with unobserved confounding.
 
-El generador principal (intersynth) produce procesos ignorables por
-construccion. Este modulo aporta el contraejemplo deliberado: un proceso en el
-que el tratamiento depende de un confundidor no observado U que tambien afecta
-al resultado. Sirve para comprobar que el verificador de identificabilidad lo
-rechaza, que es la prueba que operacionaliza el requisito de convergencia.
+The main generator (intersynth) produces processes that are ignorable by
+construction. This module provides the deliberate counterexample: a process in
+which the treatment depends on an unobserved confounder U that also affects the
+outcome. It serves to check that the identifiability verifier rejects it, which
+is the test that operationalizes the convergence requirement.
 """
 import numpy as np
 
@@ -15,12 +15,12 @@ MECHANISMS = ("severity", "location", "network", "mixed")
 
 def make_unobserved_confounded(d_x: int, n: int, rng: np.random.Generator,
                                strength: float = 2.0):
-    """Devuelve (W, X, Y0, Y1, U) con W dependiente de U ademas de X."""
+    """Returns (W, X, Y0, Y1, U) with W dependent on U in addition to X."""
     scale = 1.0 / np.sqrt(d_x)
     X = rng.normal(0.0, 1.0, size=(n, d_x))
     U = rng.normal(0.0, 1.0, size=(n, 1))
     w = rng.normal(0.0, 1.0, d_x) * scale
-    # la propension depende de U, lo que viola la ignorabilidad
+    # the propensity depends on U, which violates ignorability
     e = _sigmoid(X @ w + strength * U[:, 0])
     W = (rng.uniform(size=n) < e).astype(np.float64)
     base = X @ w

@@ -1,10 +1,10 @@
-"""Autoencoder variacional convolucional 3D de la Etapa 1.
+"""Stage 1 3D convolutional variational autoencoder.
 
-El encoder es una pila de convoluciones con paso 2; el decoder lo refleja con
-convoluciones transpuestas. Para garantizar que la salida tiene exactamente la
-forma de la entrada en cualquier resolucion (la malla MNI rellenada en modo
-completo, o una malla reducida en modo prototipo) el decoder termina con una
-interpolacion trilineal a la forma objetivo antes de la capa de logits.
+The encoder is a stack of stride-2 convolutions; the decoder mirrors it with
+transposed convolutions. To ensure that the output has exactly the shape of the
+input at any resolution (the padded MNI grid in full mode, or a reduced grid in
+prototype mode) the decoder ends with a trilinear interpolation to the target
+shape before the logits layer.
 """
 from typing import Sequence, Tuple
 
@@ -62,7 +62,7 @@ class Decoder3D(nn.Module):
         for s in self.feat_shape:
             flat *= s
         self.fc = nn.Linear(zdim, flat)
-        rev = tuple(reversed(channels))            # p. ej. (256, 128, 64, 32, 16)
+        rev = tuple(reversed(channels))            # e.g. (256, 128, 64, 32, 16)
         targets = rev[1:] + (out_channels,)        # (128, 64, 32, 16, out_channels)
         blocks = []
         c_prev = self.feat_shape[0]
@@ -75,7 +75,7 @@ class Decoder3D(nn.Module):
         h = self.fc(z).view(-1, *self.feat_shape)
         h = self.body(h)
         h = F.interpolate(h, size=self.out_shape, mode="trilinear", align_corners=False)
-        return h  # logits por voxel
+        return h  # per-voxel logits
 
 
 class ConvVAE3D(nn.Module):
@@ -99,6 +99,6 @@ class ConvVAE3D(nn.Module):
 
     @torch.no_grad()
     def encode_mean(self, x: torch.Tensor) -> torch.Tensor:
-        """Codigo determinista (la media del posterior), usado al exportar."""
+        """Deterministic code (the posterior mean), used when exporting."""
         mu, _ = self.enc(x)
         return mu

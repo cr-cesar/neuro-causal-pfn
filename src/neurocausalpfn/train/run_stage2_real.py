@@ -1,14 +1,14 @@
-"""Cableado de la Etapa 2 sobre datos reales.
+"""Stage 2 wiring on real data.
 
-Une las dos etapas: carga los encoders congelados de la Etapa 1, calcula el
-latente de cada paciente (lesion y, opcionalmente, disconnectoma), los fusiona
-segun la variante elegida, construye el Neuro-Prior anclado en anatomia pasando
-esos latentes reales como covariable (z_pool) y las lesiones en su rejilla
-nativa para los solapamientos con el atlas, y entrena el transformer.
+Joins the two stages: loads the frozen encoders from Stage 1, computes the
+latent of each patient (lesion and, optionally, disconnectome), fuses them
+according to the chosen variant, builds the anatomy-anchored Neuro-Prior by
+passing those real latents as a covariate (z_pool) and the lesions on their
+native grid for the overlaps with the atlas, and trains the transformer.
 
-Tambien expone la inferencia sobre datos reales: dada una cohorte real como
-contexto y un paciente nuevo como consulta, devuelve su efecto individualizado
-(CATE) con un intervalo creible.
+It also exposes inference on real data: given a real cohort as context and a new
+patient as query, it returns their individualized treatment effect (CATE) with a
+credible interval.
 """
 import os
 from typing import Dict, Optional
@@ -35,7 +35,7 @@ def stage2_real_config() -> Dict:
     return {
         "seed": 0,
         "out_dir": "outputs/pfn_real",
-        "fusion_mode": "both",                 # lesion, disconnectome o both
+        "fusion_mode": "both",                 # lesion, disconnectome or both
         "lesion_vae_ckpt": "outputs/vae_full_lesion/vae_lesion.pt",
         "disconnectome_vae_ckpt": "outputs/vae_full_disconnectome/vae_disconnectome.pt",
         "data": {"lesion_root": "data/lesions", "disconnectome_root": "data/disconnectomes",
@@ -61,7 +61,7 @@ def load_vae(ckpt_path: str, device: str = "cpu") -> ConvVAE3D:
 
 
 def native_lesion_pool(paired: PairedLesionDisconnectomeDataset, atlas_shape, seed: int = 0) -> np.ndarray:
-    """Mascaras de lesion en la rejilla del atlas (nativa), para los solapamientos."""
+    """Lesion masks on the (native) atlas grid, for the overlaps."""
     if paired.synthetic:
         return build_synthetic_lesion_pool(len(paired), shape=atlas_shape, seed=seed)
     pool = [binarize(_load_nifti(lp, atlas_shape)) for lp, _ in paired.pairs]
@@ -70,7 +70,7 @@ def native_lesion_pool(paired: PairedLesionDisconnectomeDataset, atlas_shape, se
 
 def encode_and_fuse(lesion_vae, disconnectome_vae, paired: PairedLesionDisconnectomeDataset,
                     mode: str, device: str = "cpu", batch_size: int = 8) -> np.ndarray:
-    """Latente fusionado [N, d_x] por paciente segun la variante."""
+    """Fused latent [N, d_x] per patient according to the variant."""
     z_les = z_dis = None
     if mode in ("lesion", "both"):
         z_les = compute_latents(lesion_vae, paired, device=device, batch_size=batch_size, item_index=0)
@@ -91,7 +91,7 @@ def build_real_prior(cfg: Dict, lesion_vae, disconnectome_vae) -> NeuroPriorInte
     pool = native_lesion_pool(paired, atlas_shape, seed=cfg["seed"])
     atlas = FunctionalAtlas.from_dir(d.get("atlas_dir"), shape=atlas_shape, seed=cfg["seed"],
                                      modality=d.get("modality", "receptor"))
-    log.info("Etapa 2 real: %d pacientes, fusion=%s, d_x=%d", len(z_pool), cfg["fusion_mode"], z_pool.shape[1])
+    log.info("Stage 2 real: %d patients, fusion=%s, d_x=%d", len(z_pool), cfg["fusion_mode"], z_pool.shape[1])
     return NeuroPriorInterSynth(atlas, pool, seed=cfg["seed"], z_pool=z_pool,
                                 n_context=cfg["pfn"]["context_max"], n_query=cfg["pfn"]["n_query"],
                                 unobserved_strength=cfg["pfn"].get("unobserved_strength", 0.0))
@@ -110,7 +110,7 @@ def run_stage2_real(cfg: Dict):
     prior = build_real_prior(cfg, lesion_vae, disconnectome_vae)
     model = build_model(cfg, prior.d_x).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=p["lr"], weight_decay=p["weight_decay"])
-    log.info("PFN real: %.2fM parametros, arch=%s", sum(t.numel() for t in model.parameters()) / 1e6,
+    log.info("PFN real: %.2fM parameters, arch=%s", sum(t.numel() for t in model.parameters()) / 1e6,
              p.get("arch", "tabicl"))
 
     history = []
@@ -131,16 +131,16 @@ def run_stage2_real(cfg: Dict):
     os.makedirs(cfg["out_dir"], exist_ok=True)
     ckpt = os.path.join(cfg["out_dir"], "pfn_real.pt")
     torch.save({"state_dict": model.state_dict(), "cfg": cfg, "d_x": prior.d_x}, ckpt)
-    log.info("checkpoint guardado en %s", ckpt)
+    log.info("checkpoint saved to %s", ckpt)
     return model, history
 
 
 @torch.no_grad()
 def infer_cate_real(model, context_Z: np.ndarray, context_T: np.ndarray, context_Y: np.ndarray,
                     query_Z: np.ndarray, device: str = "cpu", lo: float = 0.05, hi: float = 0.95):
-    """Inferencia sobre datos reales. context_* describen la cohorte observada
-    (latentes, tratamiento y desenlace); query_Z son los latentes de los pacientes
-    a evaluar. Devuelve el CATE y un intervalo creible por paciente."""
+    """Inference on real data. context_* describe the observed cohort
+    (latents, treatment and outcome); query_Z are the latents of the patients
+    to evaluate. Returns the CATE and a credible interval per patient."""
     batch = to_tensors({
         "Xc": np.asarray(context_Z)[None], "Tc": np.asarray(context_T)[None],
         "Yc": np.asarray(context_Y)[None], "Xq": np.asarray(query_Z)[None],

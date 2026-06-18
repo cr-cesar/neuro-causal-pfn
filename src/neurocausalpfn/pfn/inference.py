@@ -1,10 +1,10 @@
-"""Inferencia con el transformer entrenado.
+"""Inference with the trained transformer.
 
-Para un contexto observado y un conjunto de consultas, evalua la distribucion
-predicha bajo tratamiento y bajo control. La media de cada una es la estimacion
-puntual del resultado potencial esperado condicional, su diferencia es el efecto
-del tratamiento individualizado, y los cuantiles de la distribucion por bins dan
-intervalos creibles.
+For an observed context and a set of queries, it evaluates the predicted
+distribution under treatment and under control. The mean of each one is the point
+estimate of the expected conditional potential outcome, their difference is the
+individualized treatment effect, and the quantiles of the binned distribution
+give credible intervals.
 """
 from typing import Dict
 
@@ -28,10 +28,10 @@ def predict_cate(model, Xc: torch.Tensor, Tc: torch.Tensor, Yc: torch.Tensor,
 
 @torch.no_grad()
 def quantile_from_logits(head, logits: torch.Tensor, p: float) -> torch.Tensor:
-    """Cuantil de nivel p de la distribucion predicha por bins."""
+    """Level-p quantile of the binned predicted distribution."""
     probs = torch.softmax(logits, dim=-1)
     cdf = torch.cumsum(probs, dim=-1)
-    idx = torch.argmax((cdf >= p).to(torch.float32), dim=-1)  # primer bin que supera p
+    idx = torch.argmax((cdf >= p).to(torch.float32), dim=-1)  # first bin that exceeds p
     return head.centers[idx]
 
 

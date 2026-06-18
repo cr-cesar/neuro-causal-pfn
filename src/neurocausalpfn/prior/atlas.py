@@ -1,16 +1,16 @@
-"""Atlas funcional y sus subdivisiones para InterSynth.
+"""Functional atlas and its subdivisions for InterSynth.
 
-La parcelacion (las 16 redes funcionales derivadas de NeuroQuery) y sus
-subdivisiones por transcriptoma (Allen) o receptoma (Hansen) son plantillas de
-referencia en espacio MNI. Aqui se cargan desde un directorio de NIfTI y se
-exponen las utilidades que necesita el mecanismo de InterSynth: la fraccion de
-cada subred cubierta por una lesion, y los centroides de las subredes para
-modelar la asignacion de tratamiento con confusion observada.
+The parcellation (the 16 functional networks derived from NeuroQuery) and its
+subdivisions by transcriptome (Allen) or receptome (Hansen) are reference
+templates in MNI space. Here they are loaded from a NIfTI directory and the
+utilities required by the InterSynth mechanism are exposed: the fraction of
+each subnetwork covered by a lesion, and the subnetwork centroids to model
+treatment assignment with observed confounding.
 
-Si el directorio no existe, se sintetiza un atlas de juguete (regiones
-etiquetadas en un volumen pequeno) para que el modulo sea ejecutable y
-verificable sin los atlas reales. La logica del mecanismo es identica en ambos
-casos; solo cambia la procedencia de las etiquetas.
+If the directory does not exist, a toy atlas is synthesized (regions labeled
+in a small volume) so that the module is runnable and verifiable without the
+real atlases. The mechanism logic is identical in both cases; only the source
+of the labels changes.
 """
 import os
 from typing import Dict, Optional, Tuple
@@ -21,8 +21,8 @@ import numpy as np
 class FunctionalAtlas:
     def __init__(self, network_labels: np.ndarray,
                  subnetworks: Dict[int, Tuple[np.ndarray, np.ndarray]]):
-        # network_labels: volumen entero [D, H, W], 0 = fondo, 1..K = redes.
-        # subnetworks[k] = (mascara_subred_A, mascara_subred_B) de la red k.
+        # network_labels: integer volume [D, H, W], 0 = background, 1..K = networks.
+        # subnetworks[k] = (subnetwork_A_mask, subnetwork_B_mask) of network k.
         self.network_labels = network_labels
         self.subnetworks = subnetworks
         self.shape = tuple(network_labels.shape)
@@ -37,7 +37,7 @@ class FunctionalAtlas:
         return len(self.networks)
 
     def subnetwork_overlap(self, lesion: np.ndarray, network: int) -> Tuple[float, float]:
-        """Fraccion de cada subred (A, B) de una red cubierta por la lesion."""
+        """Fraction of each subnetwork (A, B) of a network covered by the lesion."""
         a, b = self.subnetworks[network]
         return _overlap_fraction(lesion, a), _overlap_fraction(lesion, b)
 
@@ -53,16 +53,16 @@ class FunctionalAtlas:
 
     @classmethod
     def _load(cls, atlas_dir: str, modality: str = "receptor"):
-        """Carga el atlas real de Giles.
+        """Loads the real Giles atlas.
 
-        Estructura esperada:
-        - functional_parcellation_2mm.nii.gz: volumen con las redes etiquetadas
-          1..K (0 = fondo).
-        - 2mm_parcellations/{modality}/: un archivo por red, con las dos subredes
-          codificadas como etiquetas 1 (subred A) y 2 (subred B); el numero al
-          inicio del nombre del archivo es el indice de la red.
-        modality es 'receptor' (subdivision receptomica, Hansen) o 'genetics'
-        (subdivision transcriptomica, Allen)."""
+        Expected structure:
+        - functional_parcellation_2mm.nii.gz: volume with the networks labeled
+          1..K (0 = background).
+        - 2mm_parcellations/{modality}/: one file per network, with the two
+          subnetworks encoded as labels 1 (subnetwork A) and 2 (subnetwork B);
+          the number at the start of the filename is the network index.
+        modality is 'receptor' (receptomic subdivision, Hansen) or 'genetics'
+        (transcriptomic subdivision, Allen)."""
         import glob
         import nibabel as nib
 
@@ -74,14 +74,14 @@ class FunctionalAtlas:
                 break
         if net_path is None:
             raise FileNotFoundError(
-                "no se encontro functional_parcellation_2mm en " + atlas_dir)
+                "functional_parcellation_2mm not found in " + atlas_dir)
         network_labels = np.asarray(nib.load(net_path).get_fdata()).astype(np.int64)
 
         sub_dir = os.path.join(atlas_dir, "2mm_parcellations", modality)
         files = sorted(glob.glob(os.path.join(sub_dir, "*.nii"))
                        + glob.glob(os.path.join(sub_dir, "*.nii.gz")))
         if not files:
-            raise FileNotFoundError("no se encontraron subredes en " + sub_dir)
+            raise FileNotFoundError("no subnetworks found in " + sub_dir)
         subnetworks = {}
         for f in files:
             stem = os.path.basename(f)
@@ -110,7 +110,7 @@ class FunctionalAtlas:
                    + ((yy - center[1]) / radius[1]) ** 2
                    + ((xx - center[2]) / radius[2]) ** 2) <= 1.0
             network_labels[ell] = k
-            axis = int(rng.integers(0, 3))            # subdivide por un plano que pasa por el centroide
+            axis = int(rng.integers(0, 3))            # subdivide by a plane passing through the centroid
             coord = (zz, yy, xx)[axis]
             half = coord <= center[axis]
             subnetworks[k] = ((ell & half).astype(np.float32), (ell & (~half)).astype(np.float32))

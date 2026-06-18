@@ -1,14 +1,14 @@
-"""Entrenamiento de la Etapa 2 (el transformer causal).
+"""Stage 2 training (the causal transformer).
 
-Entrena con lotes muestreados del Neuro-Prior minimizando la perdida de
-histograma sobre el resultado potencial esperado condicional verdadero. La
-longitud de contexto sigue un curriculo de menor a mayor.
+Trains on batches sampled from the Neuro-Prior, minimizing the histogram loss
+over the true expected conditional potential outcome. The context length
+follows a curriculum from shorter to longer.
 
-El prior se elige por configuracion (cfg["prior"]["kind"]):
-- "synthetic": el generador ligero (covariables gaussianas desde cero).
-- "intersynth": el mecanismo anatomico real, que cruza las lesiones con la
-  parcelacion funcional. En este modo, d_x se deriva del prior (el latente del
-  encoder si se proporciona, o las covariables observadas en su defecto).
+The prior is selected by configuration (cfg["prior"]["kind"]):
+- "synthetic": the lightweight generator (Gaussian covariates from scratch).
+- "intersynth": the real anatomical mechanism, which crosses the lesions with
+  the functional parcellation. In this mode, d_x is derived from the prior (the
+  encoder latent if provided, or the observed covariates otherwise).
 """
 import os
 from typing import Dict
@@ -28,9 +28,9 @@ log = get_logger()
 
 
 def build_model(cfg: Dict, d_x: int):
-    """Construye el transformer de la Etapa 2 segun la arquitectura pedida:
-    'linear' (proyeccion por fila) o 'tabicl' (atencion por columna y luego por
-    fila)."""
+    """Builds the Stage 2 transformer according to the requested architecture:
+    'linear' (row-wise projection) or 'tabicl' (column-wise attention and then
+    row-wise)."""
     p = cfg["pfn"]
     if p.get("arch", "linear") == "tabicl":
         from ..pfn.tabicl_model import NeuroCausalPFNTabICL
@@ -63,9 +63,9 @@ def full_config() -> Dict:
     return {
         "seed": 0,
         "out_dir": "outputs/pfn_full",
-        # cambiar kind a "intersynth" para usar el sustrato anatomico real;
-        # apuntar atlas_dir a data/atlases y, idealmente, pasar los latentes del
-        # encoder como z_pool desde un script de orquestacion.
+        # change kind to "intersynth" to use the real anatomical substrate;
+        # point atlas_dir to data/atlases and, ideally, pass the encoder latents
+        # as z_pool from an orchestration script.
         "prior": {"kind": "synthetic",
                   "atlas_dir": "data/atlases", "atlas_shape": [96, 112, 96],
                   "modality": "receptor",
@@ -81,16 +81,16 @@ def full_config() -> Dict:
 
 
 def _context_length(cfg: Dict, it: int) -> int:
-    """Curriculo lineal de longitud de contexto de menor a mayor."""
+    """Linear context-length curriculum from shorter to longer."""
     p = cfg["pfn"]
     frac = min(1.0, (it + 1) / max(1, int(0.5 * p["iters"])))
     return int(p["context_min"] + frac * (p["context_max"] - p["context_min"]))
 
 
 def _build_prior(cfg: Dict, seed_offset: int = 0):
-    """Devuelve (objeto_prior_o_None, d_x, es_intersynth). Para el prior
-    sintetico el objeto es None (se reinstancia por iteracion); para InterSynth
-    se construye una sola vez y se reutiliza."""
+    """Returns (prior_object_or_None, d_x, is_intersynth). For the synthetic
+    prior the object is None (it is re-instantiated per iteration); for InterSynth
+    it is built once and reused."""
     p = cfg["pfn"]
     pr = cfg.get("prior", {"kind": "synthetic"})
     if pr.get("kind") == "intersynth":
@@ -101,7 +101,7 @@ def _build_prior(cfg: Dict, seed_offset: int = 0):
         seed = cfg["seed"] + seed_offset
         modality = pr.get("modality", "receptor")
         atlas = FunctionalAtlas.from_dir(pr.get("atlas_dir"), shape=shape, seed=seed, modality=modality)
-        shape = atlas.shape   # el conjunto de lesiones debe vivir en la rejilla del atlas
+        shape = atlas.shape   # the lesion set must live on the atlas grid
         pool = build_synthetic_lesion_pool(int(pr.get("pool_size", 128)), shape=shape, seed=seed)
         prior = NeuroPriorInterSynth(atlas, pool, seed=seed,
                                      n_context=p["context_max"], n_query=p["n_query"],
@@ -119,7 +119,7 @@ def run_pfn(cfg: Dict):
     model = build_model(cfg, d_x).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=p["lr"], weight_decay=p["weight_decay"])
     n_params = sum(t.numel() for t in model.parameters())
-    log.info("PFN: %.2fM parametros, d_x=%d, arch=%s, prior=%s",
+    log.info("PFN: %.2fM parameters, d_x=%d, arch=%s, prior=%s",
              n_params / 1e6, d_x, p.get("arch", "linear"), "intersynth" if is_intersynth else "synthetic")
 
     history = []
@@ -147,13 +147,13 @@ def run_pfn(cfg: Dict):
     os.makedirs(cfg["out_dir"], exist_ok=True)
     ckpt = os.path.join(cfg["out_dir"], "pfn.pt")
     torch.save({"state_dict": model.state_dict(), "cfg": cfg}, ckpt)
-    log.info("checkpoint guardado en %s", ckpt)
+    log.info("checkpoint saved to %s", ckpt)
     return model, history
 
 
 @torch.no_grad()
 def quick_eval(model, cfg: Dict, n_eval: int = 8) -> Dict[str, float]:
-    """Evaluacion rapida sobre procesos reservados (con el mismo tipo de prior)."""
+    """Quick evaluation on held-out processes (with the same kind of prior)."""
     p = cfg["pfn"]
     device = cfg.get("device", "cpu")
     prior_obj, d_x, is_intersynth = _build_prior(cfg, seed_offset=10_000)
@@ -176,9 +176,9 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", default="prototype", choices=["prototype", "full"])
     ap.add_argument("--prior", default=None, choices=["synthetic", "intersynth"],
-                    help="sobrescribe cfg['prior']['kind']")
+                    help="overrides cfg['prior']['kind']")
     ap.add_argument("--arch", default=None, choices=["linear", "tabicl"],
-                    help="sobrescribe cfg['pfn']['arch']")
+                    help="overrides cfg['pfn']['arch']")
     args = ap.parse_args()
     cfg = prototype_config() if args.mode == "prototype" else full_config()
     if args.prior is not None:
@@ -186,4 +186,4 @@ if __name__ == "__main__":
     if args.arch is not None:
         cfg["pfn"]["arch"] = args.arch
     trained, _ = run_pfn(cfg)
-    log.info("evaluacion rapida: %s", quick_eval(trained, cfg))
+    log.info("quick evaluation: %s", quick_eval(trained, cfg))

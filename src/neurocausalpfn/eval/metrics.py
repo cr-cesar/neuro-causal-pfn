@@ -1,4 +1,4 @@
-"""Metricas de evaluacion de la Etapa 2."""
+"""Stage 2 evaluation metrics."""
 import numpy as np
 
 
@@ -14,19 +14,19 @@ def _np(x):
 
 
 def root_pehe(cate_pred, cate_true) -> float:
-    """Raiz del error cuadratico esperado de heterogeneidad del efecto."""
+    """Root of the expected squared error in treatment effect heterogeneity (PEHE)."""
     p, t = _np(cate_pred).ravel(), _np(cate_true).ravel()
     return float(np.sqrt(np.mean((p - t) ** 2)))
 
 
 def prescriptive_accuracy(cate_pred, cate_true) -> float:
-    """Fraccion de consultas en las que la recomendacion (signo del efecto)
-    coincide con la del efecto verdadero."""
+    """Fraction of queries in which the recommendation (sign of the effect)
+    matches that of the true effect."""
     p, t = _np(cate_pred).ravel(), _np(cate_true).ravel()
     return float(np.mean((p > 0) == (t > 0)))
 
 
 def picp(lo, hi, truth) -> float:
-    """Probabilidad de cobertura del intervalo de prediccion."""
+    """Prediction interval coverage probability."""
     lo, hi, truth = _np(lo).ravel(), _np(hi).ravel(), _np(truth).ravel()
     return float(np.mean((truth >= lo) & (truth <= hi)))

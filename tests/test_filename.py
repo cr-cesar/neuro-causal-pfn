@@ -34,7 +34,7 @@ def test_parse_nii_only_and_word_sex():
 
 
 def test_parse_id_with_underscore():
-    # los dos ultimos campos son edad y sexo; el resto es el id
+    # the last two fields are age and sex; the rest is the id
     m = parse_lesion_filename("lesionA_B_70_M.nii.gz")
     assert m["age"] == 70.0 and m["sex"] == "M" and m["id"] == "A_B"
 
@@ -42,13 +42,13 @@ def test_parse_id_with_underscore():
 def test_clinical_vector_missing_flags():
     v = build_clinical_vector(None, None)
     assert v.shape == (4,)
-    assert v[1] == 1.0 and v[3] == 1.0   # indicadores de faltante encendidos
-    assert v[0] == 0.0 and v[2] == 0.0   # imputados a la media
+    assert v[1] == 1.0 and v[3] == 1.0   # missing indicators turned on
+    assert v[0] == 0.0 and v[2] == 0.0   # imputed to the mean
 
 
 def test_clinical_vector_present():
     v = build_clinical_vector(65.0, "M")
-    assert v[0] == 0.0 and v[1] == 0.0   # 65 == AGE_MEAN normaliza a 0
+    assert v[0] == 0.0 and v[1] == 0.0   # 65 == AGE_MEAN normalizes to 0
     assert v[2] == 0.5 and v[3] == 0.0
 
 
@@ -56,5 +56,5 @@ def test_clinical_from_paths():
     paths = ["lesion1_70_M.nii.gz", "lesion2_NA_F.nii.gz"]
     mat = clinical_from_paths(paths)
     assert mat.shape == (2, 4)
-    assert mat[1, 1] == 1.0   # segunda fila: edad faltante
-    assert mat[0, 2] == 0.5   # primera fila: varon
+    assert mat[1, 1] == 1.0   # second row: missing age
+    assert mat[0, 2] == 0.5   # first row: male
