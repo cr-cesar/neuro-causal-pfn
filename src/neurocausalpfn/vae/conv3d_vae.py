@@ -12,6 +12,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .daft import DAFT
+
 
 def _conv_block(c_in: int, c_out: int) -> nn.Sequential:
     return nn.Sequential(
@@ -31,7 +33,8 @@ def _deconv_block(c_in: int, c_out: int, last: bool = False) -> nn.Sequential:
 class Encoder3D(nn.Module):
     def __init__(self, in_channels: int = 1,
                  channels: Sequence[int] = (16, 32, 64, 128, 256),
-                 zdim: int = 50, in_shape: Tuple[int, int, int] = (96, 112, 96)):
+                 zdim: int = 50, in_shape: Tuple[int, int, int] = (96, 112, 96),
+                 use_daft: bool = False, n_clinical: int = 0):
         super().__init__()
         chs = (in_channels,) + tuple(channels)
         self.body = nn.Sequential(*[_conv_block(chs[i], chs[i + 1]) for i in range(len(chs) - 1)])
@@ -42,11 +45,18 @@ class Encoder3D(nn.Module):
         for s in self.feat_shape:
             flat *= s
         self.flat = flat
+        self.use_daft = use_daft
+        # Clinical conditioning (E5a): modulate the final feature map with the
+        # clinical vector before pooling to the latent. Optional and off by default.
+        self.daft = DAFT(self.feat_shape[0], n_clinical) if use_daft else None
         self.fc_mu = nn.Linear(flat, zdim)
         self.fc_logvar = nn.Linear(flat, zdim)
 
-    def forward(self, x: torch.Tensor):
-        h = self.body(x).flatten(1)
+    def forward(self, x: torch.Tensor, clinical: torch.Tensor = None):
+        f = self.body(x)
+        if self.use_daft and clinical is not None:
+            f = self.daft(f, clinical)
+        h = f.flatten(1)
         return self.fc_mu(h), self.fc_logvar(h)
 
 
@@ -81,24 +91,28 @@ class Decoder3D(nn.Module):
 class ConvVAE3D(nn.Module):
     def __init__(self, in_channels: int = 1,
                  channels: Sequence[int] = (16, 32, 64, 128, 256),
-                 zdim: int = 50, in_shape: Tuple[int, int, int] = (96, 112, 96)):
+                 zdim: int = 50, in_shape: Tuple[int, int, int] = (96, 112, 96),
+                 use_daft: bool = False, n_clinical: int = 0):
         super().__init__()
-        self.enc = Encoder3D(in_channels, channels, zdim, in_shape)
+        self.enc = Encoder3D(in_channels, channels, zdim, in_shape,
+                             use_daft=use_daft, n_clinical=n_clinical)
         self.dec = Decoder3D(in_channels, channels, zdim, self.enc.feat_shape, in_shape)
         self.zdim = zdim
+        self.use_daft = use_daft
 
     def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
         std = torch.exp(0.5 * logvar)
         return mu + torch.randn_like(std) * std
 
-    def forward(self, x: torch.Tensor):
-        mu, logvar = self.enc(x)
+    def forward(self, x: torch.Tensor, clinical: torch.Tensor = None):
+        mu, logvar = self.enc(x, clinical)
         z = self.reparameterize(mu, logvar)
         logits = self.dec(z)
         return logits, mu, logvar, z
 
     @torch.no_grad()
-    def encode_mean(self, x: torch.Tensor) -> torch.Tensor:
-        """Deterministic code (the posterior mean), used when exporting."""
-        mu, _ = self.enc(x)
+    def encode_mean(self, x: torch.Tensor, clinical: torch.Tensor = None) -> torch.Tensor:
+        """Deterministic code (the posterior mean), used when exporting. The
+        clinical vector is only used when the encoder was built with DAFT."""
+        mu, _ = self.enc(x, clinical)
         return mu

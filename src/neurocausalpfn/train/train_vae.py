@@ -1,11 +1,19 @@
 """Stage 1 training (the autoencoders).
 
-A single entry point serves both modalities and both execution modes; only the
-configuration values change.
+A single entry point serves the modalities and execution modes; only the
+configuration changes.
 
 - representation = "lesion": binary input, reconstruction with BCE plus Dice.
 - representation = "disconnectome": continuous input in [0, 1], reconstruction
   with MSE (without binarizing).
+- representation = "early_fusion": a single VAE on a two-channel input, lesion in
+  channel 0 and disconnectome in channel 1, with BCE plus Dice on the lesion
+  channel and MSE on the disconnectome channel (E9a). This is the early-fusion
+  comparison point against the separate-encoder late fusion.
+
+Optional clinical conditioning (E5a): with use_daft the encoder is modulated by
+the clinical vector through a DAFT block; an optional clinical CSV adds NIHSS and
+time-to-scan to the age/sex vector.
 
 Includes a validation split to monitor reconstruction and pick the best
 checkpoint, saving of the last state to resume on the cluster, and an optional
@@ -18,11 +26,11 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, Subset
 
-from ..data.nifti_dataset import LesionMaskDataset
+from ..data.nifti_dataset import LesionMaskDataset, PairedLesionDisconnectomeDataset
 from ..utils.logging_utils import get_logger
 from ..utils.seed import set_seed
 from ..vae.conv3d_vae import ConvVAE3D
-from ..vae.losses import vae_loss, vae_loss_mse
+from ..vae.losses import vae_loss, vae_loss_mse, vae_loss_two_channel
 
 log = get_logger()
 
@@ -34,10 +42,12 @@ def prototype_config() -> Dict:
         "representation": "lesion",
         "resume": None,
         "export": False,
-        "data": {"root": None, "resolution": [48, 56, 48], "n_synth": 64, "val_frac": 0.2},
+        "clinical_csv": None,
+        "data": {"root": None, "lesion_root": None, "disconnectome_root": None,
+                 "resolution": [48, 56, 48], "n_synth": 64, "val_frac": 0.2},
         "vae": {"zdim": 16, "channels": [16, 32, 64, 128, 256],
                 "batch_size": 2, "epochs": 5, "lr": 1e-4,
-                "beta_max": 1.0, "warmup_frac": 0.2},
+                "beta_max": 1.0, "warmup_frac": 0.2, "use_daft": False},
         "device": "cpu",
     }
 
@@ -46,14 +56,16 @@ def full_config() -> Dict:
     return {
         "seed": 0,
         "out_dir": "outputs/vae_full",
-        "representation": "lesion",   # change to "disconnectome" for the other modality
+        "representation": "lesion",   # lesion | disconnectome | early_fusion
         "resume": None,               # path to a checkpoint to resume from
         "export": True,               # exports the frozen latents at the end
-        "data": {"root": "data/lesions", "resolution": [96, 112, 96],
-                 "n_synth": 0, "val_frac": 0.1},
+        "clinical_csv": None,         # optional CSV with NIHSS and time_to_scan by id
+        "data": {"root": "data/lesions", "lesion_root": "data/lesions",
+                 "disconnectome_root": "data/disconnectomes",
+                 "resolution": [96, 112, 96], "n_synth": 0, "val_frac": 0.1},
         "vae": {"zdim": 50, "channels": [16, 32, 64, 128, 256],
                 "batch_size": 8, "epochs": 200, "lr": 1e-4,
-                "beta_max": 1.0, "warmup_frac": 0.2},
+                "beta_max": 1.0, "warmup_frac": 0.2, "use_daft": False},
         "device": "cuda" if torch.cuda.is_available() else "cpu",
     }
 
@@ -66,14 +78,38 @@ def _split_indices(n: int, val_frac: float, seed: int):
     return idx[n_val:], idx[:n_val]
 
 
-def _epoch(model, loader, loss_fn, beta, device, opt=None):
+def _build_dataset(cfg: Dict, representation: str, in_shape, use_daft: bool):
+    """Returns (dataset, in_channels, loss_fn) for the chosen representation."""
+    n_synth = cfg["data"]["n_synth"]
+    seed = cfg["seed"]
+    clinical_csv = cfg.get("clinical_csv")
+    if representation == "early_fusion":
+        ds = PairedLesionDisconnectomeDataset(
+            lesion_root=cfg["data"].get("lesion_root"),
+            disconnectome_root=cfg["data"].get("disconnectome_root"),
+            in_shape=in_shape, n_synth=n_synth, seed=seed,
+            with_clinical=use_daft, stack_channels=True, clinical_csv=clinical_csv)
+        return ds, 2, vae_loss_two_channel
+    binarize = representation == "lesion"
+    ds = LesionMaskDataset(root=cfg["data"]["root"], in_shape=in_shape,
+                           n_synth=n_synth, seed=seed, binarize=binarize,
+                           with_clinical=use_daft, clinical_csv=clinical_csv)
+    return ds, 1, (vae_loss if binarize else vae_loss_mse)
+
+
+def _epoch(model, loader, loss_fn, beta, device, opt=None, use_daft=False):
     train = opt is not None
     model.train(train)
     last = {}
     torch.set_grad_enabled(train)
-    for x in loader:
-        x = x.to(device)
-        logits, mu, logvar, _ = model(x)
+    for batch in loader:
+        if use_daft:
+            x, clin = batch
+            x, clin = x.to(device), clin.to(device)
+            logits, mu, logvar, _ = model(x, clin)
+        else:
+            x = batch.to(device)
+            logits, mu, logvar, _ = model(x)
         loss, parts = loss_fn(logits, x, mu, logvar, beta=beta)
         if train:
             opt.zero_grad()
@@ -84,26 +120,46 @@ def _epoch(model, loader, loss_fn, beta, device, opt=None):
     return last
 
 
+def _export_latents(model, dataset, cfg, representation, use_daft, device):
+    out_dir = cfg["out_dir"]
+    loader = DataLoader(dataset, batch_size=cfg["vae"]["batch_size"], shuffle=False)
+    if use_daft:
+        # conditioned export: pass the clinical vector to the encoder
+        model.eval()
+        codes = []
+        with torch.no_grad():
+            for x, clin in loader:
+                codes.append(model.encode_mean(x.to(device), clin.to(device)).cpu().numpy())
+        path = os.path.join(out_dir, f"latents_{representation}.npz")
+        np.savez(path, Z=np.concatenate(codes, axis=0), clinical=dataset.clinical_matrix())
+    else:
+        from ..vae.export_encoder import export_representation
+
+        path = export_representation(model, loader, out_dir,
+                                     clinical=dataset.clinical_matrix(), device=device)
+    log.info("representation exported to %s", path)
+
+
 def run_vae(cfg: Dict):
     set_seed(cfg["seed"])
     device = cfg.get("device", "cpu")
     in_shape = tuple(cfg["data"]["resolution"])
     representation = cfg.get("representation", "lesion")
-    binarize = representation == "lesion"
-    loss_fn = vae_loss if binarize else vae_loss_mse
+    use_daft = bool(cfg["vae"].get("use_daft", False))
 
-    dataset = LesionMaskDataset(root=cfg["data"]["root"], in_shape=in_shape,
-                                n_synth=cfg["data"]["n_synth"], seed=cfg["seed"],
-                                binarize=binarize)
+    dataset, in_channels, loss_fn = _build_dataset(cfg, representation, in_shape, use_daft)
+    n_clinical = dataset.clinical_dim() if use_daft else 0
+
     train_idx, val_idx = _split_indices(len(dataset), cfg["data"].get("val_frac", 0.1), cfg["seed"])
     train_loader = DataLoader(Subset(dataset, train_idx), batch_size=cfg["vae"]["batch_size"], shuffle=True)
     val_loader = DataLoader(Subset(dataset, val_idx), batch_size=cfg["vae"]["batch_size"], shuffle=False)
-    log.info("VAE (%s): %d volumes (%s), resolution %s, %d training / %d validation",
+    log.info("VAE (%s): %d volumes (%s), resolution %s, %d channel(s), DAFT=%s, %d train / %d val",
              representation, len(dataset), "synthetic" if dataset.synthetic else "real",
-             in_shape, len(train_idx), len(val_idx))
+             in_shape, in_channels, use_daft, len(train_idx), len(val_idx))
 
-    model = ConvVAE3D(zdim=cfg["vae"]["zdim"], in_shape=in_shape,
-                      channels=tuple(cfg["vae"]["channels"])).to(device)
+    model = ConvVAE3D(in_channels=in_channels, zdim=cfg["vae"]["zdim"], in_shape=in_shape,
+                      channels=tuple(cfg["vae"]["channels"]),
+                      use_daft=use_daft, n_clinical=n_clinical).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=cfg["vae"]["lr"])
 
     start_epoch, best_val = 0, float("inf")
@@ -123,15 +179,16 @@ def run_vae(cfg: Dict):
     history = []
     for epoch in range(start_epoch, epochs):
         beta = min(1.0, (epoch + 1) / warmup_epochs) * cfg["vae"]["beta_max"]
-        tr = _epoch(model, train_loader, loss_fn, beta, device, opt=opt)
-        va = _epoch(model, val_loader, loss_fn, beta, device, opt=None)
+        tr = _epoch(model, train_loader, loss_fn, beta, device, opt=opt, use_daft=use_daft)
+        va = _epoch(model, val_loader, loss_fn, beta, device, opt=None, use_daft=use_daft)
         tr["val_total"] = va["total"]
         history.append(tr)
         log.info("epoch %d/%d  beta=%.2f  rec=%.4f  kl=%.3f  train=%.4f  val=%.4f",
                  epoch + 1, epochs, tr["beta"], tr["rec"], tr["kl"], tr["total"], va["total"])
 
         ckpt = {"epoch": epoch, "state_dict": model.state_dict(), "opt": opt.state_dict(),
-                "cfg": cfg, "best_val": best_val, "representation": representation}
+                "cfg": cfg, "best_val": best_val, "representation": representation,
+                "in_channels": in_channels, "n_clinical": n_clinical, "use_daft": use_daft}
         torch.save(ckpt, last_path)
         if va["total"] < best_val:
             best_val = va["total"]
@@ -141,12 +198,7 @@ def run_vae(cfg: Dict):
     log.info("best checkpoint at %s (val=%.4f)", best_path, best_val)
 
     if cfg.get("export"):
-        from ..vae.export_encoder import export_representation
-
-        full_loader = DataLoader(dataset, batch_size=cfg["vae"]["batch_size"], shuffle=False)
-        rep_path = export_representation(model, full_loader, cfg["out_dir"],
-                                         clinical=dataset.clinical_matrix(), device=device)
-        log.info("representation exported to %s", rep_path)
+        _export_latents(model, dataset, cfg, representation, use_daft, device)
 
     return model, history
 
@@ -156,7 +208,10 @@ if __name__ == "__main__":
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", default="prototype", choices=["prototype", "full"])
-    ap.add_argument("--representation", default=None, choices=["lesion", "disconnectome"])
+    ap.add_argument("--representation", default=None,
+                    choices=["lesion", "disconnectome", "early_fusion"])
+    ap.add_argument("--use-daft", action="store_true", help="enable DAFT clinical conditioning (E5a)")
+    ap.add_argument("--clinical-csv", default=None, help="CSV with NIHSS and time_to_scan by id")
     ap.add_argument("--resume", default=None)
     args = ap.parse_args()
     cfg = prototype_config() if args.mode == "prototype" else full_config()
@@ -165,6 +220,10 @@ if __name__ == "__main__":
         if args.representation == "disconnectome" and cfg["data"]["root"] == "data/lesions":
             cfg["data"]["root"] = "data/disconnectomes"
         cfg["out_dir"] = f"outputs/vae_{args.mode}_{args.representation}"
+    if args.use_daft:
+        cfg["vae"]["use_daft"] = True
+    if args.clinical_csv is not None:
+        cfg["clinical_csv"] = args.clinical_csv
     if args.resume is not None:
         cfg["resume"] = args.resume
     run_vae(cfg)
