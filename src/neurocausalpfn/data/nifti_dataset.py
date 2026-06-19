@@ -19,8 +19,9 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
-from .clinical import (CLINICAL_DIM, build_clinical_vector, parse_lesion_filename,
-                       synthesize_clinical)
+from .clinical import (CLINICAL_DIM, CLINICAL_DIM_EXTENDED, build_clinical_vector,
+                       build_clinical_vector_extended, load_clinical_table,
+                       parse_lesion_filename, synthesize_clinical)
 from .transforms import binarize, pad_or_crop
 
 
@@ -54,14 +55,32 @@ def _list_nifti(root: Optional[str]):
     return sorted(paths)
 
 
+def _clinical_rows(paths, clinical_csv: Optional[str]) -> np.ndarray:
+    """Clinical matrix from a list of lesion filenames. With a CSV it builds the
+    extended vector (adding NIHSS and time-to-scan by id); without it, the
+    age/sex vector parsed from the filename."""
+    if clinical_csv:
+        table = load_clinical_table(clinical_csv)
+        rows = []
+        for p in paths:
+            m = parse_lesion_filename(p)
+            rec = table.get(str(m["id"]).strip(), {})
+            rows.append(build_clinical_vector_extended(
+                m["age"], m["sex"], rec.get("nihss"), rec.get("time_to_scan")))
+        return np.stack(rows, axis=0)
+    rows = [build_clinical_vector(*_age_sex(p)) for p in paths]
+    return np.stack(rows, axis=0)
+
+
 class LesionMaskDataset(Dataset):
     def __init__(self, root: Optional[str] = None,
                  in_shape: Tuple[int, int, int] = (96, 112, 96),
                  n_synth: int = 64, seed: int = 0, with_clinical: bool = False,
-                 binarize: bool = True):
+                 binarize: bool = True, clinical_csv: Optional[str] = None):
         self.in_shape = tuple(int(s) for s in in_shape)
         self.with_clinical = with_clinical
         self.binarize = binarize
+        self.clinical_csv = clinical_csv
         self.paths = _list_nifti(root)
         self.synthetic = len(self.paths) == 0
         self.seed = seed
@@ -74,11 +93,14 @@ class LesionMaskDataset(Dataset):
     def clinical_matrix(self) -> np.ndarray:
         if self._clinical is None:
             if self.synthetic:
-                self._clinical = synthesize_clinical(self.n, CLINICAL_DIM, self.seed)
+                d = CLINICAL_DIM_EXTENDED if self.clinical_csv else CLINICAL_DIM
+                self._clinical = synthesize_clinical(self.n, d, self.seed)
             else:
-                rows = [build_clinical_vector(*_age_sex(p)) for p in self.paths]
-                self._clinical = np.stack(rows, axis=0)
+                self._clinical = _clinical_rows(self.paths, self.clinical_csv)
         return self._clinical
+
+    def clinical_dim(self) -> int:
+        return int(self.clinical_matrix().shape[1])
 
     def _load_volume(self, idx: int) -> np.ndarray:
         if self.synthetic:
@@ -100,9 +122,12 @@ class PairedLesionDisconnectomeDataset(Dataset):
     def __init__(self, lesion_root: Optional[str] = None,
                  disconnectome_root: Optional[str] = None,
                  in_shape: Tuple[int, int, int] = (96, 112, 96),
-                 n_synth: int = 64, seed: int = 0, with_clinical: bool = False):
+                 n_synth: int = 64, seed: int = 0, with_clinical: bool = False,
+                 stack_channels: bool = False, clinical_csv: Optional[str] = None):
         self.in_shape = tuple(int(s) for s in in_shape)
         self.with_clinical = with_clinical
+        self.stack_channels = stack_channels
+        self.clinical_csv = clinical_csv
         self.seed = seed
         les = _list_nifti(lesion_root)
         dis = _list_nifti(disconnectome_root)
@@ -129,11 +154,14 @@ class PairedLesionDisconnectomeDataset(Dataset):
     def clinical_matrix(self) -> np.ndarray:
         if self._clinical is None:
             if self.synthetic:
-                self._clinical = synthesize_clinical(self.n, CLINICAL_DIM, self.seed)
+                d = CLINICAL_DIM_EXTENDED if self.clinical_csv else CLINICAL_DIM
+                self._clinical = synthesize_clinical(self.n, d, self.seed)
             else:
-                rows = [build_clinical_vector(*_age_sex(lp)) for lp, _ in self.pairs]
-                self._clinical = np.stack(rows, axis=0)
+                self._clinical = _clinical_rows([lp for lp, _ in self.pairs], self.clinical_csv)
         return self._clinical
+
+    def clinical_dim(self) -> int:
+        return int(self.clinical_matrix().shape[1])
 
     def _load_pair(self, idx: int):
         if self.synthetic:
@@ -144,6 +172,11 @@ class PairedLesionDisconnectomeDataset(Dataset):
 
     def __getitem__(self, idx: int):
         les, dis = self._load_pair(idx)
+        if self.stack_channels:
+            vol = torch.from_numpy(np.stack([les, dis], axis=0))  # [2, D, H, W]
+            if self.with_clinical:
+                return vol, torch.from_numpy(self.clinical_matrix()[idx])
+            return vol
         les_t = torch.from_numpy(les).unsqueeze(0)
         dis_t = torch.from_numpy(dis).unsqueeze(0)
         if self.with_clinical:

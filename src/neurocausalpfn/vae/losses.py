@@ -61,3 +61,22 @@ def vae_loss_mse(logits: torch.Tensor, target: torch.Tensor, mu: torch.Tensor,
     parts = {"mse": float(rec.detach()), "rec": float(rec.detach()),
              "kl": float(kl.detach()), "beta": float(beta), "total": float(total.detach())}
     return total, parts
+
+
+def vae_loss_two_channel(logits: torch.Tensor, target: torch.Tensor, mu: torch.Tensor,
+                         logvar: torch.Tensor, beta: float = 1.0,
+                         w_bce: float = 1.0, w_dice: float = 1.0):
+    """Early-fusion objective for a two-channel input (E9a).
+
+    Channel 0 is the binary lesion (BCE plus Dice) and channel 1 is the
+    continuous disconnectome (MSE). The two reconstruction terms are summed and
+    the KL is shared, because a single VAE encodes both channels jointly.
+    """
+    rec_lesion, parts = bce_dice_loss(logits[:, 0:1], target[:, 0:1], w_bce, w_dice)
+    rec_disc = mse_recon_loss(logits[:, 1:2], target[:, 1:2])
+    rec = rec_lesion + rec_disc
+    kl = kl_standard_normal(mu, logvar)
+    total = rec + beta * kl
+    parts.update({"mse": float(rec_disc.detach()), "rec": float(rec.detach()),
+                  "kl": float(kl.detach()), "beta": float(beta), "total": float(total.detach())})
+    return total, parts

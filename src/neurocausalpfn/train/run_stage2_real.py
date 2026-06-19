@@ -55,7 +55,9 @@ def load_vae(ckpt_path: str, device: str = "cpu") -> ConvVAE3D:
     ck = torch.load(ckpt_path, map_location=device)
     v = ck["cfg"]["vae"]
     res = tuple(ck["cfg"]["data"]["resolution"])
-    model = ConvVAE3D(zdim=v["zdim"], in_shape=res, channels=tuple(v["channels"]))
+    model = ConvVAE3D(in_channels=ck.get("in_channels", 1),
+                      zdim=v["zdim"], in_shape=res, channels=tuple(v["channels"]),
+                      use_daft=ck.get("use_daft", False), n_clinical=ck.get("n_clinical", 0))
     model.load_state_dict(ck["state_dict"])
     return model.to(device).eval()
 

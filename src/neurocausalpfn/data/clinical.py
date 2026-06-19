@@ -107,3 +107,55 @@ def load_clinical(path: Optional[str], n: int, d: int = CLINICAL_DIM, seed: int 
 
         return pd.read_csv(path).to_numpy(dtype=np.float32)
     return synthesize_clinical(n, d, seed)
+
+
+# Extended clinical vector (E5a): adds NIHSS stroke severity and time to scan.
+# These do not come in the filename, so they are read from an optional CSV keyed
+# by patient id; when absent they are encoded as missing with their indicator.
+NIHSS_MEAN = 10.0   # approximate mean NIHSS in stroke cohorts; adjust to the local data
+NIHSS_SD = 7.0
+TTS_MEAN = 4.0      # hours from last-known-well to scan, approximate
+TTS_SD = 3.0
+CLINICAL_DIM_EXTENDED = 8  # [..age/sex (4).., nihss_norm, nihss_missing, tts_norm, tts_missing]
+
+
+def _norm_or_missing(value, mean: float, sd: float):
+    if value is None:
+        return 0.0, 1.0
+    try:
+        return (float(value) - mean) / sd, 0.0
+    except (ValueError, TypeError):
+        return 0.0, 1.0
+
+
+def build_clinical_vector_extended(age: Optional[float], sex: Optional[str],
+                                   nihss=None, time_to_scan=None) -> np.ndarray:
+    """Vector [CLINICAL_DIM_EXTENDED] = age/sex block plus NIHSS and time-to-scan,
+    each with its own missing-data indicator."""
+    base = build_clinical_vector(age, sex)
+    nihss_norm, nihss_missing = _norm_or_missing(nihss, NIHSS_MEAN, NIHSS_SD)
+    tts_norm, tts_missing = _norm_or_missing(time_to_scan, TTS_MEAN, TTS_SD)
+    extra = np.array([nihss_norm, nihss_missing, tts_norm, tts_missing], dtype=np.float32)
+    return np.concatenate([base, extra]).astype(np.float32)
+
+
+def load_clinical_table(csv_path: str) -> Dict[str, Dict[str, object]]:
+    """Reads a CSV keyed by patient id with optional columns nihss, time_to_scan,
+    age and sex (case-insensitive). Returns a dict id -> record; the id is matched
+    as a string against the id parsed from the filenames. Values in the missing
+    set are returned as None."""
+    import pandas as pd
+
+    df = pd.read_csv(csv_path, dtype=str)
+    cols = {c.lower(): c for c in df.columns}
+    id_col = cols.get("id", df.columns[0])
+    table: Dict[str, Dict[str, object]] = {}
+    for _, row in df.iterrows():
+        key = str(row[id_col]).strip()
+        record: Dict[str, object] = {}
+        for field in ("nihss", "time_to_scan", "age", "sex"):
+            if field in cols:
+                raw = row[cols[field]]
+                record[field] = None if (raw is None or str(raw).strip().upper() in _MISSING) else raw
+        table[key] = record
+    return table
