@@ -43,6 +43,40 @@ For the real NIfTI data and the causal baselines, add the extras:
 
     pip install -e ".[imaging,baselines,cluster]"
 
+### Apple Silicon (M1/M2/M3) notes
+
+On recent macOS ARM machines, PyTorch, FAISS and OpenMP can clash and cause
+`Segmentation fault: 11` during the prototype run, or FAISS may fail to import
+with an OpenMP symbol error.
+
+The following setup has been tested to work on Apple Silicon:
+
+```bash
+# create and activate the prototype environment
+conda env create -f env/environment.prototype.yml
+conda activate neuro-causal-pfn-proto
+
+# install FAISS from conda (recommended on macOS ARM)
+conda install -c conda-forge faiss-cpu
+
+# install this repo in editable mode
+pip install -e .
+
+# recommended runtime flags to avoid OpenMP / MPS issues
+export OMP_NUM_THREADS=1
+export PYTORCH_MPS_DISABLE=1
+export KMP_DUPLICATE_LIB_OK=TRUE
+```
+
+Then the prototype smoke test can be run as usual:
+
+```bash
+bash scripts/run_prototype.sh
+```
+
+This should train Stage 1 and Stage 2 in prototype mode and write checkpoints to
+`outputs/vae_prototype/vae_lesion.pt` and `outputs/pfn_prototype/pfn.pt`.
+
 ## Quick run (smoke test)
 
     bash scripts/run_prototype.sh
