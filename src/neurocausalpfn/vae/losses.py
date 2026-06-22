@@ -30,12 +30,50 @@ def kl_standard_normal(mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
     return (-0.5 * (1.0 + logvar - mu.pow(2) - logvar.exp()).sum(1)).mean()
 
 
+def kl_diag_gaussian(mu: torch.Tensor, logvar: torch.Tensor, prior_var: torch.Tensor = None) -> torch.Tensor:
+    """KL(N(mu, diag(exp(logvar))) || N(0, diag(prior_var))), averaged over the batch.
+
+    With prior_var None this is the standard N(0, I) KL. With a per-dimension
+    prior_var it is the ARD KL (E4): a learned prior variance per latent
+    dimension, which lets unused dimensions collapse.
+    """
+    if prior_var is None:
+        return kl_standard_normal(mu, logvar)
+    pv = prior_var.to(mu.device)
+    per_dim = -0.5 * (1.0 + logvar - torch.log(pv) - (mu.pow(2) + logvar.exp()) / pv)
+    return per_dim.sum(1).mean()
+
+
+def per_dim_kl(mu: torch.Tensor, logvar: torch.Tensor, prior_var: torch.Tensor = None) -> torch.Tensor:
+    """Per-dimension KL averaged over the batch (a vector of length zdim). Used to
+    count active latent dimensions (those with KL above a small threshold)."""
+    if prior_var is None:
+        per_dim = -0.5 * (1.0 + logvar - mu.pow(2) - logvar.exp())
+    else:
+        pv = prior_var.to(mu.device)
+        per_dim = -0.5 * (1.0 + logvar - torch.log(pv) - (mu.pow(2) + logvar.exp()) / pv)
+    return per_dim.mean(0)
+
+
+def ard_update_prior_var(sum_second_moment: torch.Tensor, count: int, eps: float = 1e-4) -> torch.Tensor:
+    """Closed-form conjugate (empirical-Bayes) update of the ARD prior variance.
+
+    Under an uninformative inverse-Gamma hyperprior, the per-dimension prior
+    variance that maximises the marginal likelihood is the mean encoded second
+    moment E[mu^2 + sigma^2]; this yields the heavy-tailed (Student-t) marginal
+    that drives irrelevant dimensions to collapse. sum_second_moment is the sum
+    over samples of (mu^2 + exp(logvar)); count is the number of samples.
+    """
+    pv = sum_second_moment / max(int(count), 1)
+    return torch.clamp(pv, min=eps)
+
+
 def vae_loss(logits: torch.Tensor, target: torch.Tensor, mu: torch.Tensor,
              logvar: torch.Tensor, beta: float = 1.0,
-             w_bce: float = 1.0, w_dice: float = 1.0):
+             w_bce: float = 1.0, w_dice: float = 1.0, prior_var: torch.Tensor = None):
     """Full Stage 1 objective: L = L_rec + beta * D_KL."""
     rec, parts = bce_dice_loss(logits, target, w_bce, w_dice)
-    kl = kl_standard_normal(mu, logvar)
+    kl = kl_diag_gaussian(mu, logvar, prior_var)
     total = rec + beta * kl
     parts.update({"rec": float(rec.detach()), "kl": float(kl.detach()),
                   "beta": float(beta), "total": float(total.detach())})
@@ -53,10 +91,10 @@ def mse_recon_loss(logits: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
 
 
 def vae_loss_mse(logits: torch.Tensor, target: torch.Tensor, mu: torch.Tensor,
-                 logvar: torch.Tensor, beta: float = 1.0):
+                 logvar: torch.Tensor, beta: float = 1.0, prior_var: torch.Tensor = None):
     """VAE objective for continuous inputs: L = MSE + beta * D_KL."""
     rec = mse_recon_loss(logits, target)
-    kl = kl_standard_normal(mu, logvar)
+    kl = kl_diag_gaussian(mu, logvar, prior_var)
     total = rec + beta * kl
     parts = {"mse": float(rec.detach()), "rec": float(rec.detach()),
              "kl": float(kl.detach()), "beta": float(beta), "total": float(total.detach())}
@@ -65,7 +103,7 @@ def vae_loss_mse(logits: torch.Tensor, target: torch.Tensor, mu: torch.Tensor,
 
 def vae_loss_two_channel(logits: torch.Tensor, target: torch.Tensor, mu: torch.Tensor,
                          logvar: torch.Tensor, beta: float = 1.0,
-                         w_bce: float = 1.0, w_dice: float = 1.0):
+                         w_bce: float = 1.0, w_dice: float = 1.0, prior_var: torch.Tensor = None):
     """Early-fusion objective for a two-channel input (E9a).
 
     Channel 0 is the binary lesion (BCE plus Dice) and channel 1 is the
@@ -75,7 +113,7 @@ def vae_loss_two_channel(logits: torch.Tensor, target: torch.Tensor, mu: torch.T
     rec_lesion, parts = bce_dice_loss(logits[:, 0:1], target[:, 0:1], w_bce, w_dice)
     rec_disc = mse_recon_loss(logits[:, 1:2], target[:, 1:2])
     rec = rec_lesion + rec_disc
-    kl = kl_standard_normal(mu, logvar)
+    kl = kl_diag_gaussian(mu, logvar, prior_var)
     total = rec + beta * kl
     parts.update({"mse": float(rec_disc.detach()), "rec": float(rec.detach()),
                   "kl": float(kl.detach()), "beta": float(beta), "total": float(total.detach())})
