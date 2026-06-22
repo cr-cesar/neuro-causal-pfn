@@ -12,15 +12,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from .backbones import build_encoder_backbone
 from .daft import DAFT
-
-
-def _conv_block(c_in: int, c_out: int) -> nn.Sequential:
-    return nn.Sequential(
-        nn.Conv3d(c_in, c_out, kernel_size=3, stride=2, padding=1),
-        nn.BatchNorm3d(c_out),
-        nn.SiLU(),
-    )
 
 
 def _deconv_block(c_in: int, c_out: int, last: bool = False) -> nn.Sequential:
@@ -34,12 +27,15 @@ class Encoder3D(nn.Module):
     def __init__(self, in_channels: int = 1,
                  channels: Sequence[int] = (16, 32, 64, 128, 256),
                  zdim: int = 50, in_shape: Tuple[int, int, int] = (96, 112, 96),
-                 use_daft: bool = False, n_clinical: int = 0):
+                 use_daft: bool = False, n_clinical: int = 0, backbone: str = "cnn"):
         super().__init__()
-        chs = (in_channels,) + tuple(channels)
-        self.body = nn.Sequential(*[_conv_block(chs[i], chs[i + 1]) for i in range(len(chs) - 1)])
+        self.body = build_encoder_backbone(backbone, in_channels, channels)
+        # shape probe in eval mode so the dummy pass does not pollute the
+        # batch-norm running statistics
+        self.body.eval()
         with torch.no_grad():
             feat = self.body(torch.zeros(1, in_channels, *in_shape))
+        self.body.train()
         self.feat_shape = tuple(int(s) for s in feat.shape[1:])  # (C, d, h, w)
         flat = 1
         for s in self.feat_shape:
@@ -92,13 +88,20 @@ class ConvVAE3D(nn.Module):
     def __init__(self, in_channels: int = 1,
                  channels: Sequence[int] = (16, 32, 64, 128, 256),
                  zdim: int = 50, in_shape: Tuple[int, int, int] = (96, 112, 96),
-                 use_daft: bool = False, n_clinical: int = 0):
+                 use_daft: bool = False, n_clinical: int = 0, use_ard: bool = False,
+                 backbone: str = "cnn"):
         super().__init__()
         self.enc = Encoder3D(in_channels, channels, zdim, in_shape,
-                             use_daft=use_daft, n_clinical=n_clinical)
+                             use_daft=use_daft, n_clinical=n_clinical, backbone=backbone)
         self.dec = Decoder3D(in_channels, channels, zdim, self.enc.feat_shape, in_shape)
         self.zdim = zdim
         self.use_daft = use_daft
+        self.use_ard = use_ard
+        self.backbone = backbone
+        # ARD (E4): per-dimension prior variance, updated in closed form from the
+        # encoded second moments during training. A non-buffer when ARD is off.
+        if use_ard:
+            self.register_buffer("ard_prior_var", torch.ones(zdim))
 
     def reparameterize(self, mu: torch.Tensor, logvar: torch.Tensor) -> torch.Tensor:
         std = torch.exp(0.5 * logvar)

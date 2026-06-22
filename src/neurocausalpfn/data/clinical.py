@@ -159,3 +159,27 @@ def load_clinical_table(csv_path: str) -> Dict[str, Dict[str, object]]:
                 record[field] = None if (raw is None or str(raw).strip().upper() in _MISSING) else raw
         table[key] = record
     return table
+
+
+def load_outcome_table(csv_path: str, column: str = "outcome") -> Dict[str, float]:
+    """Reads a CSV keyed by patient id with a binary outcome column (default
+    'outcome'), used as the supervision signal for the PNS auxiliary loss (Arm B).
+    Returns dict id -> outcome; missing values are dropped."""
+    import pandas as pd
+
+    df = pd.read_csv(csv_path, dtype=str)
+    cols = {c.lower(): c for c in df.columns}
+    id_col = cols.get("id", df.columns[0])
+    out_col = cols.get(column.lower())
+    table: Dict[str, float] = {}
+    if out_col is None:
+        return table
+    for _, row in df.iterrows():
+        raw = row[out_col]
+        if raw is None or str(raw).strip().upper() in _MISSING:
+            continue
+        try:
+            table[str(row[id_col]).strip()] = float(raw)
+        except (ValueError, TypeError):
+            continue
+    return table

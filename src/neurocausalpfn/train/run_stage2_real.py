@@ -57,7 +57,9 @@ def load_vae(ckpt_path: str, device: str = "cpu") -> ConvVAE3D:
     res = tuple(ck["cfg"]["data"]["resolution"])
     model = ConvVAE3D(in_channels=ck.get("in_channels", 1),
                       zdim=v["zdim"], in_shape=res, channels=tuple(v["channels"]),
-                      use_daft=ck.get("use_daft", False), n_clinical=ck.get("n_clinical", 0))
+                      backbone=ck.get("backbone", "cnn"),
+                      use_daft=ck.get("use_daft", False), n_clinical=ck.get("n_clinical", 0),
+                      use_ard=ck.get("use_ard", False))
     model.load_state_dict(ck["state_dict"])
     return model.to(device).eval()
 
