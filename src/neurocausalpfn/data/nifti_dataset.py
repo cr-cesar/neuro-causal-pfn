@@ -34,7 +34,8 @@ def _soft_field(in_shape: Tuple[int, int, int], seed: int) -> np.ndarray:
     zz, yy, xx = np.indices(in_shape)
     for _ in range(int(rng.integers(1, 3))):
         c = [int(rng.integers(int(0.3 * s), int(0.7 * s) + 1)) for s in in_shape]
-        r = [int(rng.integers(max(3, int(0.05 * s)), int(0.18 * s) + 1)) for s in in_shape]
+        r = [int(rng.integers(lo, max(lo + 1, int(0.18 * s) + 1)))
+             for s, lo in ((s, max(2, int(0.05 * s))) for s in in_shape)]
         e = (((zz - c[0]) / r[0]) ** 2 + ((yy - c[1]) / r[1]) ** 2 + ((xx - c[2]) / r[2]) ** 2)
         vol = np.maximum(vol, np.clip(1.5 - e, 0.0, 1.0))
     return vol
