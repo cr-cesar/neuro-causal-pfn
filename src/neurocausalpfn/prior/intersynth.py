@@ -24,7 +24,8 @@ def _sigmoid(z: np.ndarray) -> np.ndarray:
 
 class SyntheticDGP:
     def __init__(self, d_x: int, rng: np.random.Generator,
-                 mechanism: str = "mixed", confound_strength: float = 1.0):
+                 mechanism: str = "mixed", confound_strength: float = 1.0,
+                 effect_scale: float = 1.0):
         self.d_x = int(d_x)
         self.mechanism = mechanism
         scale = 1.0 / np.sqrt(self.d_x)
@@ -33,6 +34,11 @@ class SyntheticDGP:
         self.b0 = float(rng.normal(0.0, 0.5))
         self.delta = rng.normal(0.0, 1.0, self.d_x) * scale
         self.b1 = self.b0 + float(rng.normal(0.0, 0.5))
+        if effect_scale != 1.0:
+            # scale the treatment effect (the E12 curriculum varies its size);
+            # applied after sampling so effect_scale == 1.0 reproduces the draw
+            self.delta = self.delta * effect_scale
+            self.b1 = self.b0 + (self.b1 - self.b0) * effect_scale
         # the propensity depends only on X (ignorable). The observed confounding
         # is induced by aligning part of w_prop with the prognosis.
         if mechanism in ("severity", "mixed"):

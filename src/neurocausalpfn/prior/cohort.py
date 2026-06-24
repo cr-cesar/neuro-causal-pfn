@@ -17,12 +17,15 @@ from .verify_identifiability import verify_identifiability
 
 class NeuroPrior:
     def __init__(self, d_x: int, n_context: int, n_query: int, seed: int = 0,
-                 mechanisms: Sequence[str] = MECHANISMS):
+                 mechanisms: Sequence[str] = MECHANISMS,
+                 confound_range=None, effect_range=None):
         self.d_x = int(d_x)
         self.n_context = int(n_context)
         self.n_query = int(n_query)
         self.rng = np.random.default_rng(seed)
         self.mechanisms = tuple(mechanisms)
+        self.confound_range = confound_range   # (lo, hi) for the confounding strength, or None
+        self.effect_range = effect_range       # (lo, hi) for the effect scale, or None
 
     def _one(self) -> Dict[str, np.ndarray]:
         # retries until obtaining a process that passes the R1/R2 gate.
@@ -30,7 +33,10 @@ class NeuroPrior:
         # mostly rejects positivity violations in the sample.
         for _ in range(64):
             mech = str(self.rng.choice(self.mechanisms))
-            dgp = SyntheticDGP(self.d_x, self.rng, mechanism=mech)
+            cs = float(self.rng.uniform(*self.confound_range)) if self.confound_range else 1.0
+            es = float(self.rng.uniform(*self.effect_range)) if self.effect_range else 1.0
+            dgp = SyntheticDGP(self.d_x, self.rng, mechanism=mech,
+                               confound_strength=cs, effect_scale=es)
             data = make_dataset(dgp, self.n_context, self.n_query, self.rng)
             if verify_identifiability(data["Tc"], data["Xc"], None, None, U=None):
                 return data
