@@ -17,6 +17,8 @@ from torch.utils.data import DataLoader, Dataset, Subset
 from ..data.nifti_dataset import LesionMaskDataset
 from ..dscm.model import ConditionalHVAE
 from ..utils.logging_utils import get_logger
+from ..utils.runtime import (autocast_ctx, log_runtime, make_grad_scaler,
+                             make_loader, optim_step, resolve_device, use_amp)
 from ..utils.seed import set_seed
 from ..vae.losses import bce_dice_loss
 
@@ -62,7 +64,9 @@ def full_config() -> Dict:
         "model": {"group_dims": [25, 25], "channels": [16, 32, 64, 128, 256], "backbone": "cnn",
                   "use_ard": False, "multi_env": False, "n_regimes": 20},
         "train": {"batch_size": 8, "epochs": 100, "lr": 1e-4, "beta_max": 1.0, "warmup_frac": 0.2},
-        "device": "cuda" if torch.cuda.is_available() else "cpu",
+        "device": "auto",
+        "amp": True,
+        "num_workers": 4,
     }
 
 
@@ -79,7 +83,7 @@ def _beta(epoch, epochs, beta_max, warmup_frac):
     return beta_max * min(1.0, (epoch + 1) / w)
 
 
-def _step(model, batch, multi_env, beta, device, train, opt=None) -> Dict:
+def _step(model, batch, multi_env, beta, device, train, opt=None, scaler=None, amp=False) -> Dict:
     if multi_env:
         vol, clin, env = batch
         pa = torch.cat([clin.float(), env.float()], dim=1).to(device)
@@ -87,19 +91,21 @@ def _step(model, batch, multi_env, beta, device, train, opt=None) -> Dict:
         vol, clin = batch
         pa = clin.float().to(device)
     vol = vol.to(device)
-    logits, _, kl = model(vol, pa)
-    rec, _ = bce_dice_loss(logits, vol)
-    loss = rec + beta * kl
+    with autocast_ctx(device, amp):
+        logits, _, kl = model(vol, pa)
+        rec, _ = bce_dice_loss(logits, vol)
+        loss = rec + beta * kl
     if train:
-        opt.zero_grad()
-        loss.backward()
-        opt.step()
+        optim_step(loss, opt, scaler)
     return {"rec": float(rec.detach()), "kl": float(kl.detach()), "total": float(loss.detach())}
 
 
 def run_dscm(cfg: Dict):
     set_seed(cfg["seed"])
-    device = cfg.get("device", "cpu")
+    device = resolve_device(cfg)
+    amp = use_amp(cfg, device)
+    scaler = make_grad_scaler(amp)
+    workers = int(cfg.get("num_workers", 0))
     in_shape = tuple(cfg["data"]["resolution"])
     m = cfg["model"]
     multi_env = bool(m.get("multi_env", False))
@@ -114,12 +120,13 @@ def run_dscm(cfg: Dict):
     else:
         dataset = base
     tr_idx, va_idx = _split(len(dataset), cfg["data"].get("val_frac", 0.1), cfg["seed"])
-    train_loader = DataLoader(Subset(dataset, tr_idx), batch_size=cfg["train"]["batch_size"], shuffle=True)
-    val_loader = DataLoader(Subset(dataset, va_idx), batch_size=cfg["train"]["batch_size"], shuffle=False)
+    train_loader = make_loader(Subset(dataset, tr_idx), cfg["train"]["batch_size"], True, device, workers)
+    val_loader = make_loader(Subset(dataset, va_idx), cfg["train"]["batch_size"], False, device, workers)
     log.info("Conditional HVAE (Arm E): %d masks (%s), resolution %s, groups %s, pa_dim %d, ard=%s, multi_env=%s, %d train / %d val",
              len(base), "synthetic" if base.synthetic else "real", in_shape, m["group_dims"],
              pa_dim, m["use_ard"], multi_env, len(tr_idx), len(va_idx))
 
+    log_runtime("Conditional HVAE", device, amp)
     model = ConditionalHVAE(in_shape=in_shape, channels=tuple(m["channels"]),
                             group_dims=tuple(m["group_dims"]), pa_dim=pa_dim,
                             backbone=m["backbone"], use_ard=m["use_ard"]).to(device)
@@ -131,10 +138,10 @@ def run_dscm(cfg: Dict):
     for epoch in range(cfg["train"]["epochs"]):
         beta = _beta(epoch, cfg["train"]["epochs"], cfg["train"]["beta_max"], cfg["train"]["warmup_frac"])
         model.train()
-        tr = [_step(model, b, multi_env, beta, device, True, opt) for b in train_loader][-1]
+        tr = [_step(model, b, multi_env, beta, device, True, opt, scaler, amp) for b in train_loader][-1]
         model.eval()
         with torch.no_grad():
-            vt = [_step(model, b, multi_env, beta, device, False)["total"] for b in val_loader]
+            vt = [_step(model, b, multi_env, beta, device, False, amp=amp)["total"] for b in val_loader]
         tr["val"] = float(np.mean(vt)) if vt else tr["total"]
         history.append(tr)
         log.info("epoch %d/%d  beta=%.2f  rec=%.4f  kl=%.3f  total=%.4f  val=%.4f",
@@ -151,7 +158,7 @@ def run_dscm(cfg: Dict):
 
 
 def _export(model, base, cfg, device):
-    loader = DataLoader(base, batch_size=cfg["train"]["batch_size"], shuffle=False)
+    loader = make_loader(base, cfg["train"]["batch_size"], False, device, 0)
     model.eval()
     codes = []
     with torch.no_grad():

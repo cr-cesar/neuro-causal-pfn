@@ -16,6 +16,8 @@ from ..data.nifti_dataset import LesionMaskDataset
 from ..mae.losses import masked_lesion_bce
 from ..mae.model import HiEndMAE3D
 from ..utils.logging_utils import get_logger
+from ..utils.runtime import (autocast_ctx, log_runtime, make_grad_scaler,
+                             make_loader, optim_step, resolve_device, use_amp)
 from ..utils.seed import set_seed
 
 log = get_logger()
@@ -45,7 +47,9 @@ def full_config() -> Dict:
                   "decoder_depth": 8, "decoder_heads": 6, "zdim": 50, "mask_ratio": 0.75,
                   "block": [2, 2, 2]},
         "train": {"batch_size": 8, "epochs": 100, "lr": 1.5e-4, "lesion_weight": 10.0},
-        "device": "cuda" if torch.cuda.is_available() else "cpu",
+        "device": "auto",
+        "amp": True,
+        "num_workers": 4,
     }
 
 
@@ -57,32 +61,35 @@ def _split(n: int, val_frac: float, seed: int):
     return idx[n_val:], idx[:n_val]
 
 
-def _step(model, vol, lesion_weight, device, train, opt=None) -> float:
+def _step(model, vol, lesion_weight, device, train, opt=None, scaler=None, amp=False) -> float:
     vol = vol.to(device)
-    pred, mask = model(vol)
-    target = model.patchify(vol)
-    loss = masked_lesion_bce(pred, target, mask, lesion_weight)
+    with autocast_ctx(device, amp):
+        pred, mask = model(vol)
+        target = model.patchify(vol)
+        loss = masked_lesion_bce(pred, target, mask, lesion_weight)
     if train:
-        opt.zero_grad()
-        loss.backward()
-        opt.step()
+        optim_step(loss, opt, scaler)
     return float(loss.detach())
 
 
 def run_mae(cfg: Dict):
     set_seed(cfg["seed"])
-    device = cfg.get("device", "cpu")
+    device = resolve_device(cfg)
+    amp = use_amp(cfg, device)
+    scaler = make_grad_scaler(amp)
+    workers = int(cfg.get("num_workers", 0))
     in_shape = tuple(cfg["data"]["resolution"])
     m = cfg["model"]
     dataset = LesionMaskDataset(root=cfg["data"].get("root"), in_shape=in_shape,
                                 n_synth=cfg["data"]["n_synth"], seed=cfg["seed"], binarize=True)
     tr_idx, va_idx = _split(len(dataset), cfg["data"].get("val_frac", 0.1), cfg["seed"])
-    train_loader = DataLoader(Subset(dataset, tr_idx), batch_size=cfg["train"]["batch_size"], shuffle=True)
-    val_loader = DataLoader(Subset(dataset, va_idx), batch_size=cfg["train"]["batch_size"], shuffle=False)
+    train_loader = make_loader(Subset(dataset, tr_idx), cfg["train"]["batch_size"], True, device, workers)
+    val_loader = make_loader(Subset(dataset, va_idx), cfg["train"]["batch_size"], False, device, workers)
     log.info("Hi-End MAE (Arm D): %d masks (%s), resolution %s, patch %d, grid %s, mask_ratio %.2f, %d train / %d val",
              len(dataset), "synthetic" if dataset.synthetic else "real", in_shape, m["patch"],
              _grid_str(in_shape, m["patch"]), m["mask_ratio"], len(tr_idx), len(va_idx))
 
+    log_runtime("Hi-End MAE", device, amp)
     model = HiEndMAE3D(in_shape=in_shape, patch=m["patch"], embed_dim=m["embed_dim"],
                        depth=m["depth"], heads=m["heads"], decoder_dim=m["decoder_dim"],
                        decoder_depth=m["decoder_depth"], decoder_heads=m["decoder_heads"],
@@ -94,11 +101,11 @@ def run_mae(cfg: Dict):
     best_val, history = float("inf"), []
     for epoch in range(cfg["train"]["epochs"]):
         model.train()
-        last = np.mean([_step(model, vol, cfg["train"]["lesion_weight"], device, True, opt)
+        last = np.mean([_step(model, vol, cfg["train"]["lesion_weight"], device, True, opt, scaler, amp)
                         for vol in train_loader])
         model.eval()
         with torch.no_grad():
-            vt = [_step(model, vol, cfg["train"]["lesion_weight"], device, False) for vol in val_loader]
+            vt = [_step(model, vol, cfg["train"]["lesion_weight"], device, False, amp=amp) for vol in val_loader]
         val = float(np.mean(vt)) if vt else float(last)
         rec = {"train": float(last), "val": val}
         history.append(rec)
@@ -117,7 +124,7 @@ def _grid_str(in_shape, patch):
 
 
 def _export(model, dataset, cfg, device):
-    loader = DataLoader(dataset, batch_size=cfg["train"]["batch_size"], shuffle=False)
+    loader = make_loader(dataset, cfg["train"]["batch_size"], False, device, 0)
     model.eval()
     codes = []
     with torch.no_grad():

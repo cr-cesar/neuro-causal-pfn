@@ -23,6 +23,8 @@ from ..utils.seed import set_seed
 from ..pfn.inference import predict_cate
 from ..pfn.model import NeuroCausalPFN
 from ..pfn.tokens import to_tensors
+from ..utils.runtime import (autocast_ctx, log_runtime, make_grad_scaler,
+                             optim_step, resolve_device, use_amp)
 
 log = get_logger()
 
@@ -75,7 +77,9 @@ def full_config() -> Dict:
                 "context_min": 1000, "context_max": 20000, "n_query": 64,
                 "batch_size": 8, "iters": 162000,
                 "lr": 3e-4, "weight_decay": 0.01, "grad_clip": 1.0},
-        "device": "cuda" if torch.cuda.is_available() else "cpu",
+        "device": "auto",
+        "amp": True,
+        "num_workers": 4,
         "log_every": 200,
     }
 
@@ -112,12 +116,15 @@ def _build_prior(cfg: Dict, seed_offset: int = 0):
 
 def run_pfn(cfg: Dict):
     set_seed(cfg["seed"])
-    device = cfg.get("device", "cpu")
+    device = resolve_device(cfg)
+    amp = use_amp(cfg, device)
+    scaler = make_grad_scaler(amp)
     p = cfg["pfn"]
 
     prior_obj, d_x, is_intersynth = _build_prior(cfg)
     model = build_model(cfg, d_x).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=p["lr"], weight_decay=p["weight_decay"])
+    log_runtime("PFN", device, amp)
     n_params = sum(t.numel() for t in model.parameters())
     log.info("PFN: %.2fM parameters, d_x=%d, arch=%s, prior=%s",
              n_params / 1e6, d_x, p.get("arch", "linear"), "intersynth" if is_intersynth else "synthetic")
@@ -132,13 +139,10 @@ def run_pfn(cfg: Dict):
             prior = NeuroPrior(d_x=d_x, n_context=n_ctx, n_query=p["n_query"], seed=cfg["seed"] + it)
             batch_np = prior.sample_batch(p["batch_size"])
         batch = to_tensors(batch_np, device=device)
-        logits = model(batch["Xc"], batch["Tc"], batch["Yc"], batch["Xq"], batch["Tq"])
-        loss = model.head.loss(logits, batch["mu_q"])
-
-        opt.zero_grad()
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), p["grad_clip"])
-        opt.step()
+        with autocast_ctx(device, amp):
+            logits = model(batch["Xc"], batch["Tc"], batch["Yc"], batch["Xq"], batch["Tq"])
+            loss = model.head.loss(logits, batch["mu_q"])
+        optim_step(loss, opt, scaler, params=model.parameters(), grad_clip=p["grad_clip"])
 
         history.append({"iter": it, "loss": float(loss.detach()), "n_ctx": n_ctx})
         if (it + 1) % cfg["log_every"] == 0 or it == 0:

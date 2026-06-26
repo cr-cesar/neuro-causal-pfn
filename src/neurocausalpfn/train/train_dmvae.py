@@ -15,6 +15,8 @@ from torch.utils.data import DataLoader, Subset
 
 from ..data.nifti_dataset import PairedLesionDisconnectomeDataset
 from ..utils.logging_utils import get_logger
+from ..utils.runtime import (autocast_ctx, log_runtime, make_grad_scaler,
+                             make_loader, optim_step, resolve_device, use_amp)
 from ..utils.seed import set_seed
 from ..vae.dmvae import DMVAE3D
 
@@ -47,7 +49,9 @@ def full_config() -> Dict:
                   "backbone": "cnn"},
         "train": {"batch_size": 8, "epochs": 100, "lr": 1e-4, "beta_max": 1.0,
                   "warmup_frac": 0.2, "lambda_priv": 1.0},
-        "device": "cuda" if torch.cuda.is_available() else "cpu",
+        "device": "auto",
+        "amp": True,
+        "num_workers": 4,
     }
 
 
@@ -64,19 +68,21 @@ def _beta(epoch, epochs, beta_max, warmup_frac):
     return beta_max * min(1.0, (epoch + 1) / w)
 
 
-def _step(model, les, dis, beta, lambda_priv, device, train, opt=None) -> Dict:
+def _step(model, les, dis, beta, lambda_priv, device, train, opt=None, scaler=None, amp=False) -> Dict:
     les, dis = les.to(device), dis.to(device)
-    loss, parts = model(les, dis, beta=beta, lambda_priv=lambda_priv)
+    with autocast_ctx(device, amp):
+        loss, parts = model(les, dis, beta=beta, lambda_priv=lambda_priv)
     if train:
-        opt.zero_grad()
-        loss.backward()
-        opt.step()
+        optim_step(loss, opt, scaler)
     return parts
 
 
 def run_dmvae(cfg: Dict):
     set_seed(cfg["seed"])
-    device = cfg.get("device", "cpu")
+    device = resolve_device(cfg)
+    amp = use_amp(cfg, device)
+    scaler = make_grad_scaler(amp)
+    workers = int(cfg.get("num_workers", 0))
     in_shape = tuple(cfg["data"]["resolution"])
     m = cfg["model"]
     dataset = PairedLesionDisconnectomeDataset(
@@ -84,13 +90,14 @@ def run_dmvae(cfg: Dict):
         disconnectome_root=cfg["data"].get("disconnectome_root"),
         in_shape=in_shape, n_synth=cfg["data"]["n_synth"], seed=cfg["seed"], stack_channels=False)
     tr_idx, va_idx = _split(len(dataset), cfg["data"].get("val_frac", 0.1), cfg["seed"])
-    train_loader = DataLoader(Subset(dataset, tr_idx), batch_size=cfg["train"]["batch_size"], shuffle=True)
-    val_loader = DataLoader(Subset(dataset, va_idx), batch_size=cfg["train"]["batch_size"], shuffle=False)
+    train_loader = make_loader(Subset(dataset, tr_idx), cfg["train"]["batch_size"], True, device, workers)
+    val_loader = make_loader(Subset(dataset, va_idx), cfg["train"]["batch_size"], False, device, workers)
     zdim = m["shared_dim"] + 2 * m["private_dim"]
     log.info("DMVAE (E9b): %d pairs (%s), resolution %s, shared %d + private %dx2 = %d, %d train / %d val",
              len(dataset), "synthetic" if dataset.synthetic else "real", in_shape,
              m["shared_dim"], m["private_dim"], zdim, len(tr_idx), len(va_idx))
 
+    log_runtime("DMVAE", device, amp)
     model = DMVAE3D(in_shape=in_shape, channels=tuple(m["channels"]), shared_dim=m["shared_dim"],
                     private_dim=m["private_dim"], backbone=m["backbone"]).to(device)
     opt = torch.optim.Adam(model.parameters(), lr=cfg["train"]["lr"])
@@ -102,10 +109,10 @@ def run_dmvae(cfg: Dict):
         beta = _beta(epoch, cfg["train"]["epochs"], cfg["train"]["beta_max"], cfg["train"]["warmup_frac"])
         lam = cfg["train"]["lambda_priv"]
         model.train()
-        tr = [_step(model, les, dis, beta, lam, device, True, opt) for les, dis in train_loader][-1]
+        tr = [_step(model, les, dis, beta, lam, device, True, opt, scaler, amp) for les, dis in train_loader][-1]
         model.eval()
         with torch.no_grad():
-            vt = [_step(model, les, dis, beta, lam, device, False)["total"] for les, dis in val_loader]
+            vt = [_step(model, les, dis, beta, lam, device, False, amp=amp)["total"] for les, dis in val_loader]
         tr["val"] = float(np.mean(vt)) if vt else tr["total"]
         history.append(tr)
         log.info("epoch %d/%d  beta=%.2f  rec_l=%.4f  rec_d=%.4f  kl_s=%.3f  kl_priv=%.3f  total=%.4f  val=%.4f",
@@ -122,7 +129,7 @@ def run_dmvae(cfg: Dict):
 
 
 def _export(model, dataset, cfg, device):
-    loader = DataLoader(dataset, batch_size=cfg["train"]["batch_size"], shuffle=False)
+    loader = make_loader(dataset, cfg["train"]["batch_size"], False, device, 0)
     model.eval()
     codes = []
     with torch.no_grad():
