@@ -20,6 +20,8 @@ from ..pfn.tokens import to_tensors
 from ..prior.cohort import NeuroPrior
 from ..utils.logging_utils import get_logger
 from ..utils.seed import set_seed
+from ..utils.runtime import (autocast_ctx, log_runtime, make_grad_scaler,
+                             optim_step, resolve_device, use_amp)
 from .train_pfn import build_model
 
 log = get_logger()
@@ -56,7 +58,9 @@ def full_config() -> Dict:
             "stage2": {"steps": 1500, "n_context": 4119, "confound": [0.0, 1.0], "effect": [0.2, 1.0]},
             "stage3": {"steps": 550, "n_context": 20000, "confound": [0.0, 1.0], "effect": [0.2, 1.0]},
         },
-        "device": "cuda" if torch.cuda.is_available() else "cpu",
+        "device": "auto",
+        "amp": True,
+        "num_workers": 4,
         "log_every": 200,
     }
 
@@ -77,10 +81,13 @@ def stages_for_variant(cfg: Dict, variant: str) -> List[Dict]:
 
 def run_curriculum(cfg: Dict, variant: str):
     set_seed(cfg["seed"])
-    device = cfg.get("device", "cpu")
+    device = resolve_device(cfg)
+    amp = use_amp(cfg, device)
+    scaler = make_grad_scaler(amp)
     p = cfg["pfn"]
     model = build_model(cfg, p["d_x"]).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=p["lr"], weight_decay=p["weight_decay"])
+    log_runtime("E12 [%s]" % variant, device, amp)
     stages = stages_for_variant(cfg, variant)
     model.train()
     history, gstep = [], 0
@@ -91,12 +98,10 @@ def run_curriculum(cfg: Dict, variant: str):
             prior = NeuroPrior(d_x=p["d_x"], n_context=st["n_context"], n_query=p["n_query"],
                                seed=cfg["seed"] + gstep, confound_range=crange, effect_range=erange)
             batch = to_tensors(prior.sample_batch(p["batch_size"]), device=device)
-            logits = model(batch["Xc"], batch["Tc"], batch["Yc"], batch["Xq"], batch["Tq"])
-            loss = model.head.loss(logits, batch["mu_q"])
-            opt.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), p["grad_clip"])
-            opt.step()
+            with autocast_ctx(device, amp):
+                logits = model(batch["Xc"], batch["Tc"], batch["Yc"], batch["Xq"], batch["Tq"])
+                loss = model.head.loss(logits, batch["mu_q"])
+            optim_step(loss, opt, scaler, params=model.parameters(), grad_clip=p["grad_clip"])
             history.append({"step": gstep, "stage": si, "loss": float(loss.detach()),
                             "n_ctx": st["n_context"]})
             if (gstep + 1) % cfg["log_every"] == 0 or gstep == 0:

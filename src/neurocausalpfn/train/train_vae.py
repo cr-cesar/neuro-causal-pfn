@@ -29,6 +29,8 @@ from torch.utils.data import DataLoader, Subset
 from ..causal.pns import soft_pns_value
 from ..data.nifti_dataset import LesionMaskDataset, PairedLesionDisconnectomeDataset
 from ..utils.logging_utils import get_logger
+from ..utils.runtime import (autocast_ctx, log_runtime, make_grad_scaler,
+                             make_loader, optim_step, resolve_device, use_amp)
 from ..utils.seed import set_seed
 from ..vae.conv3d_vae import ConvVAE3D
 from ..vae.losses import (ard_update_prior_var, per_dim_kl, vae_loss,
@@ -53,6 +55,8 @@ def prototype_config() -> Dict:
                 "beta_max": 1.0, "warmup_frac": 0.2, "use_daft": False, "use_ard": False,
                 "use_pns": False, "lambda_pns": 0.1, "pns_factors": 5},
         "device": "cpu",
+        "amp": True,
+        "num_workers": 0,
     }
 
 
@@ -72,7 +76,9 @@ def full_config() -> Dict:
                 "batch_size": 8, "epochs": 200, "lr": 1e-4, "backbone": "cnn",
                 "beta_max": 1.0, "warmup_frac": 0.2, "use_daft": False, "use_ard": False,
                 "use_pns": False, "lambda_pns": 0.1, "pns_factors": 5},
-        "device": "cuda" if torch.cuda.is_available() else "cpu",
+        "device": "auto",             # 'auto' resolves to cuda (V100) when available
+        "amp": True,                  # mixed precision on the V100 Tensor Cores
+        "num_workers": 4,             # data-loading workers (GPU runs)
     }
 
 
@@ -108,7 +114,8 @@ def _build_dataset(cfg: Dict, representation: str, in_shape, use_daft: bool):
 
 
 def _epoch(model, loader, loss_fn, beta, device, opt=None, use_daft=False,
-           prior_var=None, ard_accum=None, use_pns=False, lambda_pns=0.0, pns_factors=5):
+           prior_var=None, ard_accum=None, use_pns=False, lambda_pns=0.0, pns_factors=5,
+           scaler=None, amp=False):
     train = opt is not None
     model.train(train)
     last = {}
@@ -118,21 +125,20 @@ def _epoch(model, loader, loss_fn, beta, device, opt=None, use_daft=False,
         x = items[0].to(device)
         clin = items[1].to(device) if use_daft else None
         target = items[-1].to(device) if use_pns else None
-        logits, mu, logvar, _ = model(x, clin) if use_daft else model(x)
-        loss, parts = loss_fn(logits, x, mu, logvar, beta=beta, prior_var=prior_var)
-        if use_pns and target is not None:
-            # Arm B: maximise the PNS surrogate via a -lambda * value term
-            pns_val = soft_pns_value(mu, target, k=pns_factors)
-            loss = loss - lambda_pns * pns_val
-            parts["pns"] = float(pns_val.detach())
+        with autocast_ctx(device, amp):
+            logits, mu, logvar, _ = model(x, clin) if use_daft else model(x)
+            loss, parts = loss_fn(logits, x, mu, logvar, beta=beta, prior_var=prior_var)
+            if use_pns and target is not None:
+                # Arm B: maximise the PNS surrogate via a -lambda * value term
+                pns_val = soft_pns_value(mu, target, k=pns_factors)
+                loss = loss - lambda_pns * pns_val
+                parts["pns"] = float(pns_val.detach())
         if train:
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
+            optim_step(loss, opt, scaler)
         if ard_accum is not None and train:
             n = mu.shape[0]
-            ard_accum["sumsq"] += (mu.detach().pow(2) + logvar.detach().exp()).sum(0)
-            ard_accum["kl_sum"] += per_dim_kl(mu.detach(), logvar.detach(), prior_var) * n
+            ard_accum["sumsq"] += (mu.detach().float().pow(2) + logvar.detach().float().exp()).sum(0)
+            ard_accum["kl_sum"] += per_dim_kl(mu.detach().float(), logvar.detach().float(), prior_var) * n
             ard_accum["n"] += n
         last = parts
     torch.set_grad_enabled(True)
@@ -144,7 +150,7 @@ def _export_latents(model, dataset, cfg, representation, use_daft, device):
     prev_target = getattr(dataset, "with_target", False)
     dataset.with_target = False   # the export does not need the outcome
     try:
-        loader = DataLoader(dataset, batch_size=cfg["vae"]["batch_size"], shuffle=False)
+        loader = make_loader(dataset, cfg["vae"]["batch_size"], False, device, 0)
         if use_daft:
             # conditioned export: pass the clinical vector to the encoder
             model.eval()
@@ -166,7 +172,9 @@ def _export_latents(model, dataset, cfg, representation, use_daft, device):
 
 def run_vae(cfg: Dict):
     set_seed(cfg["seed"])
-    device = cfg.get("device", "cpu")
+    device = resolve_device(cfg)
+    amp = use_amp(cfg, device)
+    scaler = make_grad_scaler(amp)
     in_shape = tuple(cfg["data"]["resolution"])
     representation = cfg.get("representation", "lesion")
     use_daft = bool(cfg["vae"].get("use_daft", False))
@@ -176,16 +184,18 @@ def run_vae(cfg: Dict):
     lambda_pns = float(cfg["vae"].get("lambda_pns", 0.1))
     pns_factors = int(cfg["vae"].get("pns_factors", 5))
     zdim = cfg["vae"]["zdim"]
+    workers = int(cfg.get("num_workers", 0))
 
     dataset, in_channels, loss_fn = _build_dataset(cfg, representation, in_shape, use_daft)
     n_clinical = dataset.clinical_dim() if use_daft else 0
 
     train_idx, val_idx = _split_indices(len(dataset), cfg["data"].get("val_frac", 0.1), cfg["seed"])
-    train_loader = DataLoader(Subset(dataset, train_idx), batch_size=cfg["vae"]["batch_size"], shuffle=True)
-    val_loader = DataLoader(Subset(dataset, val_idx), batch_size=cfg["vae"]["batch_size"], shuffle=False)
+    train_loader = make_loader(Subset(dataset, train_idx), cfg["vae"]["batch_size"], True, device, workers)
+    val_loader = make_loader(Subset(dataset, val_idx), cfg["vae"]["batch_size"], False, device, workers)
     log.info("VAE (%s): %d volumes (%s), resolution %s, %d channel(s), backbone=%s, DAFT=%s, ARD=%s, %d train / %d val",
              representation, len(dataset), "synthetic" if dataset.synthetic else "real",
              in_shape, in_channels, backbone, use_daft, use_ard, len(train_idx), len(val_idx))
+    log_runtime("VAE", device, amp)
 
     model = ConvVAE3D(in_channels=in_channels, zdim=zdim, in_shape=in_shape,
                       channels=tuple(cfg["vae"]["channels"]), backbone=backbone,
@@ -215,10 +225,12 @@ def run_vae(cfg: Dict):
                      if use_ard else None)
         tr = _epoch(model, train_loader, loss_fn, beta, device, opt=opt, use_daft=use_daft,
                     prior_var=prior_var, ard_accum=ard_accum,
-                    use_pns=use_pns, lambda_pns=lambda_pns, pns_factors=pns_factors)
+                    use_pns=use_pns, lambda_pns=lambda_pns, pns_factors=pns_factors,
+                    scaler=scaler, amp=amp)
         va = _epoch(model, val_loader, loss_fn, beta, device, opt=None, use_daft=use_daft,
                     prior_var=prior_var, ard_accum=None,
-                    use_pns=use_pns, lambda_pns=lambda_pns, pns_factors=pns_factors)
+                    use_pns=use_pns, lambda_pns=lambda_pns, pns_factors=pns_factors,
+                    scaler=scaler, amp=amp)
         tr["val_total"] = va["total"]
         if use_ard:
             # closed-form prior update from this epoch's encoded second moments

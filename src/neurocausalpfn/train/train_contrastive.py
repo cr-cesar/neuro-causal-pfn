@@ -20,6 +20,8 @@ from ..contrastive.model import ContrastiveFusionEncoder
 from ..data.augmentations import augment_batch
 from ..data.nifti_dataset import PairedLesionDisconnectomeDataset
 from ..utils.logging_utils import get_logger
+from ..utils.runtime import (autocast_ctx, log_runtime, make_grad_scaler,
+                             make_loader, optim_step, resolve_device, use_amp)
 from ..utils.seed import set_seed
 from ..vae.losses import bce_dice_loss, mse_recon_loss
 
@@ -54,7 +56,9 @@ def full_config() -> Dict:
                   "d_model": 128, "proj_dim": 128, "n_heads": 4, "recon": True},
         "train": {"batch_size": 16, "epochs": 100, "lr": 1e-4, "tau": 0.1,
                   "lambda_intra": 0.5, "mu_recon": 1.0},
-        "device": "cuda" if torch.cuda.is_available() else "cpu",
+        "device": "auto",
+        "amp": True,
+        "num_workers": 4,
     }
 
 
@@ -66,41 +70,43 @@ def _split_indices(n: int, val_frac: float, seed: int):
     return idx[n_val:], idx[:n_val]
 
 
-def _step(model, les, dis, y, cfg, device, train, opt=None) -> Dict:
+def _step(model, les, dis, y, cfg, device, train, opt=None, scaler=None, amp=False) -> Dict:
     tr = cfg["train"]
     les, dis = les.to(device), dis.to(device)
     y = y.to(device).long()
     les1, les2 = augment_batch(les, binary=True), augment_batch(les, binary=True)
     dis1, dis2 = augment_batch(dis, binary=False), augment_batch(dis, binary=False)
-    out1, out2 = model(les1, dis1), model(les2, dis2)
-    B = les.shape[0]
+    with autocast_ctx(device, amp):
+        out1, out2 = model(les1, dis1), model(les2, dis2)
+        B = les.shape[0]
 
-    feats = torch.cat([out1["p"], out2["p"]], dim=0)
-    labels = torch.cat([y, y], dim=0)
-    loss_supcon = supcon_loss(feats, labels, tau=tr["tau"])
-    les_feats = torch.cat([out1["p_lesion"], out2["p_lesion"]], dim=0)
-    dis_feats = torch.cat([out1["p_disco"], out2["p_disco"]], dim=0)
-    loss_intra = 0.5 * (nt_xent_loss(les_feats, B, tau=tr["tau"])
-                        + nt_xent_loss(dis_feats, B, tau=tr["tau"]))
-    loss = loss_supcon + tr["lambda_intra"] * loss_intra
-    parts = {"supcon": float(loss_supcon.detach()), "intra": float(loss_intra.detach())}
-    if model.recon:
-        rec_l, _ = bce_dice_loss(out1["recon_lesion"], les1)
-        rec_d = mse_recon_loss(out1["recon_disco"], dis1)
-        loss_recon = rec_l + rec_d
-        loss = loss + tr["mu_recon"] * loss_recon
-        parts["recon"] = float(loss_recon.detach())
-    parts["total"] = float(loss.detach())
+        feats = torch.cat([out1["p"], out2["p"]], dim=0)
+        labels = torch.cat([y, y], dim=0)
+        loss_supcon = supcon_loss(feats, labels, tau=tr["tau"])
+        les_feats = torch.cat([out1["p_lesion"], out2["p_lesion"]], dim=0)
+        dis_feats = torch.cat([out1["p_disco"], out2["p_disco"]], dim=0)
+        loss_intra = 0.5 * (nt_xent_loss(les_feats, B, tau=tr["tau"])
+                            + nt_xent_loss(dis_feats, B, tau=tr["tau"]))
+        loss = loss_supcon + tr["lambda_intra"] * loss_intra
+        parts = {"supcon": float(loss_supcon.detach()), "intra": float(loss_intra.detach())}
+        if model.recon:
+            rec_l, _ = bce_dice_loss(out1["recon_lesion"], les1)
+            rec_d = mse_recon_loss(out1["recon_disco"], dis1)
+            loss_recon = rec_l + rec_d
+            loss = loss + tr["mu_recon"] * loss_recon
+            parts["recon"] = float(loss_recon.detach())
+        parts["total"] = float(loss.detach())
     if train:
-        opt.zero_grad()
-        loss.backward()
-        opt.step()
+        optim_step(loss, opt, scaler)
     return parts
 
 
 def run_contrastive(cfg: Dict):
     set_seed(cfg["seed"])
-    device = cfg.get("device", "cpu")
+    device = resolve_device(cfg)
+    amp = use_amp(cfg, device)
+    scaler = make_grad_scaler(amp)
+    workers = int(cfg.get("num_workers", 0))
     in_shape = tuple(cfg["data"]["resolution"])
     m = cfg["model"]
     dataset = PairedLesionDisconnectomeDataset(
@@ -109,12 +115,13 @@ def run_contrastive(cfg: Dict):
         in_shape=in_shape, n_synth=cfg["data"]["n_synth"], seed=cfg["seed"],
         with_target=True, outcome_csv=cfg.get("outcome_csv"))
     tr_idx, va_idx = _split_indices(len(dataset), cfg["data"].get("val_frac", 0.1), cfg["seed"])
-    train_loader = DataLoader(Subset(dataset, tr_idx), batch_size=cfg["train"]["batch_size"], shuffle=True)
-    val_loader = DataLoader(Subset(dataset, va_idx), batch_size=cfg["train"]["batch_size"], shuffle=False)
+    train_loader = make_loader(Subset(dataset, tr_idx), cfg["train"]["batch_size"], True, device, workers)
+    val_loader = make_loader(Subset(dataset, va_idx), cfg["train"]["batch_size"], False, device, workers)
     log.info("Contrastive (Arm C): %d pairs (%s), resolution %s, backbone=%s, recon=%s, %d train / %d val",
              len(dataset), "synthetic" if dataset.synthetic else "real", in_shape,
              m["backbone"], m["recon"], len(tr_idx), len(va_idx))
 
+    log_runtime("Contrastive", device, amp)
     model = ContrastiveFusionEncoder(in_shape=in_shape, channels=tuple(m["channels"]),
                                      zdim=m["zdim"], backbone=m["backbone"], d_model=m["d_model"],
                                      proj_dim=m["proj_dim"], n_heads=m["n_heads"], recon=m["recon"]).to(device)
@@ -127,10 +134,10 @@ def run_contrastive(cfg: Dict):
         model.train()
         last = {}
         for les, dis, y in train_loader:
-            last = _step(model, les, dis, y, cfg, device, train=True, opt=opt)
+            last = _step(model, les, dis, y, cfg, device, train=True, opt=opt, scaler=scaler, amp=amp)
         model.eval()
         with torch.no_grad():
-            vt = [_step(model, les, dis, y, cfg, device, train=False)["total"]
+            vt = [_step(model, les, dis, y, cfg, device, train=False, amp=amp)["total"]
                   for les, dis, y in val_loader]
         last["val_total"] = float(np.mean(vt)) if vt else last.get("total", float("nan"))
         history.append(last)
@@ -151,7 +158,7 @@ def _export(model, dataset, cfg, device):
     prev = dataset.with_target
     dataset.with_target = False
     try:
-        loader = DataLoader(dataset, batch_size=cfg["train"]["batch_size"], shuffle=False)
+        loader = make_loader(dataset, cfg["train"]["batch_size"], False, device, 0)
         model.eval()
         codes = []
         with torch.no_grad():
