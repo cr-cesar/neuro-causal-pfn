@@ -53,7 +53,8 @@ def prototype_config() -> Dict:
         "vae": {"zdim": 16, "channels": [16, 32, 64, 128, 256],
                 "batch_size": 2, "epochs": 5, "lr": 1e-4, "backbone": "cnn",
                 "beta_max": 1.0, "warmup_frac": 0.2, "use_daft": False, "use_ard": False,
-                "use_pns": False, "lambda_pns": 0.1, "pns_factors": 5},
+                "use_pns": False, "lambda_pns": 0.1, "pns_factors": 5,
+                "w_bce": 1.0, "w_dice": 1.0},
         "device": "cpu",
         "amp": True,
         "num_workers": 0,
@@ -75,7 +76,8 @@ def full_config() -> Dict:
         "vae": {"zdim": 50, "channels": [16, 32, 64, 128, 256],
                 "batch_size": 8, "epochs": 200, "lr": 1e-4, "backbone": "cnn",
                 "beta_max": 1.0, "warmup_frac": 0.2, "use_daft": False, "use_ard": False,
-                "use_pns": False, "lambda_pns": 0.1, "pns_factors": 5},
+                "use_pns": False, "lambda_pns": 0.1, "pns_factors": 5,
+                "w_bce": 1.0, "w_dice": 1.0},
         "device": "auto",             # 'auto' resolves to cuda (V100) when available
         "amp": True,                  # mixed precision on the V100 Tensor Cores
         "num_workers": 4,             # data-loading workers (GPU runs)
@@ -187,6 +189,14 @@ def run_vae(cfg: Dict):
     workers = int(cfg.get("num_workers", 0))
 
     dataset, in_channels, loss_fn = _build_dataset(cfg, representation, in_shape, use_daft)
+    # Reconstruction weighting (E1 vs E2): the lesion and early-fusion losses take
+    # a soft-Dice weight. w_dice = 0 recovers pure BCE (the E1 baseline); the E2
+    # scan sweeps w_dice in {0.1, 0.5, 1.0}. The continuous (MSE) loss ignores it.
+    if representation in ("lesion", "early_fusion"):
+        import functools
+        w_bce = float(cfg["vae"].get("w_bce", 1.0))
+        w_dice = float(cfg["vae"].get("w_dice", 1.0))
+        loss_fn = functools.partial(loss_fn, w_bce=w_bce, w_dice=w_dice)
     n_clinical = dataset.clinical_dim() if use_daft else 0
 
     train_idx, val_idx = _split_indices(len(dataset), cfg["data"].get("val_frac", 0.1), cfg["seed"])
@@ -276,6 +286,8 @@ if __name__ == "__main__":
                     choices=["lesion", "disconnectome", "early_fusion"])
     ap.add_argument("--use-daft", action="store_true", help="enable DAFT clinical conditioning (E5a)")
     ap.add_argument("--use-ard", action="store_true", help="enable ARD data-driven dimensionality (E4)")
+    ap.add_argument("--w-dice", type=float, default=None,
+                    help="soft-Dice weight (E2). 0 = pure BCE baseline (E1)")
     ap.add_argument("--backbone", default=None,
                     choices=["cnn", "wide", "resnet", "resnet18", "resnet50"],
                     help="encoder backbone (E7)")
@@ -296,6 +308,8 @@ if __name__ == "__main__":
         cfg["vae"]["use_daft"] = True
     if args.use_ard:
         cfg["vae"]["use_ard"] = True
+    if args.w_dice is not None:
+        cfg["vae"]["w_dice"] = args.w_dice
     if args.backbone is not None:
         cfg["vae"]["backbone"] = args.backbone
     if args.use_pns:

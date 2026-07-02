@@ -197,6 +197,49 @@ VAEs (with `--resume` to resume if the job is interrupted) and then runs
   no query prediction depends on another. The attention is still dense; for the
   large contexts of full mode it would be replaced by a more efficient attention.
 
+## Table 9 experiments (the orchestrator)
+
+`src/neurocausalpfn/experiments/` turns Table 9 (Planned experiments, baselines,
+and evaluation criteria) into runnable, gated and reported experiments. It does
+not re-implement training or metrics; it composes the entry points above.
+
+- `registry.py` is the declarative catalogue: one entry per Table-9 row (E1-E12)
+  with its arm, what it changes, the baseline it departs from, the variant or
+  grid tested, the evaluation tiers and the dependencies.
+- `tiers.py` is the tiered harness with the stop/go gates of section 13: T1
+  reconstruction (Dice >= 0.70, a hard gate), T2 clinical probing (R2 >= 0.05, a
+  soft gate that deprioritises), T3 latent quality (informational), T4 causal
+  (root-PEHE < 0.349, the Giles NMF-50 reference; a hard gate). Failing a hard
+  gate short-circuits the more expensive tiers.
+- `estimators.py` provides the Tier-4 evaluators: a representation-aware
+  semi-synthetic potential-outcomes problem built on the arm's own latents with a
+  cross-fitted T-learner (default, cheap), the prior-fitted network on the
+  Neuro-Prior (sanity, used by E12), and the real CausalPFN over the frozen
+  latents via `run_stage2_real` (production, full mode).
+- `runner.py` is the orchestrator: it runs each experiment across >= 3 seeds,
+  evaluates the tiers, aggregates, and propagates the winner of a selection
+  experiment to those that depend on it (E7's backbone, E3's dimensionality,
+  E6's channels, E2's Dice weight).
+- `logging_backend.py` logs to Weights & Biases or MLflow with an always-on
+  local JSON+CSV fallback; `report.py` writes the leaderboard and the
+  bootstrap-paired test on root-PEHE.
+
+Run in prototype mode (CPU, synthetic masks, seconds to minutes):
+
+    bash scripts/run_experiments.sh A 3        # Arm A, 3 seeds, dependency order
+    bash scripts/run_experiments.sh E7 1       # a single experiment
+    python -m neurocausalpfn.experiments.runner --experiment E7 --mode prototype
+
+Run Arm A in full mode on the cluster:
+
+    sbatch scripts/run_arm_a.sbatch
+
+The leaderboard lands in `outputs/experiments/leaderboard.{csv,md}`; every run
+also appends to `outputs/experiments/runs.jsonl`. Select the logging backend with
+`--backend wandb|mlflow|local` or the `NEUROCAUSAL_LOGGER` environment variable.
+
+Gate thresholds and programme defaults are mirrored in `configs/experiments.yaml`.
+
 ## Open points
 
 Still to be confirmed: the identity of the validation trial, the scale of the
