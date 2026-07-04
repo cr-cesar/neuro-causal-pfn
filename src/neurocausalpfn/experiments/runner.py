@@ -181,6 +181,16 @@ def _apply_overrides(cfg: Dict, mode: str, overrides: Optional[Dict]):
             cfg["vae"]["epochs"] = overrides["epochs"]
         if "epochs" in overrides and "train" in cfg:
             cfg["train"]["epochs"] = overrides["epochs"]
+        if "channels" in overrides:
+            if "vae" in cfg:
+                cfg["vae"]["channels"] = overrides["channels"]
+            if "model" in cfg:
+                cfg["model"]["channels"] = overrides["channels"]
+        if "batch_size" in overrides:
+            if "vae" in cfg:
+                cfg["vae"]["batch_size"] = overrides["batch_size"]
+            if "train" in cfg:
+                cfg["train"]["batch_size"] = overrides["batch_size"]
     return cfg
 
 
@@ -249,7 +259,8 @@ def _exec_exported(kind: str, run_fn, cfg: Dict, out_dir: str, npz_name: str,
     cfg["export"] = True
     run_fn(cfg)
     path = os.path.join(out_dir, npz_name)
-    Z = np.load(path)["Z"]
+    with np.load(path) as _npz:            # close the handle (Windows file-lock safe)
+        Z = _npz["Z"].copy()
     return art.latent_artifacts(Z, has_posterior=has_posterior)
 
 

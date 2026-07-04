@@ -85,5 +85,6 @@ def test_run_vae_with_daft_and_conditioned_export():
         ckpt = torch.load(os.path.join(out, "vae_lesion.pt"), map_location="cpu")
         assert ckpt["use_daft"] is True and ckpt["n_clinical"] == 4
         # conditioned export wrote the latents
-        npz = np.load(os.path.join(out, "latents_lesion.npz"))
-        assert npz["Z"].shape[1] == 8
+        # close the .npz handle before the tempdir is removed (Windows file lock)
+        with np.load(os.path.join(out, "latents_lesion.npz")) as npz:
+            assert npz["Z"].shape[1] == 8

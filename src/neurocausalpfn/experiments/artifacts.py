@@ -80,7 +80,6 @@ def vae_artifacts(model, dataset, device: str = "cpu", batch_size: int = 8,
     import torch
     from torch.utils.data import DataLoader
 
-    torch.set_grad_enabled(False)
     model = model.to(device).eval()
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     lesion_channel = representation in ("lesion", "early_fusion")
@@ -88,23 +87,26 @@ def vae_artifacts(model, dataset, device: str = "cpu", batch_size: int = 8,
     mus, lvs, vols = [], [], []
     dices, bces, n_seen = [], [], 0
     bce = torch.nn.BCEWithLogitsLoss()
-    for batch in loader:
-        items = list(batch) if isinstance(batch, (list, tuple)) else [batch]
-        x = items[0].to(device)
-        clin = items[1].to(device) if use_daft and len(items) > 1 else None
-        mu, logvar = model.enc(x, clin) if use_daft else model.enc(x)
-        mus.append(mu.cpu().numpy())
-        lvs.append(logvar.cpu().numpy())
-        # lesion foreground fraction as a cheap volume proxy / stratifier
-        ch0 = x[:, 0:1]
-        vols.append(ch0.flatten(1).mean(1).cpu().numpy())
-        if compute_recon and lesion_channel:
-            logits = model.dec(mu)
-            l0 = logits[:, 0:1]
-            t0 = (ch0 > 0.5).float()
-            dices.append(_binary_dice(l0, t0))
-            bces.append(float(bce(l0, t0)))
-        n_seen += x.shape[0]
+    # Scoped no_grad: must NOT use the global torch.set_grad_enabled here, or it
+    # would leak the disabled-grad state into any code that runs afterwards.
+    with torch.no_grad():
+        for batch in loader:
+            items = list(batch) if isinstance(batch, (list, tuple)) else [batch]
+            x = items[0].to(device)
+            clin = items[1].to(device) if use_daft and len(items) > 1 else None
+            mu, logvar = model.enc(x, clin) if use_daft else model.enc(x)
+            mus.append(mu.cpu().numpy())
+            lvs.append(logvar.cpu().numpy())
+            # lesion foreground fraction as a cheap volume proxy / stratifier
+            ch0 = x[:, 0:1]
+            vols.append(ch0.flatten(1).mean(1).cpu().numpy())
+            if compute_recon and lesion_channel:
+                logits = model.dec(mu)
+                l0 = logits[:, 0:1]
+                t0 = (ch0 > 0.5).float()
+                dices.append(_binary_dice(l0, t0))
+                bces.append(float(bce(l0, t0)))
+            n_seen += x.shape[0]
 
     Z = np.concatenate(mus, axis=0)
     logvar = np.concatenate(lvs, axis=0)
