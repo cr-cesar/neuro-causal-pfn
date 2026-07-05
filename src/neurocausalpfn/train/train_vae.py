@@ -9,7 +9,7 @@ configuration changes.
 - representation = "early_fusion": a single VAE on a two-channel input, lesion in
   channel 0 and disconnectome in channel 1, with BCE plus Dice on the lesion
   channel and MSE on the disconnectome channel (E9a). This is the early-fusion
-  comparison point against the separate-encoder late fusion.
+  comparison point against the separate-encoder feature concatenation.
 
 Optional clinical conditioning (E5a): with use_daft the encoder is modulated by
 the clinical vector through a DAFT block; an optional clinical CSV adds NIHSS and

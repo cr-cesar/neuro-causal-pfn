@@ -2,16 +2,23 @@
 
 Causal foundation model based on neuroimaging for estimating individualized
 treatment effects in ischemic stroke, derived from lesion anatomy and using
-in-context learning. The project has two stages that are trained in sequence and
-then composed:
+in-context learning. The work is organised in two phases. Phase 1 (build and
+select) constructs and selects the representation and the causal model and
+evaluates them in silico on the InterSynth prior; it comprises two components,
+trained in sequence and then composed:
 
-- Stage 1: two 3D convolutional variational autoencoders compress a lesion mask
-  and a disconnectome map into a compact code.
-- Stage 2: a transformer trained from scratch with the prior-fitted network
+- The encoder: two 3D convolutional variational autoencoders compress a lesion
+  mask and a disconnectome map into a compact code.
+- The transformer: trained from scratch with the prior-fitted network
   methodology on a synthetic cohort with known counterfactual outcomes (the
   Neuro-Prior), which returns for each patient the distribution of the expected
   conditional potential outcome under treatment and under control. The
   difference is the individualized treatment effect.
+
+Phase 2 (clinical validation) validates the selected model on an external
+real-world trial. Throughout, *Stage 1/2/3* denotes only the transformer's
+training curriculum (context length 1,024, then 4,119, then 20,000), never a
+component or a phase.
 
 A single codebase runs in two modes from the same source. Prototype mode runs on
 CPU with reduced data and synthetic masks, without needing the real data or the
@@ -26,7 +33,7 @@ change.
       vae/                    3D VAE, losses (BCE + Dice + KL and continuous MSE), modality fusion, export
       prior/                  InterSynth generator, confounding, R1/R2 verifier, cohort
       pfn/                    tokens, attention mask, CEPO-PPD head, transformer (linear and TabICL-style), inference
-      train/                  training of Stage 1 (two modalities) and Stage 2, real wiring
+      train/                  training of the encoder (two modalities) and the transformer, real wiring
       eval/                   root-PEHE, prescriptive accuracy, coverage
     tests/                    unit tests and end-to-end smoke test
     scripts/                  prototype run and cluster template
@@ -74,15 +81,16 @@ Then the prototype smoke test can be run as usual:
 bash scripts/run_prototype.sh
 ```
 
-This should train Stage 1 and Stage 2 in prototype mode and write checkpoints to
-`outputs/vae_prototype/vae_lesion.pt` and `outputs/pfn_prototype/pfn.pt`.
+This should train the encoder and the transformer in prototype mode and write
+checkpoints to `outputs/vae_prototype/vae_lesion.pt` and
+`outputs/pfn_prototype/pfn.pt`.
 
 ## Quick run (smoke test)
 
     bash scripts/run_prototype.sh
 
-This trains Stage 1 and Stage 2 in prototype mode on CPU in seconds, with
-synthetic data. Each stage can also be called separately:
+This trains the encoder and the transformer in prototype mode on CPU in seconds,
+with synthetic data. Each component can also be called separately:
 
     python -m neurocausalpfn.train.train_vae --mode prototype
     python -m neurocausalpfn.train.train_pfn --mode prototype
@@ -103,10 +111,10 @@ prior-fitted network.
 Folder layout (everything under `data/`, which is in `.gitignore`):
 
     data/
-      lesions/          lesion masks (lesions.zip from Giles)        -> Stage 1 input
+      lesions/          lesion masks (lesions.zip from Giles)        -> encoder input
       atlases/          functional parcellation and subdivisions     -> only if real InterSynth is used
       disconnectomes/   continuous disconnection maps (0..1)         -> second modality, paired by id
-      representation/   representation_{hash}.npz (Z + clinical)     -> Stage 1 to Stage 2 bridge
+      representation/   representation_{hash}.npz (Z + clinical)     -> encoder-to-transformer bridge
 
 The lesion dataset (`LesionMaskDataset`) looks for NIfTI masks in the directory
 given in `configs/data/lesion.yaml` (`root: data/lesions`). If none exist, it
@@ -123,7 +131,7 @@ with the order of the masks.
 ## The two modalities: lesion and disconnectome
 
 Each patient can enter through two complementary images, each with its own VAE in
-Stage 1:
+the encoder:
 
 - Lesion: a binary mask. Reconstruction with BCE plus soft Dice (`vae_loss`),
   because the foreground is a tiny fraction of the volume.
@@ -143,7 +151,7 @@ compare, chosen by `fusion_mode`: `lesion` (only the lesion latent),
 `disconnectome` (only the disconnectome latent) and `both` (the concatenation of
 the two, which doubles the covariate dimension).
 
-## The Stage 2 prior: synthetic or InterSynth
+## The transformer prior: synthetic or InterSynth
 
 The transformer is trained on a process prior, chosen by configuration in
 `cfg["prior"]["kind"]`:
@@ -166,9 +174,9 @@ The transformer is trained on a process prior, chosen by configuration in
   are labels 1 and 2. The modality is `receptor` (Hansen receptome) or `genetics`
   (Allen transcriptome), selectable by configuration.
 
-## Stage 2 wiring on real data (run_stage2_real)
+## Transformer wiring on real data (run_stage2_real)
 
-`train/run_stage2_real.py` joins the two stages on real data: it loads the frozen
+`train/run_stage2_real.py` joins the two components on real data: it loads the frozen
 encoders, computes each patient's latent (lesion and, depending on the variant,
 disconnectome), fuses them, and builds the anatomical Neuro-Prior by passing
 those latents as `z_pool` and the lesions on their native grid for the overlaps
@@ -183,9 +191,9 @@ VAEs (with `--resume` to resume if the job is interrupted) and then runs
 
 ## Implementation notes
 
-- The VAE encoder is frozen after Stage 1; its output is exported once and
-  versioned by a hash of the weights, so that every Stage 2 result is traceable
-  back to an exact representation.
+- The encoder is frozen after training; its output is exported once and
+  versioned by a hash of the weights, so that every transformer result is
+  traceable back to an exact representation.
 - The transformer objective is the histogram loss over the true expected
   conditional potential outcome, with the context length on a curriculum from
   shorter to longer.
@@ -193,7 +201,7 @@ VAEs (with `--resume` to resume if the job is interrupted) and then runs
   `linear` (one projection per row, useful as a baseline and for the prototype)
   and `tabicl` (TabICL style), which first applies column-wise attention across
   the samples, so that each cell becomes aware of its whole variable, and then
-  row-wise attention across patients. Both stages share the context-only mask, so
+  row-wise attention across patients. Both the column and row passes share the context-only mask, so
   no query prediction depends on another. The attention is still dense; for the
   large contexts of full mode it would be replaced by a more efficient attention.
 
@@ -209,7 +217,7 @@ not re-implement training or metrics; it composes the entry points above.
 - `tiers.py` is the tiered harness with the stop/go gates of section 13: T1
   reconstruction (Dice >= 0.70, a hard gate), T2 clinical probing (R2 >= 0.05, a
   soft gate that deprioritises), T3 latent quality (informational), T4 causal
-  (root-PEHE < 0.349, the Giles NMF-50 reference; a hard gate). Failing a hard
+  (root-PEHE < 0.349, the Giles VAE-50 (disconnectome) reference; a hard gate). Failing a hard
   gate short-circuits the more expensive tiers.
 - `estimators.py` provides the Tier-4 evaluators: a representation-aware
   semi-synthetic potential-outcomes problem built on the arm's own latents with a
@@ -236,14 +244,4 @@ Run Arm A in full mode on the cluster:
 
 The leaderboard lands in `outputs/experiments/leaderboard.{csv,md}`; every run
 also appends to `outputs/experiments/runs.jsonl`. Select the logging backend with
-`--backend wandb|mlflow|local` or the `NEUROCAUSAL_LOGGER` environment variable.
-
-Gate thresholds and programme defaults are mirrored in `configs/experiments.yaml`.
-
-## Open points
-
-Still to be confirmed: the identity of the validation trial, the scale of the
-precision target, the size of the transformer (to be justified with the backbone
-ablation) and the license of the reference VAE. The provenance of the
-disconnectome is already resolved: the lab has the continuous maps, paired by id
-with the lesions. The detail is in the implementation plan document.
+`--backend wandb|mlflow|local` or the `NEUROCAUSAL_LOGGER` envi

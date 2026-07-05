@@ -142,7 +142,7 @@ def _markdown(board: List[Dict]) -> str:
                         ood=_cell(e.get("T4.ood_gap.mean"))))
     lines.append("")
     lines.append("Generated from runs.jsonl. root-PEHE below "
-                 f"{gate4} passes the Tier-4 gate (beats Giles NMF-50).")
+                 f"{gate4} passes the Tier-4 gate (beats Giles VAE-50).")
     return "\n".join(lines) + "\n"
 
 

@@ -22,7 +22,7 @@ def fuse_representation(z_lesion: Optional[np.ndarray], z_disconnectome: Optiona
 
     - 'lesion': the lesion latent only.
     - 'disconnectome': the disconnectome latent only.
-    - 'both': concatenation of both (late fusion).
+    - 'both': concatenation of both (separate-encoder feature concatenation).
     """
     if mode not in FUSION_MODES:
         raise ValueError(f"unknown fusion mode: {mode}")

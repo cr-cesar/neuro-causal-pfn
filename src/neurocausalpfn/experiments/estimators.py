@@ -24,7 +24,7 @@ evaluators are provided, in increasing fidelity and cost:
   the authoritative Tier-4 path; it needs the real cohort and is wired but not
   run in prototype mode.
 
-The Giles NMF-50 baseline root-PEHE (0.349) is the stop/go threshold.
+The Giles VAE-50 (disconnectome) baseline root-PEHE (0.349) is the stop/go threshold.
 """
 from __future__ import annotations
 

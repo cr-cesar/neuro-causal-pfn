@@ -78,13 +78,13 @@ TIER_GATES: Dict[str, Gate] = {
                rationale="Informational tier: latent structure and "
                "disentanglement, no stop/go threshold."),
     "T4": Gate(tier="T4", metric="root_pehe", op="<", threshold=0.349, kind="gate",
-               rationale="Causal gate: beat the Giles NMF-50 baseline "
+               rationale="Causal gate: beat the Giles VAE-50 (disconnectome) baseline "
                "root-PEHE (0.349)."),
 }
 
 # Reference baselines available without any VAE training (section 13, "Baseline").
 GILES_BASELINES = {
-    "nmf50_root_pehe": 0.349,   # the Tier-4 stop/go reference
+    "vae50_root_pehe": 0.349,   # the Tier-4 stop/go reference (Giles VAE-50, disconnectome)
     "pombo_dice": 0.70,         # the Tier-1 stop/go reference
     "nihss_r2_chance": 0.05,    # the Tier-2 above-chance reference
 }

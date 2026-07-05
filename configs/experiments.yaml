@@ -11,11 +11,11 @@ tiers:
   T1:  {metric: dice,      op: ">=", threshold: 0.70,  kind: gate,          note: "Reconstruction, Pombo baseline"}
   T2:  {metric: r2_nihss,  op: ">=", threshold: 0.05,  kind: deprioritize,  note: "Linear probe above chance"}
   T3:  {metric: active_dims, op: none, threshold: null, kind: info,         note: "Latent quality, no threshold"}
-  T4:  {metric: root_pehe, op: "<",  threshold: 0.349, kind: gate,          note: "Beat Giles NMF-50"}
+  T4:  {metric: root_pehe, op: "<",  threshold: 0.349, kind: gate,          note: "Beat Giles VAE-50 (disconnectome)"}
 
 # Reference baselines available without any VAE training (section 13).
 baselines:
-  giles_nmf50_root_pehe: 0.349
+  giles_vae50_root_pehe: 0.349
   pombo_dice: 0.70
   nihss_r2_chance: 0.05
 
