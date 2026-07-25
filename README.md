@@ -2,23 +2,25 @@
 
 Causal foundation model based on neuroimaging for estimating individualized
 treatment effects in ischemic stroke, derived from lesion anatomy and using
-in-context learning. The work is organised in two phases. Phase 1 (build and
-select) constructs and selects the representation and the causal model and
-evaluates them in silico on the InterSynth prior; it comprises two components,
-trained in sequence and then composed:
+in-context learning. The work is organised in two phases.
 
-- The encoder: two 3D convolutional variational autoencoders compress a lesion
-  mask and a disconnectome map into a compact code.
-- The transformer: trained from scratch with the prior-fitted network
-  methodology on a synthetic cohort with known counterfactual outcomes (the
-  Neuro-Prior), which returns for each patient the distribution of the expected
-  conditional potential outcome under treatment and under control. The
-  difference is the individualized treatment effect.
+Phase 1 (encoder construction and selection): the VAE encoder arms are trained on
+real lesion masks and evaluated through Tiers 1 to 4, and the winning
+representation is frozen. Tier 4 uses the off-the-shelf CausalPFN (Balazadeh et
+al. 2025) as a fixed evaluator, with no transformer training in Phase 1. Two 3D
+convolutional VAEs compress a lesion mask and a disconnectome map into a compact
+latent code.
 
-Phase 2 (clinical validation) validates the selected model on an external
-real-world trial. Throughout, *Stage 1/2/3* denotes only the transformer's
-training curriculum (context length 1,024, then 4,119, then 20,000), never a
-component or a phase.
+Phase 2 (foundation model training and clinical validation): the Neuro-Causal-PFN
+transformer is trained from scratch with the prior-fitted network methodology on
+the Neuro-Prior synthetic generator, using the frozen encoder's latent codes as
+covariates. It returns each patient's individualized treatment effect (CATE)
+without retraining, and is then validated on real trial data. Phase 2 is the
+primary training of the foundation model and the central contribution of the
+project.
+
+Throughout, *curriculum round 1/2/3* denotes only the transformer's training
+curriculum (context length 1,024, then 4,119, then 20,000), never a phase.
 
 A single codebase runs in two modes from the same source. Prototype mode runs on
 CPU with reduced data and synthetic masks, without needing the real data or the

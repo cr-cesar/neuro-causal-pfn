@@ -3,9 +3,11 @@
 Each modality has its own frozen VAE and therefore its own latent. The covariate
 seen by the transformer can be one of three variants, ready to compare as in
 Giles: lesion only, disconnectome only, or the fusion of both. The default fusion
-is late and simple: concatenate the two latents. The lesion-disconnectome
-pairing is per patient (same id), so row i of each latent matrix corresponds to
-the same subject.
+is feature-level: the two separately-trained (frozen) encoders' latents are
+concatenated into one covariate vector for the downstream transformer. This is
+separate-encoder feature concatenation, not decision-level "late" fusion. The
+lesion-disconnectome pairing is per patient (same id), so row i of each latent
+matrix corresponds to the same subject.
 """
 from typing import Optional
 
