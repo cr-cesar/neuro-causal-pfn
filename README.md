@@ -87,6 +87,44 @@ This should train the encoder and the transformer in prototype mode and write
 checkpoints to `outputs/vae_prototype/vae_lesion.pt` and
 `outputs/pfn_prototype/pfn.pt`.
 
+## Phase 1 across platforms (Windows / macOS / Myriad)
+
+The intended workflow is: develop on Windows, sanity-check on a Mac, train at
+scale on UCL Myriad. The same source runs everywhere; only the entry script
+changes.
+
+**Windows (development).** Use the PowerShell runner for the CPU smoke test:
+
+    powershell -ExecutionPolicy Bypass -File scripts\run_prototype.ps1
+
+and the tests with `set PYTHONPATH=src` (cmd) or `$env:PYTHONPATH="src"`
+(PowerShell) before `pytest -q`. Keep `num_workers: 0` in prototype configs on
+Windows: DataLoader workers use `spawn` there and add no value at prototype
+sizes.
+
+**macOS (sanity check).** Follow the Apple Silicon notes below, then
+`bash scripts/run_prototype.sh`. CPU is the default device on Apple Silicon
+(3D convolutions on MPS are still unreliable); see PORTABILITY.md.
+
+**UCL Myriad (full training).** Myriad schedules with SGE (`qsub`), not SLURM,
+so use `scripts/run_arm_a_myriad.qsub.sh` rather than the `.sbatch` templates
+(those target SLURM clusters). One-off setup on a login node:
+
+    cd ~/Scratch && git clone <this repo> && cd neuro-causal-pfn
+    module load python/miniconda3
+    conda env create -f env/environment.cluster.yml
+    conda activate neuro-causal-pfn
+    pip install -e ".[imaging,baselines,cluster]"
+
+then place the real data under `data/` (see the Data section) and submit:
+
+    qsub scripts/run_arm_a_myriad.qsub.sh
+
+The job runs the Arm A programme (E1 → E2 → E3 → E4/E5 → E6/E7 → E8) through
+the orchestrator and writes the leaderboard to
+`outputs/experiments/leaderboard.{csv,md}`. The repo must live under
+`~/Scratch`, because compute nodes cannot write to `$HOME`.
+
 ## Quick run (smoke test)
 
     bash scripts/run_prototype.sh
@@ -246,4 +284,5 @@ Run Arm A in full mode on the cluster:
 
 The leaderboard lands in `outputs/experiments/leaderboard.{csv,md}`; every run
 also appends to `outputs/experiments/runs.jsonl`. Select the logging backend with
-`--backend wandb|mlflow|local` or the `NEUROCAUSAL_LOGGER` envi
+`--backend wandb|mlflow|local` or the `NEUROCAUSAL_LOGGER` environment
+variable.
