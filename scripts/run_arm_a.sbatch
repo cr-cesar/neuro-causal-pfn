@@ -13,9 +13,11 @@
 # leaderboard is written to outputs/experiments/leaderboard.{csv,md}.
 #
 # Requires the real data placed in:
-#   data/lesions/         lesion masks (binary, MNI 2mm)
-#   data/disconnectomes/  disconnection maps (continuous, MNI 2mm), same id per patient
-#   data/atlases/         functional parcellation and Giles subdivisions
+#   data/Full data/lesions/          lesion masks (binary, MNI 2mm)
+#   data/Full data/disconnectomes/   disconnection maps (continuous, MNI 2mm), same id per patient
+#   data/atlases/                    functional parcellation and Giles subdivisions
+# (the pilot subset lives in data/Trial data/...; select it by exporting
+#  NEUROCAUSAL_DATA_TIER=trial or passing --data-tier trial)
 set -euo pipefail
 export PYTHONPATH="${PYTHONPATH:-}:$(pwd)/src"
 

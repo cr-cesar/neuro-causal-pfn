@@ -52,8 +52,8 @@ def run_dim_sweep(base_cfg: Dict, grid: List[Tuple[int, int]] = None) -> List[Di
             cfg["vae"]["zdim"] = d
             cfg["export"] = False
             cfg["out_dir"] = os.path.join(root_out, f"{rep}_d{d}")
-            if rep == "disconnectome" and cfg["data"].get("root") == "data/lesions":
-                cfg["data"]["root"] = "data/disconnectomes"
+            if rep == "disconnectome" and cfg["data"].get("root") == cfg["data"].get("lesion_root"):
+                cfg["data"]["root"] = cfg["data"].get("disconnectome_root")
             _, hist = run_vae(cfg)
             rec[key] = hist[-1]["val_total"]
         results.append(rec)

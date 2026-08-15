@@ -38,6 +38,7 @@ from typing import Dict, List, Optional
 import numpy as np
 
 from ..utils.logging_utils import get_logger
+from ..data.paths import set_tier
 from . import artifacts as art
 from .logging_backend import ExperimentLogger
 from .registry import (ARM_A_ORDER, Experiment, arm_experiments,
@@ -518,6 +519,8 @@ def main(argv=None):
     g.add_argument("--arm", help="an arm letter A|B|C|D|E")
     g.add_argument("--all", action="store_true", help="the whole programme")
     ap.add_argument("--mode", default="prototype", choices=["prototype", "full"])
+    ap.add_argument("--data-tier", default=None, choices=["trial", "full"],
+                    help="cohort tier: 'trial' (data/Trial data) or 'full' (data/Full data)")
     ap.add_argument("--seeds", type=int, default=3)
     ap.add_argument("--out-root", default="outputs/experiments")
     ap.add_argument("--backend", default="auto",
@@ -525,6 +528,9 @@ def main(argv=None):
     ap.add_argument("--report", action="store_true",
                     help="write the leaderboard report at the end")
     args = ap.parse_args(argv)
+
+    if args.data_tier is not None:
+        set_tier(args.data_tier)
 
     os.makedirs(args.out_root, exist_ok=True)
     logger = ExperimentLogger(args.out_root, run_name=args.experiment or args.arm or "all",

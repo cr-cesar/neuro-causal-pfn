@@ -19,6 +19,7 @@ from ..contrastive.losses import nt_xent_loss, supcon_loss
 from ..contrastive.model import ContrastiveFusionEncoder
 from ..data.augmentations import augment_batch
 from ..data.nifti_dataset import PairedLesionDisconnectomeDataset
+from ..data.paths import disconnectome_root, lesion_root, set_tier
 from ..utils.logging_utils import get_logger
 from ..utils.runtime import (autocast_ctx, log_runtime, make_grad_scaler,
                              make_loader, optim_step, resolve_device, use_amp)
@@ -50,7 +51,7 @@ def full_config() -> Dict:
         "out_dir": "outputs/contrastive_full",
         "export": True,
         "outcome_csv": None,            # binary outcome by id; SupCon supervision
-        "data": {"lesion_root": "data/lesions", "disconnectome_root": "data/disconnectomes",
+        "data": {"lesion_root": lesion_root(), "disconnectome_root": disconnectome_root(),
                  "resolution": [96, 112, 96], "n_synth": 0, "val_frac": 0.1},
         "model": {"zdim": 50, "channels": [16, 32, 64, 128, 256], "backbone": "cnn",
                   "d_model": 128, "proj_dim": 128, "n_heads": 4, "recon": True},
@@ -176,11 +177,15 @@ if __name__ == "__main__":
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", default="prototype", choices=["prototype", "full"])
+    ap.add_argument("--data-tier", default=None, choices=["trial", "full"],
+                    help="cohort tier: 'trial' (data/Trial data) or 'full' (data/Full data)")
     ap.add_argument("--backbone", default=None,
                     choices=["cnn", "wide", "resnet", "resnet18", "resnet50"])
     ap.add_argument("--no-recon", action="store_true", help="drop the reconstruction term (E10a)")
     ap.add_argument("--outcome-csv", default=None, help="binary outcome by id (SupCon labels)")
     args = ap.parse_args()
+    if args.data_tier is not None:
+        set_tier(args.data_tier)
     cfg = prototype_config() if args.mode == "prototype" else full_config()
     if args.backbone is not None:
         cfg["model"]["backbone"] = args.backbone

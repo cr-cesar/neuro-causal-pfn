@@ -14,6 +14,7 @@ import torch
 from torch.utils.data import DataLoader, Subset
 
 from ..data.nifti_dataset import PairedLesionDisconnectomeDataset
+from ..data.paths import disconnectome_root, lesion_root, set_tier
 from ..utils.logging_utils import get_logger
 from ..utils.runtime import (autocast_ctx, log_runtime, make_grad_scaler,
                              make_loader, optim_step, resolve_device, use_amp)
@@ -43,7 +44,7 @@ def full_config() -> Dict:
         "seed": 0,
         "out_dir": "outputs/dmvae_full",
         "export": True,
-        "data": {"lesion_root": "data/lesions", "disconnectome_root": "data/disconnectomes",
+        "data": {"lesion_root": lesion_root(), "disconnectome_root": disconnectome_root(),
                  "resolution": [96, 112, 96], "n_synth": 0, "val_frac": 0.1},
         "model": {"shared_dim": 50, "private_dim": 25, "channels": [16, 32, 64, 128, 256],
                   "backbone": "cnn"},
@@ -145,8 +146,12 @@ if __name__ == "__main__":
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", default="prototype", choices=["prototype", "full"])
+    ap.add_argument("--data-tier", default=None, choices=["trial", "full"],
+                    help="cohort tier: 'trial' (data/Trial data) or 'full' (data/Full data)")
     ap.add_argument("--lambda-priv", type=float, default=None, help="weight on the private KL")
     args = ap.parse_args()
+    if args.data_tier is not None:
+        set_tier(args.data_tier)
     cfg = prototype_config() if args.mode == "prototype" else full_config()
     if args.lambda_priv is not None:
         cfg["train"]["lambda_priv"] = args.lambda_priv

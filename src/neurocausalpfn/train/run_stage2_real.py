@@ -18,6 +18,7 @@ import torch
 
 from ..data.nifti_dataset import (PairedLesionDisconnectomeDataset, _load_nifti)
 from ..data.transforms import binarize
+from ..data.paths import ATLAS_DIR, disconnectome_root, lesion_root, set_tier
 from ..pfn.inference import credible_interval, predict_cate
 from ..pfn.tokens import to_tensors
 from ..prior.atlas import FunctionalAtlas
@@ -38,8 +39,8 @@ def stage2_real_config() -> Dict:
         "fusion_mode": "both",                 # lesion, disconnectome or both
         "lesion_vae_ckpt": "outputs/vae_full_lesion/vae_lesion.pt",
         "disconnectome_vae_ckpt": "outputs/vae_full_disconnectome/vae_disconnectome.pt",
-        "data": {"lesion_root": "data/lesions", "disconnectome_root": "data/disconnectomes",
-                 "atlas_dir": "data/atlases", "modality": "receptor",
+        "data": {"lesion_root": lesion_root(), "disconnectome_root": disconnectome_root(),
+                 "atlas_dir": ATLAS_DIR, "modality": "receptor",
                  "encode_resolution": [96, 112, 96], "atlas_resolution": [91, 109, 91]},
         "pfn": {"d_model": 512, "n_layers": 12, "n_col_layers": 3, "n_heads": 8,
                 "n_bins": 1024, "sigma": 0.02, "arch": "tabicl",
@@ -158,4 +159,12 @@ def infer_cate_real(model, context_Z: np.ndarray, context_T: np.ndarray, context
 
 
 if __name__ == "__main__":
+    import argparse
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--data-tier", default=None, choices=["trial", "full"],
+                    help="cohort tier: 'trial' (data/Trial data) or 'full' (data/Full data)")
+    args = ap.parse_args()
+    if args.data_tier is not None:
+        set_tier(args.data_tier)
     run_stage2_real(stage2_real_config())

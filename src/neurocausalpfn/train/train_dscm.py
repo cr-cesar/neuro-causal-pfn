@@ -15,6 +15,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset, Subset
 
 from ..data.nifti_dataset import LesionMaskDataset
+from ..data.paths import lesion_root, set_tier
 from ..dscm.model import ConditionalHVAE
 from ..utils.logging_utils import get_logger
 from ..utils.runtime import (autocast_ctx, log_runtime, make_grad_scaler,
@@ -60,7 +61,7 @@ def full_config() -> Dict:
         "out_dir": "outputs/dscm_full",
         "export": True,
         "clinical_csv": None,
-        "data": {"root": "data/lesions", "resolution": [96, 112, 96], "n_synth": 0, "val_frac": 0.1},
+        "data": {"root": lesion_root(), "resolution": [96, 112, 96], "n_synth": 0, "val_frac": 0.1},
         "model": {"group_dims": [25, 25], "channels": [16, 32, 64, 128, 256], "backbone": "cnn",
                   "use_ard": False, "multi_env": False, "n_regimes": 20},
         "train": {"batch_size": 8, "epochs": 100, "lr": 1e-4, "beta_max": 1.0, "warmup_frac": 0.2},
@@ -174,11 +175,15 @@ if __name__ == "__main__":
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", default="prototype", choices=["prototype", "full"])
+    ap.add_argument("--data-tier", default=None, choices=["trial", "full"],
+                    help="cohort tier: 'trial' (data/Trial data) or 'full' (data/Full data)")
     ap.add_argument("--use-ard", action="store_true", help="add the ARD relevance scale (E8c)")
     ap.add_argument("--multi-env", action="store_true", help="condition on the environment index (E8b)")
     ap.add_argument("--n-regimes", type=int, default=None, help="number of environments for E8b")
     ap.add_argument("--clinical-csv", default=None, help="CSV with NIHSS and time_to_scan by id")
     args = ap.parse_args()
+    if args.data_tier is not None:
+        set_tier(args.data_tier)
     cfg = prototype_config() if args.mode == "prototype" else full_config()
     if args.use_ard:
         cfg["model"]["use_ard"] = True

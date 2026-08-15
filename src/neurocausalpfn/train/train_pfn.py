@@ -18,6 +18,7 @@ import torch
 
 from ..eval.metrics import prescriptive_accuracy, root_pehe
 from ..prior.cohort import NeuroPrior
+from ..data.paths import ATLAS_DIR
 from ..utils.logging_utils import get_logger
 from ..utils.seed import set_seed
 from ..pfn.inference import predict_cate
@@ -69,7 +70,7 @@ def full_config() -> Dict:
         # point atlas_dir to data/atlases and, ideally, pass the encoder latents
         # as z_pool from an orchestration script.
         "prior": {"kind": "synthetic",
-                  "atlas_dir": "data/atlases", "atlas_shape": [96, 112, 96],
+                  "atlas_dir": ATLAS_DIR, "atlas_shape": [96, 112, 96],
                   "modality": "receptor",
                   "pool_size": 4000, "unobserved_strength": 0.0},
         "pfn": {"d_x": 104, "d_model": 512, "n_layers": 12, "n_heads": 8,

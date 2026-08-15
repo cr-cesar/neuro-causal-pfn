@@ -28,6 +28,7 @@ from torch.utils.data import DataLoader, Subset
 
 from ..causal.pns import soft_pns_value
 from ..data.nifti_dataset import LesionMaskDataset, PairedLesionDisconnectomeDataset
+from ..data.paths import disconnectome_root, lesion_root, set_tier
 from ..utils.logging_utils import get_logger
 from ..utils.runtime import (autocast_ctx, log_runtime, make_grad_scaler,
                              make_loader, optim_step, resolve_device, use_amp)
@@ -70,8 +71,8 @@ def full_config() -> Dict:
         "export": True,               # exports the frozen latents at the end
         "clinical_csv": None,         # optional CSV with NIHSS and time_to_scan by id
         "outcome_csv": None,          # optional CSV with a binary outcome by id (Arm B / PNS)
-        "data": {"root": "data/lesions", "lesion_root": "data/lesions",
-                 "disconnectome_root": "data/disconnectomes",
+        "data": {"root": lesion_root(), "lesion_root": lesion_root(),
+                 "disconnectome_root": disconnectome_root(),
                  "resolution": [96, 112, 96], "n_synth": 0, "val_frac": 0.1},
         "vae": {"zdim": 50, "channels": [16, 32, 64, 128, 256],
                 "batch_size": 8, "epochs": 200, "lr": 1e-4, "backbone": "cnn",
@@ -297,12 +298,16 @@ if __name__ == "__main__":
     ap.add_argument("--outcome-csv", default=None, help="CSV with a binary outcome by id (Arm B)")
     ap.add_argument("--clinical-csv", default=None, help="CSV with NIHSS and time_to_scan by id")
     ap.add_argument("--resume", default=None)
+    ap.add_argument("--data-tier", default=None, choices=["trial", "full"],
+                    help="cohort tier: 'trial' (data/Trial data) or 'full' (data/Full data)")
     args = ap.parse_args()
+    if args.data_tier is not None:
+        set_tier(args.data_tier)
     cfg = prototype_config() if args.mode == "prototype" else full_config()
     if args.representation is not None:
         cfg["representation"] = args.representation
-        if args.representation == "disconnectome" and cfg["data"]["root"] == "data/lesions":
-            cfg["data"]["root"] = "data/disconnectomes"
+        if args.representation == "disconnectome" and cfg["data"]["root"] == cfg["data"].get("lesion_root"):
+            cfg["data"]["root"] = cfg["data"]["disconnectome_root"]
         cfg["out_dir"] = f"outputs/vae_{args.mode}_{args.representation}"
     if args.use_daft:
         cfg["vae"]["use_daft"] = True

@@ -1,4 +1,8 @@
-root: data/lesions          # empty or nonexistent -> synthetic masks
+# Lesion-mask root. The canonical layout is tiered:
+#   data/Trial data/lesions   pilot subset (--data-tier trial)
+#   data/Full data/lesions    complete cohort (--data-tier full, the default)
+# Empty or nonexistent -> synthetic masks.
+root: data/Full data/lesions
 resolution: ${mode.resolution}
 n_synth: 64                 # only used in synthetic mode
 clinical_path: null

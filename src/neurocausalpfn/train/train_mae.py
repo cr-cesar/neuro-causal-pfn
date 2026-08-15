@@ -13,6 +13,7 @@ import torch
 from torch.utils.data import DataLoader, Subset
 
 from ..data.nifti_dataset import LesionMaskDataset
+from ..data.paths import lesion_root, set_tier
 from ..mae.losses import masked_lesion_bce
 from ..mae.model import HiEndMAE3D
 from ..utils.logging_utils import get_logger
@@ -42,7 +43,7 @@ def full_config() -> Dict:
         "seed": 0,
         "out_dir": "outputs/mae_full",
         "export": True,
-        "data": {"root": "data/lesions", "resolution": [96, 112, 96], "n_synth": 0, "val_frac": 0.1},
+        "data": {"root": lesion_root(), "resolution": [96, 112, 96], "n_synth": 0, "val_frac": 0.1},
         "model": {"patch": 16, "embed_dim": 384, "depth": 12, "heads": 6, "decoder_dim": 192,
                   "decoder_depth": 8, "decoder_heads": 6, "zdim": 50, "mask_ratio": 0.75,
                   "block": [2, 2, 2]},
@@ -140,9 +141,13 @@ if __name__ == "__main__":
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--mode", default="prototype", choices=["prototype", "full"])
+    ap.add_argument("--data-tier", default=None, choices=["trial", "full"],
+                    help="cohort tier: 'trial' (data/Trial data) or 'full' (data/Full data)")
     ap.add_argument("--mask-ratio", type=float, default=None, help="fraction of patches masked")
     ap.add_argument("--lesion-weight", type=float, default=None, help="up-weight for lesion-bearing patches")
     args = ap.parse_args()
+    if args.data_tier is not None:
+        set_tier(args.data_tier)
     cfg = prototype_config() if args.mode == "prototype" else full_config()
     if args.mask_ratio is not None:
         cfg["model"]["mask_ratio"] = args.mask_ratio

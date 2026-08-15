@@ -148,13 +148,26 @@ prior-fitted network.
 
 ## Data
 
-Folder layout (everything under `data/`, which is in `.gitignore`):
+Folder layout (everything under `data/`, which is in `.gitignore`). Two cohort
+tiers share one structure and the atlases are common to both:
 
     data/
-      lesions/          lesion masks (lesions.zip from Giles)        -> encoder input
-      atlases/          functional parcellation and subdivisions     -> only if real InterSynth is used
-      disconnectomes/   continuous disconnection maps (0..1)         -> second modality, paired by id
-      representation/   representation_{hash}.npz (Z + clinical)     -> encoder-to-transformer bridge
+      Trial data/
+        lesions/          pilot lesion masks (binary, MNI 2mm)       -> encoder input
+        disconnectomes/   pilot disconnection maps (0..1)            -> second modality, paired by id
+      Full data/
+        lesions/          full cohort lesion masks (Giles)
+        disconnectomes/   full cohort disconnection maps
+      atlases/            functional parcellation and subdivisions   -> only if real InterSynth is used
+      representation/     representation_{hash}.npz (Z + clinical)   -> encoder-to-transformer bridge
+
+The tier is selected with `--data-tier trial|full` on every entry point (the
+trainers, the experiments runner, `run_stage2_real`) or with the
+`NEUROCAUSAL_DATA_TIER` environment variable; the default is `full`. The
+resolver (`neurocausalpfn/data/paths.py`, the single source of truth for these
+locations) matches the folder name case-insensitively and falls back to the
+legacy flat layout (`data/lesions`, `data/disconnectomes`) when no tiered
+folder exists.
 
 The lesion dataset (`LesionMaskDataset`) looks for NIfTI masks in the directory
 given in `configs/data/lesion.yaml` (`root: data/lesions`). If none exist, it

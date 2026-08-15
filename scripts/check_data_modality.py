@@ -19,7 +19,8 @@ Exit code is 0 when both modalities match the contract, 1 otherwise, so it can
 gate CI or a preprocessing step.
 
 Usage:
-    python scripts/check_data_modality.py                      # defaults: data/lesions, data/disconnectomes
+    python scripts/check_data_modality.py                      # defaults: the 'full' tier (data/Full data)
+    python scripts/check_data_modality.py --tier trial         # the pilot tier (data/Trial data)
     python scripts/check_data_modality.py --sample 0           # scan ALL files (slower)
     python scripts/check_data_modality.py \\
         --lesions "data/Full data/lesions" \\
@@ -125,11 +126,22 @@ def summarize(name, total, stats):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--lesions", default=os.path.join("data", "lesions"))
-    ap.add_argument("--disconnectomes", default=os.path.join("data", "disconnectomes"))
+    ap.add_argument("--tier", default="full", choices=["trial", "full"],
+                    help="cohort tier used for the default roots")
+    ap.add_argument("--lesions", default=None,
+                    help="explicit lesion root (overrides --tier)")
+    ap.add_argument("--disconnectomes", default=None,
+                    help="explicit disconnectome root (overrides --tier)")
     ap.add_argument("--sample", type=int, default=100,
                     help="files per modality to inspect (0 = all). Default 100.")
     args = ap.parse_args()
+    if args.lesions is None or args.disconnectomes is None:
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+        from neurocausalpfn.data.paths import disconnectome_root, lesion_root
+        if args.lesions is None:
+            args.lesions = lesion_root(args.tier)
+        if args.disconnectomes is None:
+            args.disconnectomes = disconnectome_root(args.tier)
 
     problems = []
 
