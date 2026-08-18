@@ -1,33 +1,24 @@
-# Cluster environment (Myriad venv path). Mirrors env/environment.cluster.yml.
+# Core environment: everything Phase 1 actually imports (the VAE arms, the
+# experiments runner with its default T-learner Tier-4 proxy, and the tests).
 #
 #   module load python3/3.11
 #   python3 -m venv ~/venvs/neuro && source ~/venvs/neuro/bin/activate
 #   pip install --upgrade pip
 #   pip install -r requirements.txt
 #
-# The extra index serves the CUDA 11.8 build of torch, which is the one that
-# targets the V100 nodes (sm_70); PyPI's default CUDA build also works if the
-# node driver is recent enough.
+# The Tier-4 evaluator stack (causalpfn + faiss) is NOT needed to train the
+# encoders; install it later from requirements-baselines.txt (see the notes
+# there — on old-glibc clusters like Myriad, faiss needs conda).
+#
+# The extra index serves the CUDA 11.8 build of torch, which targets the V100
+# nodes (sm_70); PyPI's default CUDA build also works with a recent driver.
 --extra-index-url https://download.pytorch.org/whl/cu118
 
 torch==2.3.1
-numpy==1.26.*
+numpy==1.26.*          # torch 2.3 is built against numpy 1.x
 scipy==1.13.*
-pandas==2.2.*
 scikit-learn==1.4.*
-monai==1.3.*
-torchio==0.19.*
 nibabel==5.2.*
-nilearn==0.10.*
-einops==0.8.0
-causalpfn==0.1.4
-tabicl==0.1.4
-faiss-cpu>=1.9.0          # causalpfn 0.1.4 requires >=1.9.0
-huggingface_hub==0.23.*
-hydra-core==1.3.2
-omegaconf==2.3.*
-pytorch-lightning==2.2.*
-wandb==0.17.*
 pytest>=8.0
 
 # the project itself, in editable mode
