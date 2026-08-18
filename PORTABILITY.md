@@ -62,7 +62,7 @@ install it through **conda**, not pip, to get a wheel built against a compatible
 OpenMP:
 
 ```bash
-conda install -c pytorch faiss-cpu=1.8.0
+conda install -c conda-forge "faiss-cpu>=1.9.0"
 ```
 
 ## Quick self-check
