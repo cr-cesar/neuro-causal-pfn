@@ -125,6 +125,14 @@ the orchestrator and writes the leaderboard to
 `outputs/experiments/leaderboard.{csv,md}`. The repo must live under
 `~/Scratch`, because compute nodes cannot write to `$HOME`.
 
+**Login-node etiquette (Arbiter2).** Myriad login nodes are shared and policed:
+each user must stay under 6 cores / 30 GB there, and violations bring
+escalating CPU/memory penalties on the account. Anything heavier than editing,
+`git`, or a quick one-liner belongs in a job. In particular, run the test suite
+as a compute-node job (`qsub scripts/run_tests_myriad.qsub.sh`), never as plain
+`pytest` on the login node — as a safety net, `tests/conftest.py` detects
+`login*` hostnames and caps PyTorch at 2 threads.
+
 ## Quick run (smoke test)
 
     bash scripts/run_prototype.sh
