@@ -7,9 +7,10 @@ dist/
 .venv/
 venv/
 
-# salidas de entrenamiento y datos
-outputs/
-data/
+# salidas de entrenamiento y datos: SOLO las carpetas de la raiz del repo.
+# (sin la barra inicial, "data/" ignoraria tambien src/neurocausalpfn/data/)
+/outputs/
+/data/
 *.pt
 *.ckpt
 *.npz
