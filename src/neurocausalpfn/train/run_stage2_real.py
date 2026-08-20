@@ -24,6 +24,7 @@ from ..pfn.tokens import to_tensors
 from ..prior.atlas import FunctionalAtlas
 from ..prior.cohort import NeuroPriorInterSynth, build_synthetic_lesion_pool
 from ..utils.logging_utils import get_logger
+from ..utils.runtime import resolve_device
 from ..utils.seed import set_seed
 from ..vae.conv3d_vae import ConvVAE3D
 from ..vae.fusion import compute_latents, fuse_representation
@@ -92,7 +93,7 @@ def build_real_prior(cfg: Dict, lesion_vae, disconnectome_vae) -> NeuroPriorInte
         lesion_root=d.get("lesion_root"), disconnectome_root=d.get("disconnectome_root"),
         in_shape=enc_shape, n_synth=cfg.get("n_synth_fallback", 64), seed=cfg["seed"])
     z_pool = encode_and_fuse(lesion_vae, disconnectome_vae, paired, cfg["fusion_mode"],
-                             device=cfg.get("device", "cpu"), batch_size=cfg["pfn"]["batch_size"])
+                             device=resolve_device(cfg), batch_size=cfg["pfn"]["batch_size"])
     pool = native_lesion_pool(paired, atlas_shape, seed=cfg["seed"])
     atlas = FunctionalAtlas.from_dir(d.get("atlas_dir"), shape=atlas_shape, seed=cfg["seed"],
                                      modality=d.get("modality", "receptor"))
@@ -104,7 +105,7 @@ def build_real_prior(cfg: Dict, lesion_vae, disconnectome_vae) -> NeuroPriorInte
 
 def run_stage2_real(cfg: Dict):
     set_seed(cfg["seed"])
-    device = cfg.get("device", "cpu")
+    device = resolve_device(cfg)
     p = cfg["pfn"]
 
     lesion_vae = load_vae(cfg["lesion_vae_ckpt"], device) if os.path.exists(cfg["lesion_vae_ckpt"]) else None

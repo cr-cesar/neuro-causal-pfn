@@ -159,7 +159,9 @@ def tier4_pfn_synthetic(cfg: Dict, iters: int = 60, n_eval: int = 16) -> Dict:
     from ..train.train_pfn import build_model
 
     p = cfg["pfn"]
-    device = cfg.get("device", "cpu")
+    from ..utils.runtime import resolve_device
+
+    device = resolve_device(cfg)
     model = build_model(cfg, p["d_x"]).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=p.get("lr", 3e-4),
                             weight_decay=p.get("weight_decay", 0.01))

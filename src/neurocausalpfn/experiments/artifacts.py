@@ -80,6 +80,9 @@ def vae_artifacts(model, dataset, device: str = "cpu", batch_size: int = 8,
     import torch
     from torch.utils.data import DataLoader
 
+    from ..utils.runtime import resolve_device
+
+    device = resolve_device({"device": device})   # accepts 'auto' from full-mode configs
     model = model.to(device).eval()
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
     lesion_channel = representation in ("lesion", "early_fusion")

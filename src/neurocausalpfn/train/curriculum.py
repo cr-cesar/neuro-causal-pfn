@@ -113,7 +113,7 @@ def run_curriculum(cfg: Dict, variant: str):
 
 def evaluate_pehe(model, cfg: Dict, n_eval: int = 16, seed_offset: int = 10_000) -> Dict[str, float]:
     p = cfg["pfn"]
-    device = cfg.get("device", "cpu")
+    device = resolve_device(cfg)
     prior = NeuroPrior(d_x=p["d_x"], n_context=p["context_max"], n_query=p["n_query"],
                        seed=seed_offset + cfg["seed"])
     batch = to_tensors(prior.sample_batch(n_eval), device=device)

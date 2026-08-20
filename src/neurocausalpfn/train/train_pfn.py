@@ -160,7 +160,7 @@ def run_pfn(cfg: Dict):
 def quick_eval(model, cfg: Dict, n_eval: int = 8) -> Dict[str, float]:
     """Quick evaluation on held-out processes (with the same kind of prior)."""
     p = cfg["pfn"]
-    device = cfg.get("device", "cpu")
+    device = resolve_device(cfg)
     prior_obj, d_x, is_intersynth = _build_prior(cfg, seed_offset=10_000)
     if is_intersynth:
         batch_np = prior_obj.sample_batch(n_eval, n_context=p["context_max"])
