@@ -195,8 +195,18 @@ def _apply_overrides(cfg: Dict, mode: str, overrides: Optional[Dict]):
     return cfg
 
 
+# Within one runner invocation, identical modality trainings are computed once.
+# The key is the full effective config, so only true repeats hit the cache —
+# e.g. the E2 w_dice sweep, where the disconnectome VAE (MSE loss, w_dice
+# forced to 1.0 below) is identical across the three lambda values and would
+# otherwise be retrained per variant (~10 GPU-hours per E2 run wasted).
+_MODALITY_CACHE: Dict[str, "art.VaeArtifacts"] = {}
+
+
 def _train_modality(mode, representation, zdim, meta, seed, out_dir, overrides):
     """Train one VAE (lesion or disconnectome) and return its VaeArtifacts."""
+    import json
+
     from ..train.train_vae import (_build_dataset, full_config, prototype_config,
                                    run_vae)
     cfg = prototype_config() if mode == "prototype" else full_config()
@@ -215,13 +225,26 @@ def _train_modality(mode, representation, zdim, meta, seed, out_dir, overrides):
         cfg["vae"]["w_dice"] = 1.0  # ignored by MSE loss
     _apply_overrides(cfg, mode, overrides)
 
+    key = json.dumps({"mode": mode, "rep": representation, "seed": seed,
+                      "vae": cfg["vae"], "data": cfg["data"],
+                      "clinical": cfg.get("clinical_csv"),
+                      "outcome": cfg.get("outcome_csv")},
+                     sort_keys=True, default=str)
+    cached = _MODALITY_CACHE.get(key)
+    if cached is not None:
+        log.info("  reusing cached %s VAE (identical config, seed %d) instead of retraining",
+                 representation, seed)
+        return cached
+
     model, _ = run_vae(cfg)
     in_shape = tuple(cfg["data"]["resolution"])
     dataset, _, _ = _build_dataset(cfg, representation, in_shape, cfg["vae"]["use_daft"])
-    return art.vae_artifacts(model, dataset, device=cfg.get("device", "cpu"),
-                             batch_size=cfg["vae"]["batch_size"],
-                             representation=representation,
-                             use_daft=cfg["vae"]["use_daft"])
+    a = art.vae_artifacts(model, dataset, device=cfg.get("device", "cpu"),
+                          batch_size=cfg["vae"]["batch_size"],
+                          representation=representation,
+                          use_daft=cfg["vae"]["use_daft"])
+    _MODALITY_CACHE[key] = a
+    return a
 
 
 def _exec_fusion_vae(spec: RunSpec, mode: str, seed: int, out_dir: str,
