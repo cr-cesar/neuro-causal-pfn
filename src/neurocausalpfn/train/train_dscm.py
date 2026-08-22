@@ -21,7 +21,7 @@ from ..utils.logging_utils import get_logger
 from ..utils.runtime import (autocast_ctx, log_runtime, make_grad_scaler,
                              make_loader, optim_step, resolve_device, use_amp)
 from ..utils.seed import set_seed
-from ..vae.losses import bce_dice_loss
+from ..vae.losses import bce_dice_loss, kl_voxel_scale
 
 log = get_logger()
 
@@ -95,7 +95,7 @@ def _step(model, batch, multi_env, beta, device, train, opt=None, scaler=None, a
     with autocast_ctx(device, amp):
         logits, _, kl = model(vol, pa)
         rec, _ = bce_dice_loss(logits, vol)
-        loss = rec + beta * kl
+        loss = rec + beta * kl_voxel_scale(vol) * kl
     if train:
         optim_step(loss, opt, scaler)
     return {"rec": float(rec.detach()), "kl": float(kl.detach()), "total": float(loss.detach())}

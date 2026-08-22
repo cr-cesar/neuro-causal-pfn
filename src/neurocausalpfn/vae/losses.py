@@ -68,13 +68,27 @@ def ard_update_prior_var(sum_second_moment: torch.Tensor, count: int, eps: float
     return torch.clamp(pv, min=eps)
 
 
+def kl_voxel_scale(target: torch.Tensor) -> float:
+    """Per-voxel scaling of the dim-summed KL term.
+
+    The reconstruction terms here are voxel MEANS, while the true ELBO (the
+    Bernoulli log-likelihood of Pombo et al.) SUMS over the ~1M voxels. Without
+    this scaling, beta = 1 acts like beta ~ 1e6 relative to the likelihood: the
+    KL crushes the posterior onto the prior in the first epochs (posterior
+    collapse) and the decoder can only emit an empty average lesion. Dividing
+    the KL by the voxel count restores the ELBO balance while keeping the
+    reconstruction and Dice weights at their current, interpretable magnitudes.
+    """
+    return 1.0 / float(target[0].numel())
+
+
 def vae_loss(logits: torch.Tensor, target: torch.Tensor, mu: torch.Tensor,
              logvar: torch.Tensor, beta: float = 1.0,
              w_bce: float = 1.0, w_dice: float = 1.0, prior_var: torch.Tensor = None):
-    """Full Stage 1 objective: L = L_rec + beta * D_KL."""
+    """Full Stage 1 objective: L = L_rec + beta * D_KL (KL on the per-voxel scale)."""
     rec, parts = bce_dice_loss(logits, target, w_bce, w_dice)
     kl = kl_diag_gaussian(mu, logvar, prior_var)
-    total = rec + beta * kl
+    total = rec + beta * kl_voxel_scale(target) * kl
     parts.update({"rec": float(rec.detach()), "kl": float(kl.detach()),
                   "beta": float(beta), "total": float(total.detach())})
     return total, parts
@@ -92,10 +106,10 @@ def mse_recon_loss(logits: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
 
 def vae_loss_mse(logits: torch.Tensor, target: torch.Tensor, mu: torch.Tensor,
                  logvar: torch.Tensor, beta: float = 1.0, prior_var: torch.Tensor = None):
-    """VAE objective for continuous inputs: L = MSE + beta * D_KL."""
+    """VAE objective for continuous inputs: L = MSE + beta * D_KL (per-voxel KL)."""
     rec = mse_recon_loss(logits, target)
     kl = kl_diag_gaussian(mu, logvar, prior_var)
-    total = rec + beta * kl
+    total = rec + beta * kl_voxel_scale(target) * kl
     parts = {"mse": float(rec.detach()), "rec": float(rec.detach()),
              "kl": float(kl.detach()), "beta": float(beta), "total": float(total.detach())}
     return total, parts
@@ -114,7 +128,7 @@ def vae_loss_two_channel(logits: torch.Tensor, target: torch.Tensor, mu: torch.T
     rec_disc = mse_recon_loss(logits[:, 1:2], target[:, 1:2])
     rec = rec_lesion + rec_disc
     kl = kl_diag_gaussian(mu, logvar, prior_var)
-    total = rec + beta * kl
+    total = rec + beta * kl_voxel_scale(target) * kl
     parts.update({"mse": float(rec_disc.detach()), "rec": float(rec.detach()),
                   "kl": float(kl.detach()), "beta": float(beta), "total": float(total.detach())})
     return total, parts

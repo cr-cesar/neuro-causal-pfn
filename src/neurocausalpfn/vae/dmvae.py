@@ -13,7 +13,8 @@ import torch.nn as nn
 
 from .backbones import build_encoder_backbone
 from .conv3d_vae import Decoder3D
-from .losses import bce_dice_loss, kl_diag_gaussian, mse_recon_loss
+from .losses import (bce_dice_loss, kl_diag_gaussian, kl_voxel_scale,
+                     mse_recon_loss)
 
 
 def product_of_experts(mus, logvars):
@@ -83,7 +84,10 @@ class DMVAE3D(nn.Module):
         rec_d = mse_recon_loss(self.dec_d(torch.cat([z_s, z_pd], dim=1)), disco)
         kl_s = kl_diag_gaussian(mu_s, lv_s)
         kl_priv = kl_diag_gaussian(mu_pl, lv_pl) + kl_diag_gaussian(mu_pd, lv_pd)
-        loss = rec_l + rec_d + beta * kl_s + lambda_priv * beta * kl_priv
+        # per-voxel KL scale: the reconstructions are voxel means (see
+        # losses.kl_voxel_scale), so the summed KL must be scaled to match
+        ks = kl_voxel_scale(lesion)
+        loss = rec_l + rec_d + beta * ks * kl_s + lambda_priv * beta * ks * kl_priv
         parts = {"rec_l": float(rec_l.detach()), "rec_d": float(rec_d.detach()),
                  "kl_s": float(kl_s.detach()), "kl_priv": float(kl_priv.detach()),
                  "total": float(loss.detach())}
