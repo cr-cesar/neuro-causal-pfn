@@ -21,6 +21,32 @@ Reconciliation with the implemented code (section 22 / Table 15):
   exist (note 2). Age and sex (plus two missing-data indicators) are recoverable.
 - Every VAE arm additionally optimises the KL term; the table lists only the
   reconstruction and auxiliary terms.
+
+Experiment-id mapping against the Theory document (its Table 7 renumbered the
+programme after this catalogue was written; the CODE ids below are the ones in
+runs.jsonl, the leaderboard and the qsub commands, and are kept stable):
+
+    CODE   THEORY DOC   axis
+    E1     E1           generative baseline (BCE only, w_dice=0)
+    E2     E2           reconstruction loss (+ soft Dice sweep)
+    E7     E3           encoder backbone (cnn / resnet18 / resnet50 / wide)
+    E3     E4           latent dimensionality (symmetric + asymmetric)
+    E4     E5           ARD prior (data-driven dimensionality)
+    E5b    E5b          + PNS auxiliary loss            (Arm B)
+    E5c    E5c          DAFT + PNS together             (Arm B)
+    E6     E6           input channels (lesion / disconnectome / both)
+    E9a    E7a          early two-channel fusion
+    E9b    E7b          DMVAE shared + private latents
+    E5a    E8           DAFT clinical conditioning
+    E10a   E9a          SupCon objective                (Arm C)
+    E10c   E9b          reconstruction + SupCon         (Arm C)
+    E10b   E9c          vascular-masked Hi-End-MAE      (Arm D)
+    E8a    E10a         conditional prior p(z|pa_x)     (Arm E)
+    E8b    E10b         + multi-environment iVAE index  (Arm E)
+    E8c    E10c         conditional prior + ARD         (Arm E)
+    E11    E11a         cross-arm stratified audit
+    --     E11b         backbone x loss 2x2 interaction audit (NOT YET IMPLEMENTED)
+    E12    E12          Neuro-CausalPFN curriculum ablation
 """
 from __future__ import annotations
 
