@@ -34,7 +34,7 @@ def kl_diag_gaussian(mu: torch.Tensor, logvar: torch.Tensor, prior_var: torch.Te
     """KL(N(mu, diag(exp(logvar))) || N(0, diag(prior_var))), averaged over the batch.
 
     With prior_var None this is the standard N(0, I) KL. With a per-dimension
-    prior_var it is the ARD KL (E4): a learned prior variance per latent
+    prior_var it is the ARD KL (E5): a learned prior variance per latent
     dimension, which lets unused dimensions collapse.
     """
     if prior_var is None:
@@ -118,7 +118,7 @@ def vae_loss_mse(logits: torch.Tensor, target: torch.Tensor, mu: torch.Tensor,
 def vae_loss_two_channel(logits: torch.Tensor, target: torch.Tensor, mu: torch.Tensor,
                          logvar: torch.Tensor, beta: float = 1.0,
                          w_bce: float = 1.0, w_dice: float = 1.0, prior_var: torch.Tensor = None):
-    """Early-fusion objective for a two-channel input (E9a).
+    """Early-fusion objective for a two-channel input (E7a).
 
     Channel 0 is the binary lesion (BCE plus Dice) and channel 1 is the
     continuous disconnectome (MSE). The two reconstruction terms are summed and

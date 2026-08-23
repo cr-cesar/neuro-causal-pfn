@@ -1,7 +1,7 @@
-"""E3: latent dimensionality sweep over the separate-encoder design.
+"""E4: latent dimensionality sweep over the separate-encoder design.
 
 The lesion and the disconnectome are encoded by separate VAEs whose latents are
-concatenated (the E6 separate-fusion design). E3 sweeps the per-modality latent
+concatenated (the E6 separate-fusion design). E4 sweeps the per-modality latent
 size, both symmetric ({25, 50, 75, 100} on each side) and asymmetric (the same
 total of 100 split unevenly, e.g. 75+25), to give the first data-driven answer to
 the dimensionality question rather than inheriting the arbitrary 50 (Giles) or
@@ -22,7 +22,7 @@ log = get_logger()
 
 
 def e3_grid(asymmetric: bool = True) -> List[Tuple[int, int]]:
-    """The (d_lesion, d_disconnectome) pairs of the E3 sweep."""
+    """The (d_lesion, d_disconnectome) pairs of the E4 sweep."""
     symmetric = [(25, 25), (50, 50), (75, 75), (100, 100)]
     asym = [(75, 25), (60, 40), (40, 60), (25, 75)]
     return symmetric + (asym if asymmetric else [])
@@ -57,7 +57,7 @@ def run_dim_sweep(base_cfg: Dict, grid: List[Tuple[int, int]] = None) -> List[Di
             _, hist = run_vae(cfg)
             rec[key] = hist[-1]["val_total"]
         results.append(rec)
-        log.info("E3 point: d_lesion=%d d_disco=%d total=%d val_lesion=%.4f val_disco=%.4f",
+        log.info("E4 point: d_lesion=%d d_disco=%d total=%d val_lesion=%.4f val_disco=%.4f",
                  d_les, d_dis, rec["total_dim"], rec["val_lesion"], rec["val_disco"])
     return results
 

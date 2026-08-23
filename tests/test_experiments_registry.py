@@ -9,9 +9,9 @@ from neurocausalpfn.experiments.runner import build_runs, scale_dim
 
 def test_all_table9_experiments_present():
     ids = {e.eid for e in REGISTRY}
-    expected = {"E1", "E2", "E3", "E4", "E5a", "E5b", "E5c", "E6", "E7",
-                "E8a", "E8b", "E8c", "E9a", "E9b", "E10a", "E10b", "E10c",
-                "E11", "E12"}
+    expected = {"E0", "E1", "E2", "E4", "E5", "E8", "E5b", "E5c", "E6", "E3",
+                "E10a", "E10b", "E10c", "E7a", "E7b", "E9a", "E9c", "E9b",
+                "E11a", "E11b", "E12"}
     assert expected <= ids
 
 
@@ -30,10 +30,10 @@ def test_dependencies_are_known_and_acyclic():
 
 def test_arm_a_order_matches_spec():
     assert dependency_order(list(ARM_A_ORDER)) == list(ARM_A_ORDER)
-    # E7 (backbone) precedes E3 (dimensionality) precedes E4 (ARD)
+    # E3 (backbone) precedes E4 (dimensionality) precedes E5 (ARD)
     o = dependency_order(list(ARM_A_ORDER))
-    assert o.index("E7") < o.index("E3") < o.index("E4")
-    assert o.index("E6") < o.index("E9a") < o.index("E9b")
+    assert o.index("E3") < o.index("E4") < o.index("E5")
+    assert o.index("E6") < o.index("E7a") < o.index("E7b")
 
 
 def test_tier_gates_semantics():
@@ -55,17 +55,17 @@ def test_build_runs_expands_grids():
     ctx = {"backbone": "resnet", "w_dice": 1.0, "dims": (50, 50)}
     assert len(build_runs(get_experiment("E1"), "prototype", ctx)) == 1
     assert len(build_runs(get_experiment("E2"), "prototype", ctx)) == 3    # w_dice grid
-    assert len(build_runs(get_experiment("E7"), "prototype", ctx)) == 4    # backbones
-    assert len(build_runs(get_experiment("E3"), "prototype", ctx)) == 8    # dim sweep
+    assert len(build_runs(get_experiment("E3"), "prototype", ctx)) == 4    # backbones
+    assert len(build_runs(get_experiment("E4"), "prototype", ctx)) == 8    # dim sweep
     assert len(build_runs(get_experiment("E6"), "prototype", ctx)) == 3    # channels
 
 
 def test_build_runs_uses_context_winner():
     ctx = {"backbone": "resnet50", "w_dice": 0.5, "dims": (75, 25)}
-    runs = build_runs(get_experiment("E3"), "prototype", ctx)
+    runs = build_runs(get_experiment("E4"), "prototype", ctx)
     assert all(r.meta["backbone"] == "resnet50" for r in runs)
-    # E5a inherits the E7 backbone winner from the context
-    e5a = build_runs(get_experiment("E5a"), "prototype", ctx)[0]
+    # E8 inherits the E3 backbone winner from the context
+    e5a = build_runs(get_experiment("E8"), "prototype", ctx)[0]
     assert e5a.meta["backbone"] == "resnet50" and e5a.meta["use_daft"] is True
 
 

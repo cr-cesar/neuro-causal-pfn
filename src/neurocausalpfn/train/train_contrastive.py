@@ -4,9 +4,9 @@ Objective L = L_SupCon(Z, Y) + lambda * L_IntraModal + mu * L_Recon.
 
 Each sample yields two augmented views per modality (binary-coherent
 augmentations). The fused projection feeds the supervised-contrastive term with
-the outcome as the label (E10a); the per-modality projections feed the
+the outcome as the label (E9a); the per-modality projections feed the
 intra-modal NT-Xent term; and, when enabled, the reconstruction term keeps the
-latent grounded in anatomy and prevents collapse to easy features (E10c).
+latent grounded in anatomy and prevents collapse to easy features (E9b).
 """
 import os
 from typing import Dict
@@ -181,7 +181,7 @@ if __name__ == "__main__":
                     help="cohort tier: 'trial' (data/Trial data) or 'full' (data/Full data)")
     ap.add_argument("--backbone", default=None,
                     choices=["cnn", "wide", "resnet", "resnet18", "resnet50"])
-    ap.add_argument("--no-recon", action="store_true", help="drop the reconstruction term (E10a)")
+    ap.add_argument("--no-recon", action="store_true", help="drop the reconstruction term (E9a)")
     ap.add_argument("--outcome-csv", default=None, help="binary outcome by id (SupCon labels)")
     args = ap.parse_args()
     if args.data_tier is not None:

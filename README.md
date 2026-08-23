@@ -120,7 +120,7 @@ then place the real data under `data/` (see the Data section) and submit:
 
     qsub scripts/run_arm_a_myriad.qsub.sh
 
-The job runs the Arm A programme (E1 → E2 → E3 → E4/E5 → E6/E7 → E8) through
+The job runs the Arm A programme (E1 → E2 → E4 → E5/E5 → E6/E3 → E8) through
 the orchestrator and writes the leaderboard to
 `outputs/experiments/leaderboard.{csv,md}`. The repo must live under
 `~/Scratch`, because compute nodes cannot write to `$HOME`.
@@ -287,7 +287,7 @@ not re-implement training or metrics; it composes the entry points above.
   latents via `run_stage2_real` (production, full mode).
 - `runner.py` is the orchestrator: it runs each experiment across >= 3 seeds,
   evaluates the tiers, aggregates, and propagates the winner of a selection
-  experiment to those that depend on it (E7's backbone, E3's dimensionality,
+  experiment to those that depend on it (E3's backbone, E4's dimensionality,
   E6's channels, E2's Dice weight).
 - `logging_backend.py` logs to Weights & Biases or MLflow with an always-on
   local JSON+CSV fallback; `report.py` writes the leaderboard and the
@@ -296,8 +296,8 @@ not re-implement training or metrics; it composes the entry points above.
 Run in prototype mode (CPU, synthetic masks, seconds to minutes):
 
     bash scripts/run_experiments.sh A 3        # Arm A, 3 seeds, dependency order
-    bash scripts/run_experiments.sh E7 1       # a single experiment
-    python -m neurocausalpfn.experiments.runner --experiment E7 --mode prototype
+    bash scripts/run_experiments.sh E3 1       # a single experiment
+    python -m neurocausalpfn.experiments.runner --experiment E3 --mode prototype
 
 Run Arm A in full mode on the cluster:
 

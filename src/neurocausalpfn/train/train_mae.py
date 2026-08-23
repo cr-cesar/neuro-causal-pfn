@@ -3,7 +3,7 @@
 Self-supervised masked-autoencoding on binary lesion masks: 75% of the patches
 are hidden in contiguous blocks and the model reconstructs them under a
 lesion-weighted BCE. After pretraining, the encoder is the frozen representation
-for the downstream CausalPFN (E10b); encode_z exports the latent.
+for the downstream CausalPFN (E9c); encode_z exports the latent.
 """
 import os
 from typing import Dict

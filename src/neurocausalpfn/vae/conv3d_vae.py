@@ -42,7 +42,7 @@ class Encoder3D(nn.Module):
             flat *= s
         self.flat = flat
         self.use_daft = use_daft
-        # Clinical conditioning (E5a): modulate the final feature map with the
+        # Clinical conditioning (E8): modulate the final feature map with the
         # clinical vector before pooling to the latent. Optional and off by default.
         self.daft = DAFT(self.feat_shape[0], n_clinical) if use_daft else None
         self.fc_mu = nn.Linear(flat, zdim)
@@ -98,7 +98,7 @@ class ConvVAE3D(nn.Module):
         self.use_daft = use_daft
         self.use_ard = use_ard
         self.backbone = backbone
-        # ARD (E4): per-dimension prior variance, updated in closed form from the
+        # ARD (E5): per-dimension prior variance, updated in closed form from the
         # encoded second moments during training. A non-buffer when ARD is off.
         if use_ard:
             self.register_buffer("ard_prior_var", torch.ones(zdim))

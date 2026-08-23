@@ -8,10 +8,10 @@ configuration changes.
   with MSE (without binarizing).
 - representation = "early_fusion": a single VAE on a two-channel input, lesion in
   channel 0 and disconnectome in channel 1, with BCE plus Dice on the lesion
-  channel and MSE on the disconnectome channel (E9a). This is the early-fusion
+  channel and MSE on the disconnectome channel (E7a). This is the early-fusion
   comparison point against the separate-encoder feature concatenation.
 
-Optional clinical conditioning (E5a): with use_daft the encoder is modulated by
+Optional clinical conditioning (E8): with use_daft the encoder is modulated by
 the clinical vector through a DAFT block; an optional clinical CSV adds NIHSS and
 time-to-scan to the age/sex vector.
 
@@ -285,13 +285,13 @@ if __name__ == "__main__":
     ap.add_argument("--mode", default="prototype", choices=["prototype", "full"])
     ap.add_argument("--representation", default=None,
                     choices=["lesion", "disconnectome", "early_fusion"])
-    ap.add_argument("--use-daft", action="store_true", help="enable DAFT clinical conditioning (E5a)")
-    ap.add_argument("--use-ard", action="store_true", help="enable ARD data-driven dimensionality (E4)")
+    ap.add_argument("--use-daft", action="store_true", help="enable DAFT clinical conditioning (E8)")
+    ap.add_argument("--use-ard", action="store_true", help="enable ARD data-driven dimensionality (E5)")
     ap.add_argument("--w-dice", type=float, default=None,
                     help="soft-Dice weight (E2). 0 = pure BCE baseline (E1)")
     ap.add_argument("--backbone", default=None,
                     choices=["cnn", "wide", "resnet", "resnet18", "resnet50"],
-                    help="encoder backbone (E7)")
+                    help="encoder backbone (E3)")
     ap.add_argument("--use-pns", action="store_true", help="enable the PNS auxiliary loss (Arm B)")
     ap.add_argument("--lambda-pns", type=float, default=None, help="weight of the PNS term")
     ap.add_argument("--pns-factors", type=int, default=None, help="number of common-cause factors")

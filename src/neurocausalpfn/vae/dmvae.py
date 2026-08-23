@@ -1,4 +1,4 @@
-"""E9b: DMVAE (disentangled multimodal VAE), shared plus private latents.
+"""E7b: DMVAE (disentangled multimodal VAE), shared plus private latents.
 
 Following the shared-private decomposition (Lee and Pavlovic 2021), the lesion
 and the disconnectome share a latent z_s that carries the cross-modal signal, and

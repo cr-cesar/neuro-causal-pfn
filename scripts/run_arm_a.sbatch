@@ -7,8 +7,8 @@
 # Table 9, Arm A in full mode on the V100 nodes.
 #
 # Runs the generative-baseline arm end to end through the orchestrator, in the
-# dependency order of section 14: E1 -> E2 (loss) -> E7 (backbone; winner
-# defaults) -> E3 (dimensionality) -> E4 (ARD); E5a and E6 after E7; E9 after E6.
+# dependency order of section 14: E1 -> E2 (loss) -> E3 (backbone; winner
+# defaults) -> E4 (dimensionality) -> E5 (ARD); E8 and E6 after E3; E9 after E6.
 # The winner of each selection experiment is propagated automatically. A
 # leaderboard is written to outputs/experiments/leaderboard.{csv,md}.
 #
@@ -33,9 +33,9 @@ OUT="${OUT:-outputs/experiments}"
 python -m neurocausalpfn.experiments.runner \
     --arm A --mode full --seeds "${SEEDS}" --out-root "${OUT}" --report
 
-# To run the whole programme (all arms + E11 audit + E12 curriculum):
+# To run the whole programme (all arms + E11a audit + E12 curriculum):
 #   python -m neurocausalpfn.experiments.runner --all --mode full --seeds 3 \
 #       --out-root outputs/experiments --report
 #
-# To run a single experiment (e.g. the backbone ablation E7):
-#   python -m neurocausalpfn.experiments.runner --experiment E7 --mode full --seeds 3
+# To run a single experiment (e.g. the backbone ablation E3):
+#   python -m neurocausalpfn.experiments.runner --experiment E3 --mode full --seeds 3

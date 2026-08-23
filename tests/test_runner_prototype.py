@@ -36,10 +36,10 @@ def test_e1_baseline_runs_and_reports_tiers(tmp_path):
 
 def test_e7_selects_a_backbone_winner_and_propagates(tmp_path):
     context = {"w_dice": 1.0}
-    out = run_experiment("E7", mode="prototype", seeds=1, base_seed=0,
+    out = run_experiment("E3", mode="prototype", seeds=1, base_seed=0,
                          out_root=str(tmp_path), overrides=FAST, context=context)
     assert out["winner"] is not None
-    # the winning backbone is written back into the shared context for E3, E5a...
+    # the winning backbone is written back into the shared context for E4, E8...
     assert "backbone" in context
     assert context["backbone"] in {"cnn", "resnet18", "resnet50", "wide"}
 

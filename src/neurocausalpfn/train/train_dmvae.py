@@ -1,4 +1,4 @@
-"""E9b training: DMVAE (shared plus private latents).
+"""E7b training: DMVAE (shared plus private latents).
 
 Trains the shared-private decomposition on paired lesion and disconnectome
 volumes. The shared latent is fused across modalities by a product of experts;
@@ -94,7 +94,7 @@ def run_dmvae(cfg: Dict):
     train_loader = make_loader(Subset(dataset, tr_idx), cfg["train"]["batch_size"], True, device, workers)
     val_loader = make_loader(Subset(dataset, va_idx), cfg["train"]["batch_size"], False, device, workers)
     zdim = m["shared_dim"] + 2 * m["private_dim"]
-    log.info("DMVAE (E9b): %d pairs (%s), resolution %s, shared %d + private %dx2 = %d, %d train / %d val",
+    log.info("DMVAE (E7b): %d pairs (%s), resolution %s, shared %d + private %dx2 = %d, %d train / %d val",
              len(dataset), "synthetic" if dataset.synthetic else "real", in_shape,
              m["shared_dim"], m["private_dim"], zdim, len(tr_idx), len(va_idx))
 

@@ -6,7 +6,7 @@
 #
 #   qsub -v EXP=E1 scripts/run_experiment_myriad.qsub.sh
 #   qsub -v EXP=E2 scripts/run_experiment_myriad.qsub.sh      # after E1 finishes
-#   qsub -v EXP=E3,SEEDS=3 scripts/run_experiment_myriad.qsub.sh
+#   qsub -v EXP=E4,SEEDS=3 scripts/run_experiment_myriad.qsub.sh
 #
 # The log lands in ncp-EXP.o<jobid>; the leaderboard accumulates in
 # outputs/experiments/leaderboard.{csv,md}.
@@ -29,13 +29,13 @@ SEEDS="${SEEDS:-3}"
 TIER="${TIER:-full}"
 OUT="${OUT:-outputs/experiments}"
 
-# ONLY shards a grid across parallel jobs (one GPU each), e.g. for E7:
-#   qsub -v EXP=E7,ONLY=cnn       scripts/run_experiment_myriad.qsub.sh
-#   qsub -v EXP=E7,ONLY=resnet18  scripts/run_experiment_myriad.qsub.sh
-#   qsub -v EXP=E7,ONLY=resnet50  scripts/run_experiment_myriad.qsub.sh
-#   qsub -v EXP=E7,ONLY=wide      scripts/run_experiment_myriad.qsub.sh
+# ONLY shards a grid across parallel jobs (one GPU each), e.g. for E3:
+#   qsub -v EXP=E3,ONLY=cnn       scripts/run_experiment_myriad.qsub.sh
+#   qsub -v EXP=E3,ONLY=resnet18  scripts/run_experiment_myriad.qsub.sh
+#   qsub -v EXP=E3,ONLY=resnet50  scripts/run_experiment_myriad.qsub.sh
+#   qsub -v EXP=E3,ONLY=wide      scripts/run_experiment_myriad.qsub.sh
 # and once ALL shards are done, consolidate the winner (fast, login-node OK):
-#   python -m neurocausalpfn.experiments.runner --experiment E7 --finalize --report
+#   python -m neurocausalpfn.experiments.runner --experiment E3 --finalize --report
 EXTRA=()
 if [ -n "${ONLY:-}" ]; then
     EXTRA+=(--only "$ONLY")

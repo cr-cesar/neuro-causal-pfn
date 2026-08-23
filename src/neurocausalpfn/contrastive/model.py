@@ -1,6 +1,6 @@
 """Contrastive fusion encoder (Arm C).
 
-Two backbones (the E7 winner) encode the lesion and the disconnectome
+Two backbones (the E3 winner) encode the lesion and the disconnectome
 separately; their pooled features are fused by cross-attention over the two
 modality tokens and projected to the representation Z (Tsai et al. 2024). A
 projection head maps Z to the supervised-contrastive space, two per-modality

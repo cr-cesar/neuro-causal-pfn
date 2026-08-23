@@ -5,11 +5,11 @@
 # this as the smoke test for the orchestrator; it needs no real data or cluster.
 #
 #   bash scripts/run_experiments.sh            # Arm A, 3 seeds
-#   bash scripts/run_experiments.sh E7 1       # a single experiment, 1 seed
+#   bash scripts/run_experiments.sh E3 1       # a single experiment, 1 seed
 set -euo pipefail
 export PYTHONPATH="${PYTHONPATH:-}:$(pwd)/src"
 
-TARGET="${1:-A}"          # an experiment id (E7), an arm letter (A) or "all"
+TARGET="${1:-A}"          # an experiment id (E3), an arm letter (A) or "all"
 SEEDS="${2:-3}"
 OUT="${OUT:-outputs/experiments}"
 

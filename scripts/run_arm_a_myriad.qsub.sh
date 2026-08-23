@@ -52,8 +52,8 @@ OUT="${OUT:-outputs/experiments}"
 python -m neurocausalpfn.experiments.runner \
     --arm A --mode full --seeds "${SEEDS}" --out-root "${OUT}" --report
 
-# Whole programme (all arms + E11 audit + E12 curriculum):
+# Whole programme (all arms + E11a audit + E12 curriculum):
 #   python -m neurocausalpfn.experiments.runner --all --mode full --seeds 3 \
 #       --out-root outputs/experiments --report
-# Single experiment (e.g. the backbone ablation E3):
-#   python -m neurocausalpfn.experiments.runner --experiment E3 --mode full --seeds 3
+# Single experiment (e.g. the backbone ablation E4):
+#   python -m neurocausalpfn.experiments.runner --experiment E4 --mode full --seeds 3

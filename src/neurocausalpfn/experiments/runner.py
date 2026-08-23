@@ -3,27 +3,27 @@
 Turns each experiment (a row of Table 9) into concrete training runs, evaluates
 them through the tiered harness with the stop/go gates, aggregates across the
 >= 3 random seeds required by section 14, and propagates the "winner" of a
-selection experiment to the ones that depend on it (E7's backbone becomes the
-default; E3's dimensionality becomes the default; E6's channel choice; E2's
+selection experiment to the ones that depend on it (E3's backbone becomes the
+default; E4's dimensionality becomes the default; E6's channel choice; E2's
 Dice weight).
 
 It composes the existing training entry points; it does not duplicate them:
 
     entry            training call                       arms
     -------------    --------------------------------    --------------------
-    vae              train_vae.run_vae (per modality)    A (E1,E2,E7,E4,E5a), B
-    e3_sweep         two VAEs per (d_les,d_dis) point    A (E3)
-    early_fusion     train_vae.run_vae (2-channel)       A (E9a)
-    dmvae            train_dmvae.run_dmvae               A (E9b)
-    contrastive      train_contrastive.run_contrastive  C (E10a,E10c)
-    mae              train_mae.run_mae                  D (E10b)
-    dscm             train_dscm.run_dscm                E (E8a,E8b,E8c)
+    vae              train_vae.run_vae (per modality)    A (E1,E2,E3,E5,E8), B
+    e3_sweep         two VAEs per (d_les,d_dis) point    A (E4)
+    early_fusion     train_vae.run_vae (2-channel)       A (E7a)
+    dmvae            train_dmvae.run_dmvae               A (E7b)
+    contrastive      train_contrastive.run_contrastive  C (E9a,E9b)
+    mae              train_mae.run_mae                  D (E9c)
+    dscm             train_dscm.run_dscm                E (E10a,E10b,E10c)
     curriculum       curriculum.run_curriculum_ablation CausalPFN (E12)
-    audit            Arm-A winner + stratified Tier 4    All (E11)
+    audit            Arm-A winner + stratified Tier 4    All (E11a)
 
 Command line::
 
-    python -m neurocausalpfn.experiments.runner --experiment E7 --mode prototype
+    python -m neurocausalpfn.experiments.runner --experiment E3 --mode prototype
     python -m neurocausalpfn.experiments.runner --arm A --mode prototype --seeds 3
     python -m neurocausalpfn.experiments.runner --all --mode prototype
 """
@@ -111,7 +111,7 @@ def build_runs(exp: Experiment, mode: str, context: Dict) -> List[RunSpec]:
         return runs
 
     if exp.entry == "e3_sweep":
-        # The E3 grid, mirrored from train.sweep_dims.e3_grid but inlined so the
+        # The E4 grid, mirrored from train.sweep_dims.e3_grid but inlined so the
         # builder stays free of the (torch-heavy) training import.
         symmetric = [(25, 25), (50, 50), (75, 75), (100, 100)]
         asym = [(75, 25), (60, 40), (40, 60), (25, 75)]
@@ -154,6 +154,29 @@ def build_runs(exp: Experiment, mode: str, context: Dict) -> List[RunSpec]:
         return [RunSpec(label=exp.eid, kind="curriculum",
                         meta={"variants": p.get("variants", ["reference"])})]
 
+    if exp.entry == "reference":
+        return [RunSpec(label=_label(exp.eid, pt, {}), kind="reference",
+                        meta={"method": pt["method"]})
+                for pt in _grid_points(p.get("grid", {"method": ["nmf50", "nmf21", "volume"]}))]
+
+    if exp.entry == "interaction_2x2":
+        # the two best backbones x the two best Dice weights, read from the
+        # rankings the selection experiments stored in the winner context
+        backbones = _top2_from_ranking(context, "E3", "backbone", [ctx_backbone, "cnn"])
+        w_dices = [float(v) for v in _top2_from_ranking(context, "E2", "w_dice",
+                                                        [ctx_w_dice, 0.5])]
+        runs = []
+        for bb in backbones:
+            for wd in w_dices:
+                meta = {"representation": "lesion", "fusion_mode": "both",
+                        "backbone": bb, "w_dice": wd, "use_daft": False,
+                        "use_ard": False, "use_pns": False, "lambda_pns": 0.1,
+                        "d_lesion": scale_dim(mode, ctx_dims[0]),
+                        "d_disco": scale_dim(mode, ctx_dims[1])}
+                runs.append(RunSpec(label=f"{exp.eid}[backbone={bb},w_dice={wd}]",
+                                    kind="fusion_vae", meta=meta))
+        return runs
+
     if exp.entry == "audit":
         meta = {"representation": "lesion", "fusion_mode": "both",
                 "backbone": ctx_backbone, "w_dice": ctx_w_dice,
@@ -168,6 +191,32 @@ def _label(eid: str, pt: Dict, meta: Dict) -> str:
     if pt:
         return eid + "[" + ",".join(f"{k}={v}" for k, v in pt.items()) + "]"
     return eid
+
+
+def _label_value(label: str, key: str) -> Optional[str]:
+    """The value of ``key`` inside a label like E3[backbone=cnn,w_dice=0.5]."""
+    if key + "=" not in label:
+        return None
+    v = label.split(key + "=", 1)[1]
+    return v.split(",", 1)[0].rstrip("]")
+
+
+def _top2_from_ranking(context: Dict, eid: str, key: str, fallback) -> List[str]:
+    """The two best values of ``key`` from the eid's stored ranking, padded
+    with fallbacks when fewer than two are available."""
+    vals: List[str] = []
+    for lbl in context.get("ranking", {}).get(eid, []):
+        v = _label_value(lbl, key)
+        if v is not None and v not in vals:
+            vals.append(v)
+        if len(vals) == 2:
+            return vals
+    for f in fallback:
+        if str(f) not in vals:
+            vals.append(str(f))
+        if len(vals) == 2:
+            break
+    return vals[:2]
 
 
 # --------------------------------------------------------------------------- #
@@ -277,6 +326,56 @@ def _exec_vae_single(spec: RunSpec, mode: str, seed: int, out_dir: str, override
     a = _train_modality(mode, "early_fusion", spec.meta["d_lesion"], spec.meta,
                         seed, out_dir, overrides)
     return a
+
+
+def _exec_reference(spec: RunSpec, mode, seed, out_dir, overrides):
+    """E0: no-VAE reference representations from Table 2 (Giles) -- NMF factor
+    scores over the binary lesion masks (sklearn, sparse input) or the lesion
+    volume as a single feature. CPU-only; the same tiers judge the result."""
+    import torch
+    from scipy import sparse
+    from sklearn.decomposition import NMF
+
+    from ..data.nifti_dataset import LesionMaskDataset
+    from ..train.train_vae import full_config, prototype_config
+
+    cfg = prototype_config() if mode == "prototype" else full_config()
+    cfg["seed"] = seed
+    _apply_overrides(cfg, mode, overrides)
+    in_shape = tuple(cfg["data"]["resolution"])
+    ds = LesionMaskDataset(root=cfg["data"]["root"], in_shape=in_shape,
+                           n_synth=cfg["data"]["n_synth"], seed=seed, binarize=True)
+    n = len(ds)
+    method = spec.meta["method"]
+
+    vols = np.zeros(n, dtype=np.float64)
+    rows_idx, cols_idx = [], []
+    with torch.no_grad():
+        for i in range(n):
+            item = ds[i]
+            x = item[0] if isinstance(item, (tuple, list)) else item
+            nz = torch.nonzero(x.flatten() > 0.5).flatten().numpy()
+            vols[i] = float(len(nz))
+            if method != "volume":
+                rows_idx.append(np.full(len(nz), i, dtype=np.int64))
+                cols_idx.append(nz.astype(np.int64))
+
+    if method == "volume":
+        Z = (vols[:, None] / max(float(vols.max()), 1.0)).astype(np.float64)
+    else:
+        X = sparse.csr_matrix(
+            (np.ones(int(vols.sum()), dtype=np.float32),
+             (np.concatenate(rows_idx), np.concatenate(cols_idx))),
+            shape=(n, int(np.prod(in_shape))))
+        k_nominal = 50 if method == "nmf50" else 21
+        k = max(2, min(scale_dim(mode, k_nominal), n - 1))
+        nmf = NMF(n_components=k, init="nndsvd", max_iter=200,
+                  random_state=seed, tol=1e-3)
+        Z = nmf.fit_transform(X)
+    log.info("  E0 %s: Z %s from %d %s masks", method, Z.shape, n,
+             "synthetic" if ds.synthetic else "real")
+    return art.latent_artifacts(Z, volume=vols, has_posterior=False,
+                                meta={"method": method, "zdim": int(Z.shape[1])})
 
 
 def _exec_exported(kind: str, run_fn, cfg: Dict, out_dir: str, npz_name: str,
@@ -489,6 +588,8 @@ def _dispatch(spec: RunSpec, mode, seed, out_dir, overrides):
         return _exec_mae(spec, mode, seed, out_dir, overrides), None
     if spec.kind == "dscm":
         return _exec_dscm(spec, mode, seed, out_dir, overrides), None
+    if spec.kind == "reference":
+        return _exec_reference(spec, mode, seed, out_dir, overrides), None
     raise ValueError(f"unknown run kind {spec.kind!r}")
 
 
@@ -551,17 +652,30 @@ def _select_winner(exp: Experiment, agg: Dict) -> Optional[Dict]:
     return winner
 
 
+def _rank_labels(exp: Experiment, agg: Dict) -> List[str]:
+    """Variant labels ordered best-first by the experiment's selection metric
+    (the same rule as _select_winner); consumed by E11b's 2x2 grid."""
+    select_by = exp.params.get("select_by", "T4")
+    metric = {"T4": "T4.root_pehe.mean", "T2": "T2.r2_nihss.mean",
+              "T1": "T1.dice.mean", "T3": "T3.active_dims.mean"}.get(select_by, "T4.root_pehe.mean")
+    lower = select_by in ("T4",)
+    cands = [e for e in agg.values() if metric in e]
+    return [e["label"] for e in sorted(cands, key=lambda e: e[metric], reverse=not lower)]
+
+
 def _propagate(exp: Experiment, winner: Optional[Dict], agg: Dict, context: Dict):
+    if agg:
+        context.setdefault("ranking", {})[exp.eid] = _rank_labels(exp, agg)
     if not winner:
         return
     label = winner["label"]
     if exp.eid == "E2" and "w_dice=" in label:
         context["w_dice"] = float(label.split("w_dice=")[1].rstrip("]"))
-    if exp.eid == "E7" and "backbone=" in label:
+    if exp.eid == "E3" and "backbone=" in label:
         context["backbone"] = label.split("backbone=")[1].rstrip("]")
     if exp.eid == "E6" and "fusion_mode=" in label:
         context["fusion_mode"] = label.split("fusion_mode=")[1].rstrip("]")
-    if exp.eid == "E3" and "[" in label:
+    if exp.eid == "E4" and "[" in label:
         pair = label.split("[")[1].rstrip("]")
         if "+" in pair:
             d_les, d_dis = pair.split("+")
@@ -601,7 +715,7 @@ def run_all(mode: str = "prototype", seeds: int = 3,
         results[arm] = run_arm(arm, mode=mode, seeds=seeds, out_root=out_root,
                                overrides=overrides, context=context, logger=logger)
     # cross-arm audit and the CausalPFN curriculum, both after the arms
-    for eid in ("E11", "E12"):
+    for eid in ("E11a", "E11b", "E12"):
         results[eid] = run_experiment(eid, mode=mode, seeds=seeds, context=context,
                                       out_root=out_root, overrides=overrides, logger=logger)
     return {"context": context, "results": results}
@@ -615,7 +729,7 @@ def main(argv=None):
 
     ap = argparse.ArgumentParser(description="Table-9 experiment orchestrator")
     g = ap.add_mutually_exclusive_group(required=True)
-    g.add_argument("--experiment", help="a single experiment id, e.g. E7")
+    g.add_argument("--experiment", help="a single experiment id, e.g. E3")
     g.add_argument("--arm", help="an arm letter A|B|C|D|E")
     g.add_argument("--all", action="store_true", help="the whole programme")
     ap.add_argument("--mode", default="prototype", choices=["prototype", "full"])

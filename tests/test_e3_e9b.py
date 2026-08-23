@@ -11,7 +11,7 @@ from neurocausalpfn.train.train_dmvae import run_dmvae
 from neurocausalpfn.vae.dmvae import DMVAE3D, product_of_experts
 
 
-# ------------------------------- E3 ---------------------------------------- #
+# ------------------------------- E4 ---------------------------------------- #
 def test_e3_grid():
     full = e3_grid()
     assert len(full) == 8
@@ -43,7 +43,7 @@ def test_run_dim_sweep_records_both_modalities():
         assert np.isfinite(r["val_lesion"]) and np.isfinite(r["val_disco"])
 
 
-# ------------------------------ E9b ---------------------------------------- #
+# ------------------------------ E7b ---------------------------------------- #
 def test_product_of_experts_reduces_variance():
     mu = torch.zeros(2, 4)
     lv = torch.zeros(2, 4)                          # var = 1

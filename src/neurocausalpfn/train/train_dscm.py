@@ -2,9 +2,9 @@
 
 Trains the parent-conditioned HVAE on binary lesion masks with a BCE plus soft
 Dice reconstruction and the KL against the conditional prior p(z | pa_x). The
-parents pa_x are the clinical covariates; E8b additionally conditions on a
+parents pa_x are the clinical covariates; E10b additionally conditions on a
 one-hot environment (regime) index for iVAE-style identifiability across regimes,
-and E8c adds an ARD relevance scale to the conditional prior. E8a is the plain
+and E10c adds an ARD relevance scale to the conditional prior. E10a is the plain
 conditional HVAE versus the standard VAE baseline.
 """
 import os
@@ -27,7 +27,7 @@ log = get_logger()
 
 
 class _EnvWrap(Dataset):
-    """Appends a per-sample one-hot environment index to (vol, clinical) for E8b."""
+    """Appends a per-sample one-hot environment index to (vol, clinical) for E10b."""
 
     def __init__(self, base, env_onehot):
         self.base = base
@@ -177,9 +177,9 @@ if __name__ == "__main__":
     ap.add_argument("--mode", default="prototype", choices=["prototype", "full"])
     ap.add_argument("--data-tier", default=None, choices=["trial", "full"],
                     help="cohort tier: 'trial' (data/Trial data) or 'full' (data/Full data)")
-    ap.add_argument("--use-ard", action="store_true", help="add the ARD relevance scale (E8c)")
-    ap.add_argument("--multi-env", action="store_true", help="condition on the environment index (E8b)")
-    ap.add_argument("--n-regimes", type=int, default=None, help="number of environments for E8b")
+    ap.add_argument("--use-ard", action="store_true", help="add the ARD relevance scale (E10c)")
+    ap.add_argument("--multi-env", action="store_true", help="condition on the environment index (E10b)")
+    ap.add_argument("--n-regimes", type=int, default=None, help="number of environments for E10b")
     ap.add_argument("--clinical-csv", default=None, help="CSV with NIHSS and time_to_scan by id")
     args = ap.parse_args()
     if args.data_tier is not None:
