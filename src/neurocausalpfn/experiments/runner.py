@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import copy
 import itertools
+import json
 import os
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
@@ -357,10 +358,16 @@ def run_experiment(eid: str, mode: str = "prototype", seeds: int = 3,
                    context: Optional[Dict] = None, base_seed: int = 0,
                    out_root: str = "outputs/experiments",
                    overrides: Optional[Dict] = None,
-                   logger: Optional[ExperimentLogger] = None) -> Dict:
+                   logger: Optional[ExperimentLogger] = None,
+                   only: Optional[str] = None) -> Dict:
     """Run every variant of an experiment across ``seeds`` seeds, evaluate the
     tiers, aggregate and select a winner. Returns a result dict and, as a side
-    effect, updates ``context`` with the winner for downstream experiments."""
+    effect, updates ``context`` with the winner for downstream experiments.
+
+    ``only`` (comma-separated substrings) restricts the variants, so a big
+    grid can be sharded across parallel cluster jobs (one backbone per GPU).
+    A sharded invocation sees only part of the grid, so it does NOT select or
+    propagate a winner; run ``--finalize`` once all shards are done."""
     exp = get_experiment(eid)
     context = context if context is not None else {}
     log.info("=== %s (arm %s): %s ===", exp.eid, exp.arm, exp.title)
@@ -370,6 +377,13 @@ def run_experiment(eid: str, mode: str = "prototype", seeds: int = 3,
         return _run_curriculum(exp, mode, context, out_root, logger)
 
     specs = build_runs(exp, mode, context)
+    if only:
+        pats = [p.strip().lower() for p in only.split(",") if p.strip()]
+        specs = [sp for sp in specs if any(p in sp.label.lower() for p in pats)]
+        if not specs:
+            raise ValueError(f"--only {only!r} matched no {eid} variant")
+        log.info("shard: running %d of the %s variants (%s)", len(specs), eid,
+                 ", ".join(sp.label for sp in specs))
     per_label: Dict[str, List[RunResult]] = {}
 
     for spec in specs:
@@ -390,6 +404,10 @@ def run_experiment(eid: str, mode: str = "prototype", seeds: int = 3,
             log.info("  %-28s seed %d  %s", spec.label, seed, _fmt_summary(summary))
 
     agg = _aggregate(exp, per_label)
+    if only:
+        # partial grid: leave winner selection to the --finalize pass
+        log.info("shard complete; run --experiment %s --finalize when all shards are done", eid)
+        return {"eid": exp.eid, "arm": exp.arm, "aggregate": agg, "winner": None}
     winner = _select_winner(exp, agg)
     _propagate(exp, winner, agg, context)
     result = {"eid": exp.eid, "arm": exp.arm, "aggregate": agg, "winner": winner}
@@ -397,6 +415,65 @@ def run_experiment(eid: str, mode: str = "prototype", seeds: int = 3,
         logger.log_metrics({"eid": exp.eid, "winner": winner.get("label") if winner else None,
                             **(winner or {})}, tag=f"{exp.eid}/winner")
     return result
+
+
+def finalize_experiment(eid: str, context: Dict,
+                        out_root: str = "outputs/experiments") -> Dict:
+    """Aggregate an experiment from ``runs.jsonl`` (no training), select the
+    winner and propagate it into ``context``. Used after parallel shards, or to
+    re-derive the winner after pruning stale rows from the history."""
+    import types
+
+    exp = get_experiment(eid)
+    path = os.path.join(out_root, "runs.jsonl")
+    rows: Dict = {}
+    if os.path.exists(path):
+        with open(path) as f:
+            for line in f:
+                try:
+                    r = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                label = str(r.get("label", ""))
+                if "seed" not in r:
+                    continue
+                if label == eid or label.startswith(eid + "["):
+                    rows[(label, int(r["seed"]))] = r      # last write wins
+    if not rows:
+        raise ValueError(f"no {eid} rows found in {path}")
+
+    per_label: Dict[str, List[RunResult]] = {}
+    for (label, seed), summary in rows.items():
+        shim = types.SimpleNamespace(passed=bool(summary.get("passed")),
+                                     deprioritized=bool(summary.get("deprioritized", False)))
+        meta = {k[len("meta."):]: v for k, v in summary.items() if k.startswith("meta.")}
+        per_label.setdefault(label, []).append(
+            RunResult(eid, label, seed, summary, shim, meta))
+
+    agg = _aggregate(exp, per_label)
+    winner = _select_winner(exp, agg)
+    _propagate(exp, winner, agg, context)
+    log.info("%s finalized over %d rows: winner %s", eid, len(rows),
+             winner.get("label") if winner else None)
+    return {"eid": exp.eid, "arm": exp.arm, "aggregate": agg, "winner": winner}
+
+
+def load_context(out_root: str) -> Dict:
+    """The cross-job winner context (out_root/context.json). Winners selected
+    in one cluster job are inherited by the next through this file."""
+    path = os.path.join(out_root, "context.json")
+    if os.path.exists(path):
+        with open(path) as f:
+            ctx = json.load(f)
+        if isinstance(ctx.get("dims"), list):
+            ctx["dims"] = tuple(ctx["dims"])
+        return ctx
+    return {}
+
+
+def save_context(out_root: str, context: Dict) -> None:
+    with open(os.path.join(out_root, "context.json"), "w") as f:
+        json.dump(context, f, indent=2, default=list)
 
 
 def _dispatch(spec: RunSpec, mode, seed, out_dir, overrides):
@@ -550,23 +627,48 @@ def main(argv=None):
                     help="logging backend: auto|wandb|mlflow|local")
     ap.add_argument("--report", action="store_true",
                     help="write the leaderboard report at the end")
+    ap.add_argument("--only", default=None,
+                    help="run only the variants whose label contains one of these "
+                         "comma-separated substrings (shard a grid across jobs); "
+                         "winner selection is deferred to --finalize")
+    ap.add_argument("--finalize", action="store_true",
+                    help="no training: aggregate --experiment from runs.jsonl, "
+                         "select the winner and update context.json")
     args = ap.parse_args(argv)
 
     if args.data_tier is not None:
         set_tier(args.data_tier)
+    if (args.only or args.finalize) and not args.experiment:
+        ap.error("--only/--finalize require --experiment")
 
     os.makedirs(args.out_root, exist_ok=True)
+    # winners chosen by earlier cluster jobs are inherited through this file
+    context = load_context(args.out_root)
+    if context:
+        log.info("inherited context: %s", context)
+
+    if args.finalize:
+        out = finalize_experiment(args.experiment, context, out_root=args.out_root)
+        save_context(args.out_root, context)
+        if args.report:
+            from .report import build_report
+            log.info("report written to %s", build_report(args.out_root))
+        return out
+
     logger = ExperimentLogger(args.out_root, run_name=args.experiment or args.arm or "all",
                               backend=args.backend)
     try:
         if args.experiment:
             out = run_experiment(args.experiment, mode=args.mode, seeds=args.seeds,
-                                 out_root=args.out_root, logger=logger)
+                                 out_root=args.out_root, logger=logger,
+                                 context=context, only=args.only)
         elif args.arm:
             out = run_arm(args.arm, mode=args.mode, seeds=args.seeds,
-                          out_root=args.out_root, logger=logger)
+                          out_root=args.out_root, logger=logger, context=context)
         else:
             out = run_all(mode=args.mode, seeds=args.seeds, out_root=args.out_root, logger=logger)
+        if not args.only:
+            save_context(args.out_root, context)
     finally:
         logger.finish()
 

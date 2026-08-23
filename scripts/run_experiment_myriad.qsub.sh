@@ -29,6 +29,18 @@ SEEDS="${SEEDS:-3}"
 TIER="${TIER:-full}"
 OUT="${OUT:-outputs/experiments}"
 
+# ONLY shards a grid across parallel jobs (one GPU each), e.g. for E7:
+#   qsub -v EXP=E7,ONLY=cnn       scripts/run_experiment_myriad.qsub.sh
+#   qsub -v EXP=E7,ONLY=resnet18  scripts/run_experiment_myriad.qsub.sh
+#   qsub -v EXP=E7,ONLY=resnet50  scripts/run_experiment_myriad.qsub.sh
+#   qsub -v EXP=E7,ONLY=wide      scripts/run_experiment_myriad.qsub.sh
+# and once ALL shards are done, consolidate the winner (fast, login-node OK):
+#   python -m neurocausalpfn.experiments.runner --experiment E7 --finalize --report
+EXTRA=()
+if [ -n "${ONLY:-}" ]; then
+    EXTRA+=(--only "$ONLY")
+fi
+
 python -m neurocausalpfn.experiments.runner \
     --experiment "$EXP" --mode full --data-tier "$TIER" \
-    --seeds "$SEEDS" --out-root "$OUT" --report
+    --seeds "$SEEDS" --out-root "$OUT" --report "${EXTRA[@]}"
