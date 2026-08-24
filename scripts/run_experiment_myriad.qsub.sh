@@ -41,6 +41,8 @@ if [ -n "${ONLY:-}" ]; then
     EXTRA+=(--only "$ONLY")
 fi
 
+# ${EXTRA[@]+...} guards the empty-array expansion: bash 4.2 (Myriad) treats
+# "${EXTRA[@]}" as unbound under set -u when the array is empty.
 python -m neurocausalpfn.experiments.runner \
     --experiment "$EXP" --mode full --data-tier "$TIER" \
-    --seeds "$SEEDS" --out-root "$OUT" --report "${EXTRA[@]}"
+    --seeds "$SEEDS" --out-root "$OUT" --report ${EXTRA[@]+"${EXTRA[@]}"}
