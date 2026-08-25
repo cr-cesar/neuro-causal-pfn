@@ -17,6 +17,17 @@ from typing import Sequence
 import torch.nn as nn
 
 
+def _norm3d(c: int, kind: str = "batch") -> nn.Module:
+    """BatchNorm for the shallow bodies (validated); GroupNorm for the deep
+    ResNets: with batch size 8 and ~99.95%-empty binary volumes, deep BatchNorm
+    stacks amplify batch-statistics noise until the lesion VAE collapses to the
+    empty prediction (observed on resnet50, 3/3 seeds, and resnet18, 1/3).
+    GroupNorm is batch-independent, the 3D-medical standard at small batches."""
+    if kind == "group":
+        return nn.GroupNorm(num_groups=min(8, c), num_channels=c)
+    return nn.BatchNorm3d(c)
+
+
 def _conv_block(c_in: int, c_out: int) -> nn.Sequential:
     return nn.Sequential(
         nn.Conv3d(c_in, c_out, kernel_size=3, stride=2, padding=1),
@@ -34,18 +45,18 @@ def _cnn_body(in_channels: int, channels: Sequence[int], width: int = 1) -> nn.S
 class _BasicBlock(nn.Module):
     expansion = 1
 
-    def __init__(self, c_in: int, c_out: int, stride: int = 1):
+    def __init__(self, c_in: int, c_out: int, stride: int = 1, norm: str = "batch"):
         super().__init__()
         self.conv1 = nn.Conv3d(c_in, c_out, 3, stride, 1, bias=False)
-        self.bn1 = nn.BatchNorm3d(c_out)
+        self.bn1 = _norm3d(c_out, norm)
         self.conv2 = nn.Conv3d(c_out, c_out, 3, 1, 1, bias=False)
-        self.bn2 = nn.BatchNorm3d(c_out)
+        self.bn2 = _norm3d(c_out, norm)
         self.act = nn.SiLU(inplace=True)
         self.down = None
         if stride != 1 or c_in != c_out * self.expansion:
             self.down = nn.Sequential(
                 nn.Conv3d(c_in, c_out * self.expansion, 1, stride, bias=False),
-                nn.BatchNorm3d(c_out * self.expansion))
+                _norm3d(c_out * self.expansion, norm))
 
     def forward(self, x):
         idn = x if self.down is None else self.down(x)
@@ -57,20 +68,20 @@ class _BasicBlock(nn.Module):
 class _Bottleneck(nn.Module):
     expansion = 4
 
-    def __init__(self, c_in: int, c_mid: int, stride: int = 1):
+    def __init__(self, c_in: int, c_mid: int, stride: int = 1, norm: str = "batch"):
         super().__init__()
         c_out = c_mid * self.expansion
         self.conv1 = nn.Conv3d(c_in, c_mid, 1, bias=False)
-        self.bn1 = nn.BatchNorm3d(c_mid)
+        self.bn1 = _norm3d(c_mid, norm)
         self.conv2 = nn.Conv3d(c_mid, c_mid, 3, stride, 1, bias=False)
-        self.bn2 = nn.BatchNorm3d(c_mid)
+        self.bn2 = _norm3d(c_mid, norm)
         self.conv3 = nn.Conv3d(c_mid, c_out, 1, bias=False)
-        self.bn3 = nn.BatchNorm3d(c_out)
+        self.bn3 = _norm3d(c_out, norm)
         self.act = nn.SiLU(inplace=True)
         self.down = None
         if stride != 1 or c_in != c_out:
             self.down = nn.Sequential(
-                nn.Conv3d(c_in, c_out, 1, stride, bias=False), nn.BatchNorm3d(c_out))
+                nn.Conv3d(c_in, c_out, 1, stride, bias=False), _norm3d(c_out, norm))
 
     def forward(self, x):
         idn = x if self.down is None else self.down(x)
@@ -101,12 +112,14 @@ class _ResNet(nn.Module):
     """Standard 3D ResNet body (stem plus four stages), without the global pooling
     and classifier, so it returns a spatial feature map."""
 
-    def __init__(self, in_channels: int, block, layers, base: int = 64):
+    def __init__(self, in_channels: int, block, layers, base: int = 64,
+                 norm: str = "group"):
         super().__init__()
         self.in_planes = base
+        self.norm = norm
         self.stem = nn.Sequential(
             nn.Conv3d(in_channels, base, 7, stride=2, padding=3, bias=False),
-            nn.BatchNorm3d(base), nn.SiLU(inplace=True),
+            _norm3d(base, norm), nn.SiLU(inplace=True),
             nn.MaxPool3d(3, stride=2, padding=1))
         self.layer1 = self._make(block, base, layers[0], stride=1)
         self.layer2 = self._make(block, base * 2, layers[1], stride=2)
@@ -114,10 +127,10 @@ class _ResNet(nn.Module):
         self.layer4 = self._make(block, base * 8, layers[3], stride=2)
 
     def _make(self, block, c_mid, n, stride):
-        layers = [block(self.in_planes, c_mid, stride)]
+        layers = [block(self.in_planes, c_mid, stride, norm=self.norm)]
         self.in_planes = c_mid * block.expansion
         for _ in range(1, n):
-            layers.append(block(self.in_planes, c_mid, 1))
+            layers.append(block(self.in_planes, c_mid, 1, norm=self.norm))
         return nn.Sequential(*layers)
 
     def forward(self, x):
