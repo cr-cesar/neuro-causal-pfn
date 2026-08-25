@@ -53,7 +53,11 @@ class Encoder3D(nn.Module):
         if self.use_daft and clinical is not None:
             f = self.daft(f, clinical)
         h = f.flatten(1)
-        return self.fc_mu(h), self.fc_logvar(h)
+        # The clamp is inert for healthy posteriors (their logvar stays well
+        # inside [-10, 10]) but stops the divergence loop seen on the deep
+        # backbones: unbounded logvar -> exp overflow (fp16 first) -> KL ~1e17
+        # -> NaN loss. exp(10) ~ 2e4 still allows an essentially flat posterior.
+        return self.fc_mu(h), self.fc_logvar(h).clamp(min=-10.0, max=10.0)
 
 
 class Decoder3D(nn.Module):
