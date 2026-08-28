@@ -19,6 +19,7 @@ numpy==1.26.*          # torch 2.3 is built against numpy 1.x
 scipy==1.13.*
 scikit-learn==1.4.*
 nibabel==5.2.*
+pandas==2.2.*          # Giles replica (labelling, results, simulations export)
 pytest>=8.0
 
 # the project itself, in editable mode

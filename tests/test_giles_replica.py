@@ -72,6 +72,29 @@ def test_score_predictions_scale():
     assert poor["pehe"] == pytest.approx(np.sqrt(3 * 0.25 / 4), abs=1e-6)
 
 
+def test_callable_representation_refits_per_fold():
+    df = _labels(120)
+    pair = _fake_pair()
+    Zfull = np.random.default_rng(0).normal(size=(120, 4))
+    calls = []
+
+    def refit(tr_idx, te_idx):
+        calls.append((len(tr_idx), len(te_idx)))
+        return Zfull[tr_idx], Zfull[te_idx]
+
+    fixed = gr.evaluate_representation(Zfull, df, {1: pair},
+                                       gr.HEADLINE_SCENARIOS["ideal"], n_folds=4,
+                                       deficits=[1], classifiers=["logistic_regression"])
+    refitted = gr.evaluate_representation(refit, df, {1: pair},
+                                          gr.HEADLINE_SCENARIOS["ideal"], n_folds=4,
+                                          deficits=[1], classifiers=["logistic_regression"])
+    assert len(calls) == 4                      # invoked once per fold
+    assert all(tr + te == 120 for tr, te in calls)
+    # identity refit must reproduce the fixed-Z path exactly
+    np.testing.assert_allclose(fixed["pehe"].to_numpy(),
+                               refitted["pehe"].to_numpy(), atol=1e-12)
+
+
 def test_evaluate_representation_end_to_end():
     df = _labels(120)
     pair = _fake_pair()

@@ -324,6 +324,13 @@ def evaluate_representation(Z: np.ndarray, labels_df, pairs: Dict[int, RoiPair],
     headline aggregate is the mean over deficits of the best
     classifier x learner cell, as in the paper's Figure 6.
 
+    Z may instead be a callable ``(tr_idx, te_idx) -> (Z_tr, Z_te)`` that is
+    invoked once per fold with the file-level indices. This is how the paper
+    fits its reductions (NMF/PCA on the train side of each fold only), and it
+    is the honest anchor when comparing against published numbers: a fixed Z
+    computed from the full cohort leaks the test lesions' anatomy into the
+    embedding, which flatters PEHE.
+
     When ``collect_sims`` is a list, every simulated train slice is appended
     to it as records (filename, deficit, fold, y_true, W, Y, scenario) so the
     raw simulations with outcomes can be exported.
@@ -337,7 +344,10 @@ def evaluate_representation(Z: np.ndarray, labels_df, pairs: Dict[int, RoiPair],
     for k, (tr_idx, te_idx) in enumerate(
             KFold(n_splits=n_folds, shuffle=True, random_state=0).split(np.arange(n))):
         df_tr, df_te = labels_df.iloc[tr_idx], labels_df.iloc[te_idx]
-        Z_tr_all, Z_te_all = Z[tr_idx], Z[te_idx]
+        if callable(Z):
+            Z_tr_all, Z_te_all = Z(tr_idx, te_idx)
+        else:
+            Z_tr_all, Z_te_all = Z[tr_idx], Z[te_idx]
         for d in deficits:
             sl_tr = deficit_slice(df_tr.reset_index(drop=True), d)
             sl_te = deficit_slice(df_te.reset_index(drop=True), d)
@@ -370,6 +380,10 @@ def evaluate_representation(Z: np.ndarray, labels_df, pairs: Dict[int, RoiPair],
 def headline_aggregate(results) -> Dict[str, float]:
     """The paper's aggregation: per deficit take the best classifier x learner
     (mean over folds), then average across deficits; 95% CI over deficits."""
+    if len(results) == 0:
+        # no deficit reached MIN_N susceptible lesions (small cohorts / smokes)
+        return {"pehe_mean": float("nan"), "ci_low": float("nan"),
+                "ci_high": float("nan"), "n_deficits": 0}
     per = (results.groupby(["deficit", "classifier", "learner"])["pehe"]
            .mean().reset_index())
     best = per.groupby("deficit")["pehe"].min()
