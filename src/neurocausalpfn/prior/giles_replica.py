@@ -370,6 +370,10 @@ def evaluate_representation(Z: np.ndarray, labels_df, pairs: Dict[int, RoiPair],
 def headline_aggregate(results) -> Dict[str, float]:
     """The paper's aggregation: per deficit take the best classifier x learner
     (mean over folds), then average across deficits; 95% CI over deficits."""
+    if len(results) == 0:
+        # no deficit reached MIN_N susceptible lesions (small cohorts / smokes)
+        return {"pehe_mean": float("nan"), "ci_low": float("nan"),
+                "ci_high": float("nan"), "n_deficits": 0}
     per = (results.groupby(["deficit", "classifier", "learner"])["pehe"]
            .mean().reset_index())
     best = per.groupby("deficit")["pehe"].min()
