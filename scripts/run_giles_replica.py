@@ -44,28 +44,45 @@ import numpy as np                                        # noqa: E402
 from neurocausalpfn.prior import giles_replica as gr      # noqa: E402
 
 
-def _built_in_representations(labels_df, files, which):
+def _sparse_voxel_matrix(files):
+    import nibabel as nib
+    from scipy import sparse
+    rows, cols, n = [], [], len(files)
+    shape = None
+    for i, path in enumerate(files):
+        img = nib.load(path).get_fdata()
+        shape = img.shape
+        nz = np.flatnonzero(img.ravel() > gr.DISCO_THRESH)
+        rows.append(np.full(len(nz), i)); cols.append(nz)
+    return sparse.csr_matrix((np.ones(sum(map(len, cols)), dtype=np.float32),
+                              (np.concatenate(rows), np.concatenate(cols))),
+                             shape=(n, int(np.prod(shape))))
+
+
+def _nmf(k):
+    from sklearn.decomposition import NMF
+    return NMF(n_components=k, init="nndsvd", max_iter=200,
+               random_state=0, tol=1e-3)
+
+
+def _built_in_representations(labels_df, files, which, nmf_per_fold=False):
     reps = {}
     if "volume" in which:
         v = labels_df["vol"].to_numpy(dtype=float)
         reps["volume"] = (v[:, None] / max(v.max(), 1.0))
     if "nmf50" in which:
-        import nibabel as nib
-        from scipy import sparse
-        from sklearn.decomposition import NMF
-        rows, cols, n = [], [], len(files)
-        shape = None
-        for i, path in enumerate(files):
-            img = nib.load(path).get_fdata()
-            shape = img.shape
-            nz = np.flatnonzero(img.ravel() > gr.DISCO_THRESH)
-            rows.append(np.full(len(nz), i)); cols.append(nz)
-        X = sparse.csr_matrix((np.ones(sum(map(len, cols)), dtype=np.float32),
-                               (np.concatenate(rows), np.concatenate(cols))),
-                              shape=(n, int(np.prod(shape))))
-        k = min(50, n - 1)
-        reps["nmf50"] = NMF(n_components=k, init="nndsvd", max_iter=200,
-                            random_state=0, tol=1e-3).fit_transform(X)
+        X = _sparse_voxel_matrix(files)
+        k = min(50, len(files) - 1)
+        if nmf_per_fold:
+            # the paper's protocol: fit the reduction on the train side of each
+            # fold only, transform the held-out side (no anatomy leakage)
+            def _refit(tr_idx, te_idx, X=X, k=k):
+                m = _nmf(k)
+                Ztr = m.fit_transform(X[tr_idx])
+                return Ztr.astype(np.float32), m.transform(X[te_idx]).astype(np.float32)
+            reps["nmf50_perfold"] = _refit
+        else:
+            reps["nmf50"] = _nmf(k).fit_transform(X)
     return reps
 
 
@@ -86,6 +103,9 @@ def main():
                     help=".npz files with Z aligned to the sorted images")
     ap.add_argument("--builtin", nargs="*", default=["volume"],
                     choices=["volume", "nmf50"], help="reference representations")
+    ap.add_argument("--nmf-per-fold", action="store_true",
+                    help="refit NMF on each fold's train side only (the paper's "
+                         "protocol; slower but leak-free — use for the anchor)")
     ap.add_argument("--folds", type=int, default=10)
     ap.add_argument("--deficits", type=int, nargs="*", default=None, help="subset 1..16")
     ap.add_argument("--limit", type=int, default=0, help="use only the first N images (smoke)")
@@ -108,7 +128,8 @@ def main():
     pairs = gr.load_atlas_pairs(args.atlas_dir, args.modality)
     labels = gr.label_images(files, pairs)
 
-    reps = _built_in_representations(labels, files, args.builtin)
+    reps = _built_in_representations(labels, files, args.builtin,
+                                     nmf_per_fold=args.nmf_per_fold)
     for path in args.latents:
         with np.load(path) as z:
             Z = z["Z"]

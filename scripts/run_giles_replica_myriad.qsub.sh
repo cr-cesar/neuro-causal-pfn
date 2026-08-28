@@ -5,6 +5,7 @@
 #   qsub -v SCENARIO=location_bias scripts/run_giles_replica_myriad.qsub.sh
 #   qsub -v IMAGES="data/Full data/lesions" scripts/run_giles_replica_myriad.qsub.sh
 #   qsub -v LATENTS="outputs/foo/latents.npz" ... to score encoder latents too
+#   qsub -v NMF_PER_FOLD=1 ... to refit NMF per fold (paper protocol, leak-free)
 #
 #$ -N giles-replica
 #$ -l h_rt=8:0:0
@@ -26,6 +27,9 @@ OUT="${OUT:-outputs/giles_replica_${SCENARIO}}"
 EXTRA=()
 if [ -n "${LATENTS:-}" ]; then
     EXTRA+=(--latents ${LATENTS})
+fi
+if [ -n "${NMF_PER_FOLD:-}" ]; then
+    EXTRA+=(--nmf-per-fold)
 fi
 
 python scripts/run_giles_replica.py \
