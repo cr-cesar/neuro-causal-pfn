@@ -110,3 +110,18 @@ def test_evaluate_representation_end_to_end():
     assert len(sims) > 0 and {"filename", "W", "Y", "y_true"} <= set(sims[0])
     agg = gr.headline_aggregate(res)
     assert np.isfinite(agg["pehe_mean"])
+
+
+def test_headline_fixed_configuration_not_flattered_by_selection():
+    df = _labels(120)
+    pair = _fake_pair()
+    Z = np.random.default_rng(0).normal(size=(120, 4))
+    res = gr.evaluate_representation(Z, df, {1: pair},
+                                     gr.HEADLINE_SCENARIOS["ideal"], n_folds=4,
+                                     deficits=[1])
+    agg = gr.headline_aggregate(res)
+    # the paper-style headline fixes one classifier x learner globally; letting
+    # each deficit pick its own best can only look better (or equal)
+    assert agg["pehe_per_deficit_best"] <= agg["pehe_mean"] + 1e-12
+    assert agg["classifier"] in {"logistic_regression", "extra_trees"}
+    assert agg["learner"] in {"one", "two"}

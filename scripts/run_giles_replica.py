@@ -150,7 +150,8 @@ def main():
         agg = gr.headline_aggregate(res)
         headline_rows.append({"representation": name, **agg, **scenario})
         print(f"  {name:40s} PEHE {agg['pehe_mean']:.3f} "
-              f"(CI {agg['ci_low']:.3f}-{agg['ci_high']:.3f}, {agg['n_deficits']} deficits)")
+              f"(CI {agg['ci_low']:.3f}-{agg['ci_high']:.3f}, {agg['n_deficits']} deficits, "
+              f"{agg['classifier']}/{agg['learner']})")
 
     pd.concat(all_results).to_csv(os.path.join(args.out, "replica_results.csv"), index=False)
     pd.DataFrame(headline_rows).to_csv(os.path.join(args.out, "replica_headline.csv"), index=False)

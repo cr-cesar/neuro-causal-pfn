@@ -377,16 +377,7 @@ def evaluate_representation(Z: np.ndarray, labels_df, pairs: Dict[int, RoiPair],
     return pd.DataFrame(results)
 
 
-def headline_aggregate(results) -> Dict[str, float]:
-    """The paper's aggregation: per deficit take the best classifier x learner
-    (mean over folds), then average across deficits; 95% CI over deficits."""
-    if len(results) == 0:
-        # no deficit reached MIN_N susceptible lesions (small cohorts / smokes)
-        return {"pehe_mean": float("nan"), "ci_low": float("nan"),
-                "ci_high": float("nan"), "n_deficits": 0}
-    per = (results.groupby(["deficit", "classifier", "learner"])["pehe"]
-           .mean().reset_index())
-    best = per.groupby("deficit")["pehe"].min()
+def _deficit_ci(best) -> Dict[str, float]:
     mean = float(best.mean())
     if len(best) > 1:
         se = float(best.std(ddof=1) / np.sqrt(len(best)))
@@ -395,3 +386,29 @@ def headline_aggregate(results) -> Dict[str, float]:
         ci = (float("nan"), float("nan"))
     return {"pehe_mean": mean, "ci_low": ci[0], "ci_high": ci[1],
             "n_deficits": int(len(best))}
+
+
+def headline_aggregate(results) -> Dict[str, float]:
+    """The paper's aggregation (its supplementary tables report one global
+    configuration, e.g. "VAE 50 / logistic regression / two-model"): pick the
+    single classifier x learner with the lowest PEHE averaged over deficits,
+    then report that configuration's mean and 95% CI over deficits.
+
+    Also returns ``pehe_per_deficit_best`` — letting each deficit pick its own
+    best cell — as a diagnostic; it is optimistic by selection and must not be
+    compared against the published numbers."""
+    if len(results) == 0:
+        # no deficit reached MIN_N susceptible lesions (small cohorts / smokes)
+        return {"pehe_mean": float("nan"), "ci_low": float("nan"),
+                "ci_high": float("nan"), "n_deficits": 0,
+                "classifier": "", "learner": "",
+                "pehe_per_deficit_best": float("nan")}
+    per = (results.groupby(["deficit", "classifier", "learner"])["pehe"]
+           .mean().reset_index())
+    overall = per.groupby(["classifier", "learner"])["pehe"].mean()
+    cbest, lbest = overall.idxmin()
+    fixed = per[(per["classifier"] == cbest) & (per["learner"] == lbest)]
+    out = _deficit_ci(fixed.set_index("deficit")["pehe"])
+    out["classifier"], out["learner"] = cbest, lbest
+    out["pehe_per_deficit_best"] = float(per.groupby("deficit")["pehe"].min().mean())
+    return out
