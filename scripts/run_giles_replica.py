@@ -65,11 +65,55 @@ def _nmf(k):
                random_state=0, tol=1e-3)
 
 
-def _built_in_representations(labels_df, files, which, nmf_per_fold=False):
+def _dense_voxel_matrix(files, idx, icv_mask):
+    """Continuous voxel values (no binarisation) inside the ICV mask, exactly
+    as Giles' reduce_nimfa_nmf loads them."""
+    import nibabel as nib
+    out = np.zeros((len(idx), int(icv_mask.sum())), dtype=np.float64)
+    for row, i in enumerate(idx):
+        out[row] = nib.load(files[i]).get_fdata().ravel()[icv_mask]
+    return out
+
+
+def _nimfa_nmf_builtin(files, icv_path, k):
+    """Giles' exact NMF (representation.py reduce_nimfa_nmf): nimfa with
+    seed='random_vcol' and library defaults, fitted per fold on the train
+    side's continuous ICV-masked voxels; the test embedding is the linear
+    projection X_test @ pinv(H). Deliberately NOT our sklearn variant — this
+    is the faithful anchor against the published pipeline."""
+    import nibabel as nib
+
+    if not hasattr(np, "mat"):     # nimfa 1.4 predates NumPy 2.0
+        np.mat = np.asmatrix
+    import nimfa
+
+    icv_mask = nib.load(icv_path).get_fdata().ravel().astype(bool)
+
+    def _refit(tr_idx, te_idx):
+        Xtr = _dense_voxel_matrix(files, tr_idx, icv_mask)
+        fitted = nimfa.Nmf(V=Xtr, seed="random_vcol", rank=k)()
+        W = np.asarray(fitted.fit.W)
+        H = np.asarray(fitted.fit.H)
+        Xte = _dense_voxel_matrix(files, te_idx, icv_mask)
+        Zte = Xte @ np.linalg.pinv(H)
+        return W.astype(np.float32), np.asarray(Zte, dtype=np.float32)
+
+    return _refit
+
+
+def _built_in_representations(labels_df, files, which, nmf_per_fold=False,
+                              icv_path=None):
     reps = {}
     if "volume" in which:
         v = labels_df["vol"].to_numpy(dtype=float)
         reps["volume"] = (v[:, None] / max(v.max(), 1.0))
+    if "nmf50_nimfa" in which:
+        if not icv_path or not os.path.exists(icv_path):
+            sys.exit("nmf50_nimfa needs the ICV mask: pass --icv-mask or place "
+                     "icv_mask_2mm.nii.gz in the atlas dir (it ships with the "
+                     "Giles repository)")
+        reps["nmf50_nimfa"] = _nimfa_nmf_builtin(files, icv_path,
+                                                 min(50, len(files) - 1))
     if "nmf50" in which:
         X = _sparse_voxel_matrix(files)
         k = min(50, len(files) - 1)
@@ -102,10 +146,16 @@ def main():
     ap.add_argument("--latents", nargs="*", default=[],
                     help=".npz files with Z aligned to the sorted images")
     ap.add_argument("--builtin", nargs="*", default=["volume"],
-                    choices=["volume", "nmf50"], help="reference representations")
+                    choices=["volume", "nmf50", "nmf50_nimfa"],
+                    help="reference representations (nmf50_nimfa = Giles' exact "
+                         "nimfa NMF: continuous ICV-masked voxels, per-fold fit, "
+                         "pinv projection for test)")
     ap.add_argument("--nmf-per-fold", action="store_true",
-                    help="refit NMF on each fold's train side only (the paper's "
-                         "protocol; slower but leak-free — use for the anchor)")
+                    help="refit sklearn NMF on each fold's train side only (the "
+                         "paper's protocol; nmf50_nimfa is always per-fold)")
+    ap.add_argument("--icv-mask", default=None,
+                    help="intracranial mask nifti for nmf50_nimfa "
+                         "(default: <atlas-dir>/icv_mask_2mm.nii.gz)")
     ap.add_argument("--folds", type=int, default=10)
     ap.add_argument("--deficits", type=int, nargs="*", default=None, help="subset 1..16")
     ap.add_argument("--limit", type=int, default=0, help="use only the first N images (smoke)")
@@ -128,8 +178,16 @@ def main():
     pairs = gr.load_atlas_pairs(args.atlas_dir, args.modality)
     labels = gr.label_images(files, pairs)
 
+    icv_path = args.icv_mask
+    if icv_path is None:
+        for cand in ("icv_mask_2mm.nii.gz", "icv_mask_2mm.nii"):
+            p = os.path.join(args.atlas_dir, cand)
+            if os.path.exists(p):
+                icv_path = p
+                break
     reps = _built_in_representations(labels, files, args.builtin,
-                                     nmf_per_fold=args.nmf_per_fold)
+                                     nmf_per_fold=args.nmf_per_fold,
+                                     icv_path=icv_path)
     for path in args.latents:
         with np.load(path) as z:
             Z = z["Z"]

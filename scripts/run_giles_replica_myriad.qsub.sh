@@ -23,6 +23,10 @@ SCENARIO="${SCENARIO:-ideal}"
 IMAGES="${IMAGES:-data/Full data/disconnectomes}"
 MODALITY="${MODALITY:-receptor}"
 OUT="${OUT:-outputs/giles_replica_${SCENARIO}}"
+# BUILTIN="volume nmf50_nimfa" runs Giles' exact nimfa NMF (needs `pip install
+# nimfa` in the venv, icv_mask_2mm.nii.gz in data/atlases, and more memory:
+# resubmit with `qsub -l mem=10G ...` — the dense per-fold matrix is ~7 GB).
+BUILTIN="${BUILTIN:-volume nmf50}"
 
 EXTRA=()
 if [ -n "${LATENTS:-}" ]; then
@@ -35,5 +39,5 @@ fi
 python scripts/run_giles_replica.py \
     --images-dir "$IMAGES" \
     --atlas-dir data/atlases --modality "$MODALITY" \
-    --scenario "$SCENARIO" --builtin volume nmf50 \
+    --scenario "$SCENARIO" --builtin $BUILTIN \
     --out "$OUT" ${EXTRA[@]+"${EXTRA[@]}"}
