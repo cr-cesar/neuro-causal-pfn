@@ -32,11 +32,20 @@ def main():
         for name, sub in res.groupby("representation"):
             agg = gr.headline_aggregate(sub)
             scenario = {c: sub[c].iloc[0] for c in scenario_cols}
+            # balanced accuracy of the SAME configuration the PEHE headline
+            # picked (the paper's other calibration anchor: VAE-50 disco 0.875,
+            # vascular baseline 0.546)
+            if "prescriptive_balacc" in sub.columns and agg["classifier"]:
+                cfg = sub[(sub["classifier"] == agg["classifier"]) &
+                          (sub["learner"] == agg["learner"])]
+                agg["balacc_mean"] = float(
+                    cfg.groupby("deficit")["prescriptive_balacc"].mean().mean())
             rows.append({"representation": name, **agg, **scenario})
             print(f"  {out_dir} :: {name:24s} PEHE {agg['pehe_mean']:.3f} "
                   f"(CI {agg['ci_low']:.3f}-{agg['ci_high']:.3f}, "
                   f"{agg['classifier']}/{agg['learner']}, "
-                  f"per-deficit-best {agg['pehe_per_deficit_best']:.3f})")
+                  f"per-deficit-best {agg['pehe_per_deficit_best']:.3f}, "
+                  f"balacc {agg.get('balacc_mean', float('nan')):.3f})")
         pd.DataFrame(rows).to_csv(os.path.join(out_dir, "replica_headline.csv"),
                                   index=False)
 
