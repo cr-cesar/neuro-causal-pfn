@@ -35,17 +35,20 @@ def main():
             # balanced accuracy of the SAME configuration the PEHE headline
             # picked (the paper's other calibration anchor: VAE-50 disco 0.875,
             # vascular baseline 0.546)
-            if "prescriptive_balacc" in sub.columns and agg["classifier"]:
+            if agg["classifier"]:
                 cfg = sub[(sub["classifier"] == agg["classifier"]) &
                           (sub["learner"] == agg["learner"])]
-                agg["balacc_mean"] = float(
-                    cfg.groupby("deficit")["prescriptive_balacc"].mean().mean())
+                for col, key in (("prescriptive_balacc", "balacc_mean"),
+                                 ("pehe_xor", "pehe_xor_mean")):
+                    if col in cfg.columns:
+                        agg[key] = float(cfg.groupby("deficit")[col].mean().mean())
             rows.append({"representation": name, **agg, **scenario})
             print(f"  {out_dir} :: {name:24s} PEHE {agg['pehe_mean']:.3f} "
                   f"(CI {agg['ci_low']:.3f}-{agg['ci_high']:.3f}, "
                   f"{agg['classifier']}/{agg['learner']}, "
                   f"per-deficit-best {agg['pehe_per_deficit_best']:.3f}, "
-                  f"balacc {agg.get('balacc_mean', float('nan')):.3f})")
+                  f"balacc {agg.get('balacc_mean', float('nan')):.3f}, "
+                  f"pehe-xor {agg.get('pehe_xor_mean', float('nan')):.3f})")
         pd.DataFrame(rows).to_csv(os.path.join(out_dir, "replica_headline.csv"),
                                   index=False)
 
