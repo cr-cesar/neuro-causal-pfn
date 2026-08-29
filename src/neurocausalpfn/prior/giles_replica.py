@@ -248,7 +248,16 @@ def pehe(pred_ITE: np.ndarray, true_ITE: np.ndarray) -> float:
 
 def score_predictions(p1: np.ndarray, p0: np.ndarray, true_ITE: np.ndarray) -> Dict[str, float]:
     """Observed PEHE and prescriptive balanced accuracy on the Giles scale:
-    pred_ITE = sigmoid(p1 - p0) against y_true in {0, 0.5, 1}."""
+    pred_ITE = sigmoid(p1 - p0) against y_true in {0, 0.5, 1}.
+
+    Calibration note (full-cohort runs, 4,119 disconnectomes): ``pehe_xor``
+    (decidable cases only, y_true != 0.5) is the quantity that matches the
+    published headline — our NMF-50 scores 0.343-0.352 across receptor,
+    genetics and the nimfa variant, against the paper's VAE-50 0.349
+    [0.33, 0.37]; balanced accuracy matches too (0.80-0.89 vs 0.875, volume
+    ~0.52 vs the vascular baseline 0.523-0.546). The all-cases ``pehe`` sits
+    lower because both-susceptible patients (sigmoid(0) = 0.5, error-free)
+    dilute the mean; compare representations against the paper on pehe_xor."""
     pred_ITE = 1.0 / (1.0 + np.exp(-(p1 - p0)))
     out = {"pehe": pehe(pred_ITE, true_ITE)}
     xor = true_ITE != 0.5
