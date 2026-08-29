@@ -509,6 +509,7 @@ def run_experiment(eid: str, mode: str = "prototype", seeds: int = 3,
         return {"eid": exp.eid, "arm": exp.arm, "aggregate": agg, "winner": None}
     winner = _select_winner(exp, agg)
     _propagate(exp, winner, agg, context)
+    apply_manual_pins(context)
     result = {"eid": exp.eid, "arm": exp.arm, "aggregate": agg, "winner": winner}
     if logger:
         logger.log_metrics({"eid": exp.eid, "winner": winner.get("label") if winner else None,
@@ -552,9 +553,29 @@ def finalize_experiment(eid: str, context: Dict,
     agg = _aggregate(exp, per_label)
     winner = _select_winner(exp, agg)
     _propagate(exp, winner, agg, context)
+    apply_manual_pins(context)
     log.info("%s finalized over %d rows: winner %s", eid, len(rows),
              winner.get("label") if winner else None)
     return {"eid": exp.eid, "arm": exp.arm, "aggregate": agg, "winner": winner}
+
+
+def apply_manual_pins(context: Dict) -> None:
+    """Re-assert curated decisions stored under context["manual"].
+
+    A pin is ``{key: {"value": ..., "reason": "..."}}`` (or a bare value).
+    Plain keys (backbone, w_dice, dims, fusion_mode) overwrite the context
+    entry; a ``winners.Ex`` key pins that experiment's winner label. Pins are
+    applied after every propagate/finalize and on load, so an automated
+    winner selection can never silently override a recorded manual decision —
+    which happened twice with the E3 backbone incumbent."""
+    for key, pin in (context.get("manual") or {}).items():
+        val = pin.get("value") if isinstance(pin, dict) else pin
+        if key.startswith("winners."):
+            context.setdefault("winners", {})[key.split(".", 1)[1]] = val
+        elif key == "dims":
+            context[key] = tuple(val) if isinstance(val, (list, tuple)) else val
+        else:
+            context[key] = val
 
 
 def load_context(out_root: str) -> Dict:
@@ -566,12 +587,26 @@ def load_context(out_root: str) -> Dict:
             ctx = json.load(f)
         if isinstance(ctx.get("dims"), list):
             ctx["dims"] = tuple(ctx["dims"])
+        apply_manual_pins(ctx)
         return ctx
     return {}
 
 
 def save_context(out_root: str, context: Dict) -> None:
-    with open(os.path.join(out_root, "context.json"), "w") as f:
+    """Write the context, preserving manual pins against the read-modify-write
+    race: a long cluster job loads the context at start and saves at exit, so
+    without this merge it would clobber any pin recorded on disk meanwhile."""
+    path = os.path.join(out_root, "context.json")
+    try:
+        with open(path) as f:
+            on_disk = json.load(f)
+        merged = {**(on_disk.get("manual") or {}), **(context.get("manual") or {})}
+        if merged:
+            context["manual"] = merged
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    apply_manual_pins(context)
+    with open(path, "w") as f:
         json.dump(context, f, indent=2, default=list)
 
 
