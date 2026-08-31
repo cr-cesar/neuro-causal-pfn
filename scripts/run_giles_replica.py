@@ -101,6 +101,34 @@ def _nimfa_nmf_builtin(files, icv_path, k):
     return _refit
 
 
+def _fold_latent_representation(fold_dir, n):
+    """Per-fold latents saved by train_giles_style_vae50.py, matched to the
+    replica's folds by their test indices (never by call order)."""
+    by_key = {}
+    for path in sorted(glob.glob(os.path.join(fold_dir, "fold*.npz"))):
+        with np.load(path, allow_pickle=False) as z:
+            tr, te = z["tr_idx"], z["te_idx"]
+            if len(tr) + len(te) != n:
+                sys.exit(f"{path}: covers {len(tr) + len(te)} images, expected {n}")
+            by_key[(len(te), int(te[0]), int(te[-1]))] = (
+                z["Ztr"].copy(), z["Zte"].copy(), tr.copy(), te.copy())
+    if not by_key:
+        sys.exit(f"no fold*.npz in {fold_dir}")
+
+    def _lookup(tr_idx, te_idx):
+        key = (len(te_idx), int(te_idx[0]), int(te_idx[-1]))
+        if key not in by_key:
+            sys.exit(f"{fold_dir}: no stored fold matches the requested split "
+                     "(check --folds and the image listing)")
+        Ztr, Zte, tr, te = by_key[key]
+        if not (np.array_equal(tr, tr_idx) and np.array_equal(te, te_idx)):
+            sys.exit(f"{fold_dir}: stored fold indices differ from the "
+                     "replica's (different file listing or fold count)")
+        return Ztr, Zte
+
+    return _lookup
+
+
 def _built_in_representations(labels_df, files, which, nmf_per_fold=False,
                               icv_path=None):
     reps = {}
@@ -145,6 +173,10 @@ def main():
     ap.add_argument("--biastype", default=None, choices=["observed", "unobserved"])
     ap.add_argument("--latents", nargs="*", default=[],
                     help=".npz files with Z aligned to the sorted images")
+    ap.add_argument("--fold-latents", nargs="*", default=[],
+                    help="dirs of fold{K}.npz (Ztr/Zte/tr_idx/te_idx) from "
+                         "per-fold encoders (train_giles_style_vae50.py); "
+                         "each dir becomes one representation")
     ap.add_argument("--builtin", nargs="*", default=["volume"],
                     choices=["volume", "nmf50", "nmf50_nimfa"],
                     help="reference representations (nmf50_nimfa = Giles' exact "
@@ -194,6 +226,9 @@ def main():
         if len(Z) != len(files):
             sys.exit(f"{path}: Z has {len(Z)} rows but there are {len(files)} images")
         reps[os.path.basename(path)] = Z
+    for d in args.fold_latents:
+        reps[os.path.basename(os.path.normpath(d))] = _fold_latent_representation(
+            d, len(files))
 
     os.makedirs(args.out, exist_ok=True)
     import pandas as pd

@@ -32,6 +32,9 @@ EXTRA=()
 if [ -n "${LATENTS:-}" ]; then
     EXTRA+=(--latents ${LATENTS})
 fi
+if [ -n "${FOLD_LATENTS:-}" ]; then
+    EXTRA+=(--fold-latents ${FOLD_LATENTS})
+fi
 if [ -n "${NMF_PER_FOLD:-}" ]; then
     EXTRA+=(--nmf-per-fold)
 fi
