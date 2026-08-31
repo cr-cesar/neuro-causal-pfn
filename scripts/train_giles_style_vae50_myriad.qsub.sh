@@ -25,8 +25,10 @@ module load python3/3.11
 source ~/venvs/neuro/bin/activate
 
 IMAGES="${IMAGES:-data/Full data/disconnectomes}"
+MODALITY="${MODALITY:-disconnectome}"
 OUT="${OUT:-outputs/giles_style_vae50}"
 FOLD=$((SGE_TASK_ID - 1))
 
 python scripts/train_giles_style_vae50.py \
-    --images-dir "$IMAGES" --fold "$FOLD" --out "$OUT" --device auto
+    --images-dir "$IMAGES" --modality "$MODALITY" \
+    --fold "$FOLD" --out "$OUT" --device auto
