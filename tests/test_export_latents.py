@@ -75,6 +75,24 @@ def test_daft_checkpoint_is_refused(tmp_path):
         ex.load_frozen_vae(path)
 
 
+def test_bracketed_concrete_path_is_not_globbed(tmp_path):
+    # experiment labels put [] in directory names; the shell hands the script
+    # concrete paths that glob would misread as character classes
+    d = os.path.join(tmp_path, "E2[w_dice=0.5]", "seed0", "disco")
+    os.makedirs(d)
+    ck = _save_ckpt(d)
+    import subprocess
+    r = subprocess.run(
+        [sys.executable, os.path.join(os.path.dirname(__file__), "..",
+                                      "scripts", "export_latents.py"),
+         "--checkpoints", ck, "--images-dir", os.path.join(tmp_path, "none"),
+         "--out", str(tmp_path)],
+        capture_output=True, text=True)
+    # it must get past checkpoint resolution and fail on the empty images dir
+    assert "no checkpoint matches" not in (r.stdout + r.stderr)
+    assert "no niftis" in (r.stdout + r.stderr)
+
+
 def test_default_name_from_runner_layout():
     name = ex.default_name(
         "outputs/experiments/E2/E2[w_dice=0.5]/seed0/disco/vae_disconnectome.pt")

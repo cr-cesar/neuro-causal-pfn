@@ -127,6 +127,11 @@ def main():
 
     ckpts = []
     for pat in args.checkpoints:
+        if os.path.isfile(pat):
+            # a concrete path (possibly containing [] from the experiment
+            # labels, which glob would misread as a character class)
+            ckpts.append(pat)
+            continue
         hits = sorted(glob.glob(pat))
         if not hits:
             sys.exit(f"no checkpoint matches {pat}")
