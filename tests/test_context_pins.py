@@ -37,3 +37,13 @@ def test_load_context_applies_pins():
     ctx = {"backbone": "resnet18", "manual": {"backbone": "resnet"}}
     runner.apply_manual_pins(ctx)
     assert ctx["backbone"] == "resnet"
+
+
+def test_pre_dimensionality_experiments_do_not_inherit_context_dims():
+    # E2/E3 precede E4 in the chain; a re-run after E4's finalize must stay at
+    # the pre-registered 50+50 instead of inheriting the E4 winner's dims
+    from neurocausalpfn.experiments.registry import get_experiment
+    ctx = {"dims": (25, 25), "backbone": "resnet", "w_dice": 0.5}
+    for eid in ("E2", "E3"):
+        for spec in runner.build_runs(get_experiment(eid), "full", ctx):
+            assert (spec.meta["d_lesion"], spec.meta["d_disco"]) == (50, 50)

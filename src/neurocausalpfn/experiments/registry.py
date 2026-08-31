@@ -159,7 +159,10 @@ REGISTRY: List[Experiment] = [
         variant="recon -> BCE + Soft Dice; lambda_Dice in {0.1, 0.5, 1.0}. "
                 "Adopted working baseline: BCE + Soft Dice.",
         tiers=("T1", "T4"), entry="vae", depends_on=("E1",),
-        params={"representation": "lesion", "backbone": "resnet",
+        # zdim pinned to the pre-registered 50+50 baseline: E2 precedes E4 in
+        # the chain, so a re-run must not inherit E4's winning dims from the
+        # context (it would silently change the axis under comparison)
+        params={"representation": "lesion", "backbone": "resnet", "zdim": 50,
                 "grid": {"w_dice": [0.1, 0.5, 1.0]}},
         notes="Per section 22 note 1 the E2 Dice variant is adopted as the "
               "working baseline for all subsequent arms.",
@@ -171,7 +174,9 @@ REGISTRY: List[Experiment] = [
         variant="(a) Pombo vanilla CNN (~2M), (b) 3D ResNet-18 (11M), "
                 "(c) 3D ResNet-50 (25M), (d) Wide CNN (~25M)",
         tiers=("T1", "T2", "T4"), entry="vae", depends_on=("E2",),
-        params={"representation": "lesion",
+        # zdim pinned like E2: E3 precedes E4, so a re-run must stay at the
+        # pre-registered 50+50 rather than inherit E4's winner from the context
+        params={"representation": "lesion", "zdim": 50,
                 "grid": {"backbone": ["cnn", "resnet18", "resnet50", "wide"]},
                 "select_by": "T4"},
         notes="Winner backbone becomes the default for all subsequent arms.",
