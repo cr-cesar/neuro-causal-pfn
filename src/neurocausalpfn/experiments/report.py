@@ -130,8 +130,11 @@ def _markdown(board: List[Dict]) -> str:
     lines = [
         "# Table 9 - experiment leaderboard",
         "",
-        f"Stop/go gates: T1 Dice >= {gate1}, T2 R2 >= {TIER_GATES['T2'].threshold}, "
-        f"T4 root-PEHE < {gate4}. Metrics are seed-aggregated means.",
+        f"Stop/go gates: T1 Dice >= {gate1}, T2 R2 >= {TIER_GATES['T2'].threshold}. "
+        "T4 root-PEHE is the INTERNAL proxy: it ranks variants within one "
+        "experiment only and is NOT comparable across representations or "
+        "against the published 0.349 (external comparisons use the certified "
+        "replica's decidable-subset PEHE). Metrics are seed-aggregated means.",
         "",
         "| Arm | Exp | Variant | Seeds | Pass% | T1 Dice | T2 R2 | T3 dims | T3 IOSS | "
         "T4 rootPEHE | Presc.acc | OOD gap |",
@@ -149,8 +152,10 @@ def _markdown(board: List[Dict]) -> str:
                         pa=_cell(e.get("T4.prescriptive_accuracy.mean")),
                         ood=_cell(e.get("T4.ood_gap.mean"))))
     lines.append("")
-    lines.append("Generated from runs.jsonl. root-PEHE below "
-                 f"{gate4} passes the Tier-4 gate (beats Giles VAE-50).")
+    lines.append("Generated from runs.jsonl (last write per variant and seed "
+                 "wins). The proxy root-PEHE carries no absolute meaning; the "
+                 "head-to-head against the Giles VAE-50 (0.349) lives in the "
+                 "replica outputs (scripts/reaggregate_replica.py, pehe-xor).")
     return "\n".join(lines) + "\n"
 
 
