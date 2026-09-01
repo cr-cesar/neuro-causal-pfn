@@ -148,7 +148,8 @@ REGISTRY: List[Experiment] = [
         variant="none",
         tiers=("T1", "T2", "T4"), entry="vae",
         params={"representation": "lesion", "backbone": "resnet",
-                "w_dice": 0.0, "fusion_mode": "both"},
+                "w_dice": 0.0, "fusion_mode": "both", "zdim": 50,
+                "use_ard": False},
         notes="Reproduces the Giles baseline; objective is BCE plus the KL term "
               "(note 3). Rows E2 onward each introduce a single change.",
     ),
@@ -163,7 +164,7 @@ REGISTRY: List[Experiment] = [
         # the chain, so a re-run must not inherit E4's winning dims from the
         # context (it would silently change the axis under comparison)
         params={"representation": "lesion", "backbone": "resnet", "zdim": 50,
-                "grid": {"w_dice": [0.1, 0.5, 1.0]}},
+                "use_ard": False, "grid": {"w_dice": [0.1, 0.5, 1.0]}},
         notes="Per section 22 note 1 the E2 Dice variant is adopted as the "
               "working baseline for all subsequent arms.",
     ),
@@ -176,7 +177,7 @@ REGISTRY: List[Experiment] = [
         tiers=("T1", "T2", "T4"), entry="vae", depends_on=("E2",),
         # zdim pinned like E2: E3 precedes E4, so a re-run must stay at the
         # pre-registered 50+50 rather than inherit E4's winner from the context
-        params={"representation": "lesion", "zdim": 50,
+        params={"representation": "lesion", "zdim": 50, "use_ard": False,
                 "grid": {"backbone": ["cnn", "resnet18", "resnet50", "wide"]},
                 "select_by": "T4"},
         notes="Winner backbone becomes the default for all subsequent arms.",
