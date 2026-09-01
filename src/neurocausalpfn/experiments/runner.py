@@ -100,7 +100,10 @@ def build_runs(exp: Experiment, mode: str, context: Dict) -> List[RunSpec]:
                 "backbone": pt.get("backbone", p.get("backbone", ctx_backbone)),
                 "w_dice": pt.get("w_dice", p.get("w_dice", ctx_w_dice)),
                 "use_daft": p.get("use_daft", False),
-                "use_ard": p.get("use_ard", False),
+                # the certified re-judging adopted the ARD prior (E5) for the
+                # downstream chain; experiments that pin their own use_ard in
+                # params keep it, everything else inherits the context decision
+                "use_ard": p.get("use_ard", context.get("use_ard", False)),
                 "use_pns": p.get("use_pns", False),
                 "lambda_pns": pt.get("lambda_pns", p.get("lambda_pns", 0.1)),
                 "d_lesion": scale_dim(mode, p.get("zdim", ctx_dims[0])),
