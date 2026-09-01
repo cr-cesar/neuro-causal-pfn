@@ -72,6 +72,20 @@ def test_score_predictions_scale():
     assert poor["pehe"] == pytest.approx(np.sqrt(3 * 0.25 / 4), abs=1e-6)
 
 
+def test_pehe_paper_convention():
+    # tau_hat = raw probability difference, tau in {-1, 0, +1}, all patients
+    true = np.array([1.0, 0.0, 0.5])          # tau = +1, -1, 0
+    p1 = np.array([1.0, 0.0, 0.5])
+    p0 = np.array([0.0, 1.0, 0.5])            # tau_hat = +1, -1, 0 (perfect)
+    s = gr.score_predictions(p1, p0, true)
+    assert s["pehe_paper"] == pytest.approx(0.0, abs=1e-9)
+    # an uninformative model (p1 = p0) errs by |tau|: RMSE over {1, 1, 0}
+    s0 = gr.score_predictions(np.full(3, 0.5), np.full(3, 0.5), true)
+    assert s0["pehe_paper"] == pytest.approx(np.sqrt(2 / 3), abs=1e-9)
+    # the sigmoid-compressed code metric cannot reach zero on decidable cases
+    assert s["pehe_xor"] > 0.25
+
+
 def test_callable_representation_refits_per_fold():
     df = _labels(120)
     pair = _fake_pair()

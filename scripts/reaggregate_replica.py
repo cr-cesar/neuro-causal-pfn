@@ -39,7 +39,8 @@ def main():
                 cfg = sub[(sub["classifier"] == agg["classifier"]) &
                           (sub["learner"] == agg["learner"])]
                 for col, key in (("prescriptive_balacc", "balacc_mean"),
-                                 ("pehe_xor", "pehe_xor_mean")):
+                                 ("pehe_xor", "pehe_xor_mean"),
+                                 ("pehe_paper", "pehe_paper_mean")):
                     if col in cfg.columns:
                         agg[key] = float(cfg.groupby("deficit")[col].mean().mean())
             rows.append({"representation": name, **agg, **scenario})
@@ -48,7 +49,8 @@ def main():
                   f"{agg['classifier']}/{agg['learner']}, "
                   f"per-deficit-best {agg['pehe_per_deficit_best']:.3f}, "
                   f"balacc {agg.get('balacc_mean', float('nan')):.3f}, "
-                  f"pehe-xor {agg.get('pehe_xor_mean', float('nan')):.3f})")
+                  f"pehe-xor {agg.get('pehe_xor_mean', float('nan')):.3f}, "
+                  f"pehe-paper {agg.get('pehe_paper_mean', float('nan')):.3f})")
         pd.DataFrame(rows).to_csv(os.path.join(out_dir, "replica_headline.csv"),
                                   index=False)
 

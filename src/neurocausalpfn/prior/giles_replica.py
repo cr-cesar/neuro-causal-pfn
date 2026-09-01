@@ -260,6 +260,13 @@ def score_predictions(p1: np.ndarray, p0: np.ndarray, true_ITE: np.ndarray) -> D
     dilute the mean; compare representations against the paper on pehe_xor."""
     pred_ITE = 1.0 / (1.0 + np.exp(-(p1 - p0)))
     out = {"pehe": pehe(pred_ITE, true_ITE)}
+    # The paper's own convention (Methods, "Observed PEHE" + Problem setup):
+    # tau_hat = P(Y=1|A,x) - P(Y=1|B,x), the RAW probability difference in
+    # [-1, 1], against tau in {-1, 0, +1} (both-susceptible = 0), over ALL
+    # participants. The released code applies a sigmoid and a {0, 0.5, 1}
+    # encoding instead; the published numbers live on this scale, so both are
+    # reported.
+    out["pehe_paper"] = pehe(p1 - p0, 2.0 * true_ITE - 1.0)
     xor = true_ITE != 0.5
     if xor.sum() > 0:
         t, p = true_ITE[xor].astype(int), (pred_ITE[xor] > 0.5).astype(int)
