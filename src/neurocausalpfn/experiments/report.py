@@ -60,14 +60,22 @@ def _read_runs(out_root: str) -> List[Dict]:
 
 
 def _leaderboard(rows: List[Dict]) -> List[Dict]:
-    # collect per-(eid,label) seed values
-    buckets: Dict = defaultdict(lambda: defaultdict(list))
-    passed: Dict = defaultdict(list)
+    # last write wins per (eid, label, seed): a re-run of the same variant
+    # replaces its stale row instead of stacking with it, matching
+    # finalize_experiment's semantics (otherwise the seed counts double and
+    # the means mix old and new training runs)
+    latest: Dict = {}
     for r in rows:
         label = r.get("label")
         eid = str(r.get("kind", "")).split("/")[0]
         if not label or "seed" not in r:
             continue
+        latest[(eid, label, int(r["seed"]))] = r
+
+    # collect per-(eid,label) seed values
+    buckets: Dict = defaultdict(lambda: defaultdict(list))
+    passed: Dict = defaultdict(list)
+    for (eid, label, _seed), r in latest.items():
         key = (eid, label)
         for m in TIER_METRICS:
             if isinstance(r.get(m), (int, float)):
