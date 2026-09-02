@@ -37,7 +37,12 @@ def nt_xent_loss(features: torch.Tensor, batch_size: int, tau: float = 0.1) -> t
     device = features.device
     m = 2 * batch_size
     sim = features @ features.T / tau
-    sim = sim.masked_fill(torch.eye(m, dtype=torch.bool, device=device), -1e9)
+    # dtype-aware mask value: under autocast sim is fp16, whose range tops out
+    # at ~65k, so a literal -1e9 overflows at conversion (V100 runs died here)
+    sim = sim.masked_fill(torch.eye(m, dtype=torch.bool, device=device),
+                          torch.finfo(sim.dtype).min)
     targets = torch.cat([torch.arange(batch_size, device=device) + batch_size,
                          torch.arange(batch_size, device=device)])
-    return F.cross_entropy(sim, targets)
+    # cross-entropy in fp32: numerically standard under AMP, and the half
+    # kernel does not even exist on CPU
+    return F.cross_entropy(sim.float(), targets)
