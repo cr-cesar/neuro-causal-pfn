@@ -40,8 +40,10 @@ def test_resnet4_drops_the_last_stage():
     four = build_encoder_backbone("resnet4", 1, (16, 32, 64, 128, 256))
     five = build_encoder_backbone("resnet", 1, (16, 32, 64, 128, 256))
     assert len(four.body) == 4 and len(five.body) == 5
-    x = torch.rand(1, 1, *SHAPE)
-    fa, fi = four(x).shape, five(x).shape
+    four.eval(); five.eval()          # batch-norm: no batch statistics needed
+    x = torch.rand(2, 1, *SHAPE)
+    with torch.no_grad():
+        fa, fi = four(x).shape, five(x).shape
     assert fa[1] == 128 and fi[1] == 256          # last kept channel width
     assert all(a == 2 * b for a, b in zip(fa[2:], fi[2:]))   # one stride-2 fewer
     assert _nparams(four) < _nparams(five)
