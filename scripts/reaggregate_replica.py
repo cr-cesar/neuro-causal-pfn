@@ -30,19 +30,8 @@ def main():
         scenario_cols = [c for c in ("TE", "RE", "BIAS", "BIASTYPE") if c in res.columns]
         rows = []
         for name, sub in res.groupby("representation"):
-            agg = gr.headline_aggregate(sub)
+            agg = gr.headline_row(sub)
             scenario = {c: sub[c].iloc[0] for c in scenario_cols}
-            # balanced accuracy of the SAME configuration the PEHE headline
-            # picked (the paper's other calibration anchor: VAE-50 disco 0.875,
-            # vascular baseline 0.546)
-            if agg["classifier"]:
-                cfg = sub[(sub["classifier"] == agg["classifier"]) &
-                          (sub["learner"] == agg["learner"])]
-                for col, key in (("prescriptive_balacc", "balacc_mean"),
-                                 ("pehe_xor", "pehe_xor_mean"),
-                                 ("pehe_paper", "pehe_paper_mean")):
-                    if col in cfg.columns:
-                        agg[key] = float(cfg.groupby("deficit")[col].mean().mean())
             rows.append({"representation": name, **agg, **scenario})
             print(f"  {out_dir} :: {name:24s} PEHE {agg['pehe_mean']:.3f} "
                   f"(CI {agg['ci_low']:.3f}-{agg['ci_high']:.3f}, "

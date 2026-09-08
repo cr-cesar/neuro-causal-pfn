@@ -240,7 +240,7 @@ def main():
                                          collect_sims=collect)
         res.insert(0, "representation", name)
         all_results.append(res)
-        agg = gr.headline_aggregate(res)
+        agg = gr.headline_row(res)
         headline_rows.append({"representation": name, **agg, **scenario})
         print(f"  {name:40s} PEHE {agg['pehe_mean']:.3f} "
               f"(CI {agg['ci_low']:.3f}-{agg['ci_high']:.3f}, {agg['n_deficits']} deficits, "

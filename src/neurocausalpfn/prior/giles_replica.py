@@ -428,3 +428,21 @@ def headline_aggregate(results) -> Dict[str, float]:
     out["classifier"], out["learner"] = cbest, lbest
     out["pehe_per_deficit_best"] = float(per.groupby("deficit")["pehe"].min().mean())
     return out
+
+
+def headline_row(results) -> Dict[str, float]:
+    """One complete headline entry for a representation: the paper-style
+    aggregate plus, for the SAME classifier x learner the PEHE headline picked,
+    the companion metrics — balanced accuracy (the paper's other calibration
+    anchor), the code-convention pehe-xor, and the Methods-convention
+    pehe-paper, which is the externally comparable number."""
+    agg = headline_aggregate(results)
+    if agg["classifier"]:
+        cfg = results[(results["classifier"] == agg["classifier"]) &
+                      (results["learner"] == agg["learner"])]
+        for col, key in (("prescriptive_balacc", "balacc_mean"),
+                         ("pehe_xor", "pehe_xor_mean"),
+                         ("pehe_paper", "pehe_paper_mean")):
+            if col in cfg.columns:
+                agg[key] = float(cfg.groupby("deficit")[col].mean().mean())
+    return agg
