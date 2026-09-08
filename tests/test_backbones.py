@@ -12,7 +12,7 @@ from neurocausalpfn.vae.conv3d_vae import ConvVAE3D
 from neurocausalpfn.vae.losses import vae_loss
 
 SHAPE = (24, 28, 24)
-BACKBONES = ["cnn", "wide", "resnet", "resnet18", "resnet50"]
+BACKBONES = ["cnn", "wide", "resnet", "resnet4", "resnet18", "resnet50"]
 
 
 def _nparams(m):
@@ -32,6 +32,19 @@ def test_backbone_forward_shapes(backbone):
     logits, mu, logvar, _ = model(x)
     assert logits.shape == x.shape
     assert mu.shape == (2, 16) and logvar.shape == (2, 16)
+
+
+def test_resnet4_drops_the_last_stage():
+    # the four-stage sensitivity control: one residual block fewer, feature
+    # map one downsampling coarser, fewer parameters than the default
+    four = build_encoder_backbone("resnet4", 1, (16, 32, 64, 128, 256))
+    five = build_encoder_backbone("resnet", 1, (16, 32, 64, 128, 256))
+    assert len(four.body) == 4 and len(five.body) == 5
+    x = torch.rand(1, 1, *SHAPE)
+    fa, fi = four(x).shape, five(x).shape
+    assert fa[1] == 128 and fi[1] == 256          # last kept channel width
+    assert all(a == 2 * b for a, b in zip(fa[2:], fi[2:]))   # one stride-2 fewer
+    assert _nparams(four) < _nparams(five)
 
 
 def test_param_count_ordering():

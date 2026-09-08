@@ -151,6 +151,12 @@ def build_encoder_backbone(name: str, in_channels: int, channels: Sequence[int],
         return _cnn_body(in_channels, channels, width=width)
     if name == "resnet":
         return _ResidualBody(in_channels, channels)
+    if name == "resnet4":
+        # sensitivity control for the replication claim: the paper describes
+        # the encoder as FOUR ResNet-type conv layers + FC, our default uses
+        # five stages; this drops the last stage (16-32-64-128), leaving the
+        # feature map at 6x7x6 instead of 3x4x3
+        return _ResidualBody(in_channels, channels[:4])
     if name == "resnet18":
         return _ResNet(in_channels, _BasicBlock, [2, 2, 2, 2])
     if name == "resnet50":

@@ -27,8 +27,11 @@ source ~/venvs/neuro/bin/activate
 IMAGES="${IMAGES:-data/Full data/disconnectomes}"
 MODALITY="${MODALITY:-disconnectome}"
 OUT="${OUT:-outputs/giles_style_vae50}"
+# BACKBONE=resnet4 runs the four-stage sensitivity control (the paper describes
+# four ResNet-type layers; the default chain uses five)
+BACKBONE="${BACKBONE:-resnet}"
 FOLD=$((SGE_TASK_ID - 1))
 
 python scripts/train_giles_style_vae50.py \
-    --images-dir "$IMAGES" --modality "$MODALITY" \
+    --images-dir "$IMAGES" --modality "$MODALITY" --backbone "$BACKBONE" \
     --fold "$FOLD" --out "$OUT" --device auto
