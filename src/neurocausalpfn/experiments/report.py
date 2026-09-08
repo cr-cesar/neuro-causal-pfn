@@ -203,9 +203,14 @@ def build_report(out_root: str) -> Dict[str, str]:
     rows = _read_runs(out_root)
     board = _leaderboard(rows)
     _attach_certified(board, _read_certified(out_root))
-    # certified rows lead their arm, ordered by the certified score; rows not
-    # yet certified follow, ordered by the proxy (a within-experiment signal)
-    board.sort(key=lambda e: (e["arm"],
+    # reading order: arm, then experiment number (E1 < E2 < ... < E10, not
+    # alphabetical), then within an experiment its variants best-first on the
+    # certified score (proxy as fallback for uncertified variants)
+    def _eid_key(eid: str):
+        m = re.match(r"^E(\d+)([a-z]?)$", eid)
+        return (int(m.group(1)), m.group(2)) if m else (999, eid)
+
+    board.sort(key=lambda e: (e["arm"], _eid_key(e["eid"]),
                               0 if "certified.pehe_paper.mean" in e else 1,
                               e.get("certified.pehe_paper.mean",
                                     e.get("T4.root_pehe.mean", float("inf")))))

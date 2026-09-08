@@ -116,24 +116,30 @@ def test_single_variant_and_substring_matching():
     assert board[2]["certified.pehe_paper.mean"] == 0.317   # exact variant
 
 
-def test_report_sorts_certified_first_and_survives_no_replica(tmp_path):
+def test_report_orders_by_experiment_then_certified_and_survives_no_replica(tmp_path):
     out_root = str(tmp_path / "experiments")
     _write_runs(out_root, [
-        {"kind": "E1/x", "label": "E1", "seed": 0, "T4.root_pehe": 0.09,
+        # deliberately shuffled: rows come back in programme order (arm, then
+        # experiment), and within E2 the certified variant leads
+        {"kind": "E10a/x", "label": "E10a", "seed": 0, "T4.root_pehe": 0.01,
          "passed": True},
-        {"kind": "E5/x", "label": "E5", "seed": 0, "T4.root_pehe": 0.05,
-         "passed": True},
+        {"kind": "E2/x", "label": "E2[w_dice=0.5]", "seed": 0,
+         "T4.root_pehe": 0.05, "passed": True},
+        {"kind": "E2/x", "label": "E2[w_dice=0.1]", "seed": 0,
+         "T4.root_pehe": 0.09, "passed": True},
     ])
     # no giles_replica_* dirs at all: report must still build, all cells '-'
     paths = build_report(out_root)
     md = open(paths["md"]).read()
     assert "Certified rootPEHE" in md and "| - |" in md
 
-    # E1 certified (0.320) but E5 not: E1 must lead despite the worse proxy
+    # certify only w_dice=0.1: it must lead E2 despite the worse proxy, and
+    # E10a stays last despite the best proxy (experiment order wins)
     _write_headline(str(tmp_path / "giles_replica_x" / "replica_headline.csv"),
-                    [{"representation": "E1_seed0_disco.npz",
-                      "pehe_mean": 0.21, "pehe_paper_mean": 0.320}])
+                    [{"representation": "E2_E2_w_dice=0.1_seed0_disco.npz",
+                      "pehe_mean": 0.21, "pehe_paper_mean": 0.319}])
     build_report(out_root)
     rows = list(csv.DictReader(open(paths["csv"])))
-    assert [r["eid"] for r in rows] == ["E1", "E5"]
-    assert rows[0]["certified.pehe_paper.mean"] == "0.32"
+    assert [(r["eid"], r["label"]) for r in rows] == [
+        ("E2", "E2[w_dice=0.1]"), ("E2", "E2[w_dice=0.5]"), ("E10a", "E10a")]
+    assert rows[0]["certified.pehe_paper.mean"] == "0.319"
