@@ -29,11 +29,12 @@ def _write_runs(out_root, rows):
 
 
 def test_stem_and_seed_parsing():
-    assert _stem_and_seed("E2_E2_w_dice=0.1_seed0_disco.npz") == ("E2_E2_w_dice=0.1", 0)
-    assert _stem_and_seed("E6_both_seed2.npz") == ("E6_both", 2)
-    assert _stem_and_seed("E7a_seed1.npz") == ("E7a", 1)
-    assert _stem_and_seed("nmf50") == (None, None)          # builtins have no seed
-    assert _stem_and_seed("volume") == (None, None)
+    assert _stem_and_seed("E2_E2_w_dice=0.1_seed0_disco.npz") == ("E2_E2_w_dice=0.1", 0, 0)
+    assert _stem_and_seed("E1_seed2_lesion.npz") == ("E1", 2, 1)
+    assert _stem_and_seed("E6_both_seed2.npz") == ("E6_both", 2, 0)
+    assert _stem_and_seed("E7a_seed1.npz") == ("E7a", 1, 0)
+    assert _stem_and_seed("nmf50") == (None, None, None)    # builtins have no seed
+    assert _stem_and_seed("volume") == (None, None, None)
 
 
 def test_certified_matches_variant_and_prefers_newest(tmp_path):
@@ -72,6 +73,31 @@ def test_certified_matches_variant_and_prefers_newest(tmp_path):
     assert abs(board[0]["certified.pehe_paper.mean"] - 0.32) < 1e-9
     assert board[0]["certified.n"] == 2
     assert abs(board[1]["certified.pehe_paper.mean"] - 0.30) < 1e-9
+
+
+def test_disco_channel_beats_lesion_channel_even_when_older(tmp_path):
+    # the failure seen on the real board: the same encoder exported on both
+    # channels collapses to one stem, and the lesion-task headline (written
+    # milliseconds later by a reaggregate sweep) silently replaced the
+    # disco-task league values (E1 showed 0.485 instead of 0.320)
+    out_root = str(tmp_path / "experiments")
+    disco = str(tmp_path / "giles_replica_encoders" / "replica_headline.csv")
+    lesion = str(tmp_path / "giles_replica_encoders_lesion" / "replica_headline.csv")
+    _write_headline(disco, [{"representation": "E1_seed0_disco.npz",
+                             "pehe_mean": 0.21, "pehe_paper_mean": 0.320}])
+    _write_headline(lesion, [{"representation": "E1_seed0_lesion.npz",
+                              "pehe_mean": 0.28, "pehe_paper_mean": 0.485}])
+    now = time.time()
+    os.utime(disco, (now - 100, now - 100))     # disco file is OLDER
+    os.utime(lesion, (now, now))
+    stems = _read_certified(out_root)
+    assert stems["E1"] == [0.320]
+    # a lesion-only export with no disco competitor still counts (E6 lesion arm)
+    _write_headline(str(tmp_path / "giles_replica_e6" / "replica_headline.csv"),
+                    [{"representation": "E6_E6_fusion_mode=lesion_seed0_lesion.npz",
+                      "pehe_mean": 0.22, "pehe_paper_mean": 0.396}])
+    stems = _read_certified(out_root)
+    assert stems["E6_E6_fusion_mode=lesion"] == [0.396]
 
 
 def test_single_variant_and_substring_matching():
