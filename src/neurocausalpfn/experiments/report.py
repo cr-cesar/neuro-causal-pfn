@@ -115,20 +115,30 @@ _EID_RE = re.compile(r"^(E\d+[a-z]?)(?=_|$)")
 
 
 def _stem_and_seed(name: str):
-    """'E2_E2_w_dice=0.1_seed0_disco.npz' -> ('E2_E2_w_dice=0.1', 0)."""
+    """'E2_E2_w_dice=0.1_seed0_disco.npz' -> ('E2_E2_w_dice=0.1', 0, 0).
+
+    The third element ranks the exported channel: 0 for disconnectome or
+    unsuffixed latents, 1 for '_lesion'. An encoder exported on both channels
+    yields the same stem twice, and the leaderboard's headline is the
+    disconnectome-task league, so the disco export must win regardless of
+    which headline file is newer (the lesion-task tables remain available in
+    the replica outputs)."""
     name = re.sub(r"\.npz$", "", str(name))
     m = _SEED_RE.search(name)
     if not m:
-        return None, None
-    stem = re.sub(r"_(disco|lesion)$", "", _SEED_RE.sub("", name))
-    return stem, int(m.group(1))
+        return None, None, None
+    rest = _SEED_RE.sub("", name)
+    rank = 1 if rest.endswith("_lesion") else 0
+    stem = re.sub(r"_(disco|lesion)$", "", rest)
+    return stem, int(m.group(1)), rank
 
 
 def _read_certified(out_root: str) -> Dict[str, List[float]]:
     """Per-representation certified pehe-paper values from every
     ``giles_replica_*/replica_headline.csv`` next to the experiment outputs.
-    Per (stem, seed) the newest headline file wins, so a clean re-run
-    supersedes stale exports of the same variant."""
+    Per (stem, seed): a disconnectome-channel export beats a lesion-channel
+    one, and within a channel the newest headline file wins, so a clean
+    re-run supersedes stale exports of the same variant."""
     parent = os.path.dirname(os.path.abspath(out_root))
     per: Dict = {}
     for path in glob.glob(os.path.join(parent, "giles_replica_*",
@@ -136,7 +146,7 @@ def _read_certified(out_root: str) -> Dict[str, List[float]]:
         mtime = os.path.getmtime(path)
         with open(path, newline="") as f:
             for row in csv.DictReader(f):
-                stem, seed = _stem_and_seed(row.get("representation", ""))
+                stem, seed, rank = _stem_and_seed(row.get("representation", ""))
                 if stem is None or _EID_RE.match(stem) is None:
                     continue
                 try:
@@ -146,10 +156,11 @@ def _read_certified(out_root: str) -> Dict[str, List[float]]:
                 if v != v:                       # NaN: pre-metric run
                     continue
                 key = (stem, seed)
-                if key not in per or mtime > per[key][0]:
-                    per[key] = (mtime, v)
+                # lower rank (disco) always beats higher (lesion); then newest
+                if key not in per or (rank, -mtime) < (per[key][0], -per[key][1]):
+                    per[key] = (rank, mtime, v)
     stems: Dict[str, List[float]] = defaultdict(list)
-    for (stem, _seed), (_m, v) in sorted(per.items()):
+    for (stem, _seed), (_r, _m, v) in sorted(per.items()):
         stems[stem].append(v)
     return stems
 
