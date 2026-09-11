@@ -22,6 +22,22 @@ def test_soft_pns_backpropagates_from_half_latents():
     assert mu.grad is not None and torch.isfinite(mu.grad).all()
 
 
+def test_surrogate_opts_out_of_autocast():
+    # the E5b crash proper: inside an autocast region every matmul is recast
+    # to the low-precision dtype even on float32 inputs, and linalg.solve then
+    # sees mixed dtypes on CUDA. The surrogate must compute in true fp32
+    # regardless of the surrounding autocast.
+    mu = torch.randn(32, 12, requires_grad=True)
+    y = (torch.rand(32) > 0.5).float()
+    with torch.autocast("cpu", dtype=torch.bfloat16):
+        C = _topk_components(mu, 4)
+        val = soft_pns_value(mu, y, k=4)
+    assert C.dtype == torch.float32          # not bfloat16: autocast disabled
+    assert val.dtype == torch.float32 and torch.isfinite(val)
+    val.backward()
+    assert torch.isfinite(mu.grad).all()
+
+
 def test_half_and_float_paths_agree():
     torch.manual_seed(0)
     mu = torch.randn(64, 8)
