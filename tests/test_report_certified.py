@@ -131,7 +131,7 @@ def test_report_orders_by_experiment_then_certified_and_survives_no_replica(tmp_
     # no giles_replica_* dirs at all: report must still build, all cells '-'
     paths = build_report(out_root)
     md = open(paths["md"]).read()
-    assert "Certified rootPEHE" in md and "| - |" in md
+    assert "PEHE (replica)" in md and "| - |" in md
 
     # certify only w_dice=0.1: it must lead E2 despite the worse proxy, and
     # E10a stays last despite the best proxy (experiment order wins)

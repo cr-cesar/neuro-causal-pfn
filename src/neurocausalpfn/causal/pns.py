@@ -82,15 +82,21 @@ def _topk_components(z: torch.Tensor, k: int) -> torch.Tensor:
     """Detached top-k principal component scores of z (the common cause C)."""
     zc = z - z.mean(0, keepdim=True)
     k = max(1, min(int(k), zc.shape[1] - 1, zc.shape[0] - 1))
-    _, _, vh = torch.linalg.svd(zc, full_matrices=False)
-    return (zc @ vh[:k].T).detach()
+    # SVD in fp32: under AMP zc arrives as Half, and no SVD kernel exists for
+    # it on either CUDA (gesvdj) or CPU (E5b died on the first batch here);
+    # the matrix is tiny, so the upcast costs nothing
+    _, _, vh = torch.linalg.svd(zc.float(), full_matrices=False)
+    return (zc @ vh[:k].T.to(zc.dtype)).detach()
 
 
 def soft_pns_per_dim(mu: torch.Tensor, y: torch.Tensor, k: int = 5, eps: float = 1e-6) -> torch.Tensor:
     """Differentiable per-dimension PNS surrogate: the ReLU of the deconfounded
     correlation between each latent dimension and the outcome. Differentiable with
     respect to the latents (hence the encoder)."""
-    z = mu
+    # the whole surrogate runs in fp32: under AMP mu arrives as Half, and
+    # neither SVD nor linalg.solve has a Half kernel (CUDA or CPU); the upcast
+    # keeps the graph, so gradients still reach the encoder
+    z = mu.float()
     zc = z - z.mean(0, keepdim=True)
     y = y.float().view(-1)
     yc = y - y.mean()
