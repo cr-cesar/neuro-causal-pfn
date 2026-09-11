@@ -78,25 +78,40 @@ def pns_lower_bound(Z, Y, k: int = 5, C=None, delta: float = 1.0) -> np.ndarray:
 # --------------------------------------------------------------------------- #
 # Differentiable soft surrogate (torch) for the training-time auxiliary loss
 # --------------------------------------------------------------------------- #
+def _autocast_off(device: torch.device):
+    """The surrogate opts out of AMP entirely. Autocast recasts matmuls to
+    half even when the inputs are float32, so an upcast alone does not
+    protect the linear algebra below: on CUDA (torch 2.3, cu118) linalg.solve
+    is not on autocast's fp32 list and E5b died there with a Float/Half
+    mismatch. The matrices are tiny, so full fp32 costs nothing."""
+    if device.type in ("cuda", "cpu"):
+        return torch.autocast(device_type=device.type, enabled=False)
+    import contextlib
+    return contextlib.nullcontext()
+
+
 def _topk_components(z: torch.Tensor, k: int) -> torch.Tensor:
     """Detached top-k principal component scores of z (the common cause C)."""
-    zc = z - z.mean(0, keepdim=True)
-    k = max(1, min(int(k), zc.shape[1] - 1, zc.shape[0] - 1))
-    # SVD in fp32: under AMP zc arrives as Half, and no SVD kernel exists for
-    # it on either CUDA (gesvdj) or CPU (E5b died on the first batch here);
-    # the matrix is tiny, so the upcast costs nothing
-    _, _, vh = torch.linalg.svd(zc.float(), full_matrices=False)
-    return (zc @ vh[:k].T.to(zc.dtype)).detach()
+    with _autocast_off(z.device):
+        zc = z.float() - z.float().mean(0, keepdim=True)
+        k = max(1, min(int(k), zc.shape[1] - 1, zc.shape[0] - 1))
+        _, _, vh = torch.linalg.svd(zc, full_matrices=False)
+        return (zc @ vh[:k].T).detach()
 
 
 def soft_pns_per_dim(mu: torch.Tensor, y: torch.Tensor, k: int = 5, eps: float = 1e-6) -> torch.Tensor:
     """Differentiable per-dimension PNS surrogate: the ReLU of the deconfounded
     correlation between each latent dimension and the outcome. Differentiable with
     respect to the latents (hence the encoder)."""
-    # the whole surrogate runs in fp32: under AMP mu arrives as Half, and
-    # neither SVD nor linalg.solve has a Half kernel (CUDA or CPU); the upcast
-    # keeps the graph, so gradients still reach the encoder
-    z = mu.float()
+    # fp32 with autocast disabled: the upcast keeps the graph, so gradients
+    # still reach the encoder, and _autocast_off stops AMP from recasting the
+    # matmuls back to half (see its docstring)
+    with _autocast_off(mu.device):
+        return _soft_pns_per_dim_fp32(mu.float(), y, k, eps)
+
+
+def _soft_pns_per_dim_fp32(mu: torch.Tensor, y: torch.Tensor, k: int, eps: float) -> torch.Tensor:
+    z = mu
     zc = z - z.mean(0, keepdim=True)
     y = y.float().view(-1)
     yc = y - y.mean()
