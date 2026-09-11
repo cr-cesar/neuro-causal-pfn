@@ -244,14 +244,15 @@ def _markdown(board: List[Dict]) -> str:
         "# Table 9 - experiment leaderboard",
         "",
         f"Stop/go gates: T1 Dice >= {gate1}, T2 R2 >= {TIER_GATES['T2'].threshold}. "
-        "The HEADLINE column is the certified root-PEHE: the Methods-convention "
-        "pehe-paper from the virtual-trial replica (fixed anatomical ground "
-        "truth, identical folds for every representation), directly comparable "
-        "across representations and against the published 0.349. T4 root-PEHE "
-        "is the internal in-training proxy: a within-experiment diagnostic "
-        "only. Metrics are seed-aggregated means.",
+        "The HEADLINE column is the PEHE measured on the virtual-trial replica "
+        "(the paper's Methods definition; fixed anatomical ground truth and "
+        "identical folds for every representation). Replica values are "
+        "strictly comparable across representations; comparisons against the "
+        "published 0.349 inherit small systematic offsets. T4 root-PEHE is "
+        "the internal in-training proxy: a within-experiment diagnostic only. "
+        "Metrics are seed-aggregated means.",
         "",
-        "| Arm | Exp | Variant | Seeds | Pass% | Certified rootPEHE | T1 Dice | T2 R2 | "
+        "| Arm | Exp | Variant | Seeds | Pass% | PEHE (replica) | T1 Dice | T2 R2 | "
         "T3 dims | T3 IOSS | T4 proxy | Presc.acc | OOD gap |",
         "|-----|-----|---------|-------|-------|--------------------|---------|-------|"
         "---------|---------|----------|-----------|---------|",
@@ -271,7 +272,7 @@ def _markdown(board: List[Dict]) -> str:
                         ood=_cell(e.get("T4.ood_gap.mean"))))
     lines.append("")
     lines.append("Generated from runs.jsonl (last write per variant and seed "
-                 "wins). Certified scores are read from "
+                 "wins). Replica scores are read from "
                  "outputs/giles_replica_*/replica_headline.csv (newest file "
                  "wins per variant and seed); reference points on that scale: "
                  "published VAE-50 0.349, NMF-50 0.320, volume baseline 0.519. "
