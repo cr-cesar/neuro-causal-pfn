@@ -122,6 +122,7 @@ def _epoch(model, loader, loss_fn, beta, device, opt=None, use_daft=False,
     train = opt is not None
     model.train(train)
     last = {}
+    pns_sum, pns_n = 0.0, 0
     torch.set_grad_enabled(train)
     for batch in loader:
         items = list(batch) if isinstance(batch, (list, tuple)) else [batch]
@@ -135,7 +136,12 @@ def _epoch(model, loader, loss_fn, beta, device, opt=None, use_daft=False,
                 # Arm B: maximise the PNS surrogate via a -lambda * value term
                 pns_val = soft_pns_value(mu, target, k=pns_factors)
                 loss = loss - lambda_pns * pns_val
-                parts["pns"] = float(pns_val.detach())
+                # logged as the epoch MEAN, not the last batch: the final
+                # (remainder) batch can be small enough that the deconfounding
+                # projection is exact and the surrogate is structurally zero,
+                # which read as "PNS dead" on an otherwise healthy E5b run
+                pns_sum += float(pns_val.detach()); pns_n += 1
+                parts["pns"] = pns_sum / pns_n
         if train:
             optim_step(loss, opt, scaler)
         if ard_accum is not None and train:
