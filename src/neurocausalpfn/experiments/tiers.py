@@ -64,9 +64,19 @@ class TierReport:
                "stopped_at": self.stopped_at, "deprioritized": self.deprioritized}
         for r in self.results:
             for k, v in r.metrics.items():
-                if isinstance(v, (int, float)) or v is None:
-                    out[f"{r.tier}.{k}"] = v
+                _flatten_metric(out, f"{r.tier}.{k}", v)
         return out
+
+
+def _flatten_metric(out: Dict, key: str, v) -> None:
+    """Scalars keep their key; dict-valued metrics flatten to dotted keys.
+    E11a's equity breakdown ({stratum: {group: pehe, max_min_ratio, passes}})
+    was silently dropped by the scalar-only filter before this existed."""
+    if isinstance(v, dict):
+        for k2, v2 in v.items():
+            _flatten_metric(out, f"{key}.{k2}", v2)
+    elif isinstance(v, (int, float)) or v is None:
+        out[key] = v
 
 
 # --------------------------------------------------------------------------- #
