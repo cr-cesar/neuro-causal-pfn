@@ -9,9 +9,14 @@ import torch.nn.functional as F
 
 
 def soft_dice_loss(logits: torch.Tensor, target: torch.Tensor, eps: float = 1.0) -> torch.Tensor:
-    """Soft Dice over sigmoid probabilities. Equals 0 for identical masks."""
-    p = torch.sigmoid(logits).flatten(1)
-    t = target.flatten(1)
+    """Soft Dice over sigmoid probabilities. Equals 0 for identical masks.
+
+    Computed in float32 regardless of autocast: under float16 the per-volume
+    sum of ~1M probabilities overflows (max 65504) whenever the decoder is
+    near 0.5 everywhere, e.g. at initialisation, which turns the Dice term
+    into a constant with a zero gradient for those iterations."""
+    p = torch.sigmoid(logits.float()).flatten(1)
+    t = target.float().flatten(1)
     num = 2.0 * (p * t).sum(1) + eps
     den = p.sum(1) + t.sum(1) + eps
     return (1.0 - num / den).mean()

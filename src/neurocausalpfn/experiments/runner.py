@@ -445,11 +445,17 @@ def _exec_dscm(spec, mode, seed, out_dir, overrides):
 def _strata_from(a: art.VaeArtifacts) -> Dict[str, np.ndarray]:
     n = len(a.Z)
     strata = {"volume_quartile": art.volume_quartiles(a.volume)}
-    if a.clinical is not None and a.clinical.shape[1] >= 2:
+    # The clinical vector is [age_norm, age_missing, sex_val, sex_missing]
+    # (data.clinical.build_clinical_vector): sex is column 2, signed
+    # (+0.5 male, -0.5 female, 0 missing). An earlier version read column 1
+    # (the age-missing indicator) and split it at its median, so the "sex"
+    # stratum compared images with a missing age against the rest.
+    if a.clinical is not None and a.clinical.shape[1] >= 4:
         age = a.clinical[:, 0]
         strata["age_band"] = np.digitize(age, np.quantile(age, [0.5])) if age.std() > 0 else np.zeros(n, int)
-        sex = a.clinical[:, 1]
-        strata["sex"] = (sex > np.median(sex)).astype(int)
+        sex = np.where(a.clinical[:, 2] > 0, 1, 0)
+        sex = np.where(a.clinical[:, 3] > 0, -1, sex)      # missing sex: excluded (-1)
+        strata["sex"] = sex.astype(int)
     # anterior/posterior territory proxy: split the cohort on the sign of the
     # first latent direction (a stand-in until a real territory label is joined)
     strata["territory"] = (a.Z[:, 0] > np.median(a.Z[:, 0])).astype(int)

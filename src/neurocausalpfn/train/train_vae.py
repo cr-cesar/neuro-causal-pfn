@@ -119,10 +119,15 @@ def _build_dataset(cfg: Dict, representation: str, in_shape, use_daft: bool):
 def _epoch(model, loader, loss_fn, beta, device, opt=None, use_daft=False,
            prior_var=None, ard_accum=None, use_pns=False, lambda_pns=0.0, pns_factors=5,
            scaler=None, amp=False):
+    """One pass over ``loader``. Returns the loss parts as EPOCH MEANS weighted
+    by batch size. An earlier version returned the parts of the last batch
+    only; with 411 validation volumes and batches of 8 that last batch holds
+    3 volumes, so the logged ``val=`` and the best-checkpoint selection rested
+    on 3 volumes (and the logged train ``rec=`` on a 4-volume remainder)."""
     train = opt is not None
     model.train(train)
-    last = {}
-    pns_sum, pns_n = 0.0, 0
+    sums: Dict[str, float] = {}
+    n_total = 0
     torch.set_grad_enabled(train)
     for batch in loader:
         items = list(batch) if isinstance(batch, (list, tuple)) else [batch]
@@ -133,25 +138,26 @@ def _epoch(model, loader, loss_fn, beta, device, opt=None, use_daft=False,
             logits, mu, logvar, _ = model(x, clin) if use_daft else model(x)
             loss, parts = loss_fn(logits, x, mu, logvar, beta=beta, prior_var=prior_var)
             if use_pns and target is not None:
-                # Arm B: maximise the PNS surrogate via a -lambda * value term
-                pns_val = soft_pns_value(mu, target, k=pns_factors)
-                loss = loss - lambda_pns * pns_val
-                # logged as the epoch MEAN, not the last batch: the final
+                # Arm B: maximise the PNS surrogate via a -lambda * value term.
+                # Averaged over the epoch like every other part: the final
                 # (remainder) batch can be small enough that the deconfounding
                 # projection is exact and the surrogate is structurally zero,
-                # which read as "PNS dead" on an otherwise healthy E5b run
-                pns_sum += float(pns_val.detach()); pns_n += 1
-                parts["pns"] = pns_sum / pns_n
+                # which read as "PNS dead" on an otherwise healthy E5b run.
+                pns_val = soft_pns_value(mu, target, k=pns_factors)
+                loss = loss - lambda_pns * pns_val
+                parts["pns"] = float(pns_val.detach())
         if train:
             optim_step(loss, opt, scaler)
+        n = int(x.shape[0])
         if ard_accum is not None and train:
-            n = mu.shape[0]
             ard_accum["sumsq"] += (mu.detach().float().pow(2) + logvar.detach().float().exp()).sum(0)
             ard_accum["kl_sum"] += per_dim_kl(mu.detach().float(), logvar.detach().float(), prior_var) * n
             ard_accum["n"] += n
-        last = parts
+        for k, v in parts.items():
+            sums[k] = sums.get(k, 0.0) + float(v) * n
+        n_total += n
     torch.set_grad_enabled(True)
-    return last
+    return {k: v / max(n_total, 1) for k, v in sums.items()}
 
 
 def _export_latents(model, dataset, cfg, representation, use_daft, device):
