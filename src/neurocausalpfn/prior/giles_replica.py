@@ -247,17 +247,24 @@ def pehe(pred_ITE: np.ndarray, true_ITE: np.ndarray) -> float:
 
 
 def score_predictions(p1: np.ndarray, p0: np.ndarray, true_ITE: np.ndarray) -> Dict[str, float]:
-    """Observed PEHE and prescriptive balanced accuracy on the Giles scale:
-    pred_ITE = sigmoid(p1 - p0) against y_true in {0, 0.5, 1}.
+    """PEHE and prescriptive balanced accuracy for one representation.
 
-    Calibration note (full-cohort runs, 4,119 disconnectomes): ``pehe_xor``
-    (decidable cases only, y_true != 0.5) is the quantity that matches the
-    published headline — our NMF-50 scores 0.343-0.352 across receptor,
-    genetics and the nimfa variant, against the paper's VAE-50 0.349
-    [0.33, 0.37]; balanced accuracy matches too (0.80-0.89 vs 0.875, volume
-    ~0.52 vs the vascular baseline 0.523-0.546). The all-cases ``pehe`` sits
-    lower because both-susceptible patients (sigmoid(0) = 0.5, error-free)
-    dilute the mean; compare representations against the paper on pehe_xor."""
+    Three PEHE variants are reported; ``pehe_paper`` is the headline.
+
+    - ``pehe_paper`` (headline; the paper's Methods definition): tau_hat is the
+      RAW probability difference p1 - p0 in [-1, 1], scored against
+      tau in {-1, 0, +1} (both-susceptible = 0) over ALL participants, i.e.
+      sqrt(mean((tau_hat - tau)^2)). This is the convention that places the
+      six published anchors in reachable neighbourhoods and is the one the
+      leaderboard and every selection decision use.
+    - ``pehe`` (released-code convention, diagnostic): sigmoid(p1 - p0) against
+      y_true in {0, 0.5, 1}; the sigmoid imposes a floor of ~0.27, so it is
+      kept for comparison with the released scripts, not for ranking.
+    - ``pehe_xor`` (diagnostic): the released-code scale restricted to the
+      decidable cases (y_true != 0.5). It excludes the tau = 0 participants
+      that the paper explicitly keeps, so it is NOT the published headline;
+      it survives from an early calibration pass and is retained only as a
+      diagnostic. Balanced accuracy is, as in the paper, decidable-only."""
     pred_ITE = 1.0 / (1.0 + np.exp(-(p1 - p0)))
     out = {"pehe": pehe(pred_ITE, true_ITE)}
     # The paper's own convention (Methods, "Observed PEHE" + Problem setup):
