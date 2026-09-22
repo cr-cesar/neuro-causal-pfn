@@ -15,7 +15,10 @@ def stratified_pehe(cate_pred, cate_true, groups, max_ratio: float = 2.0) -> dic
 
     Returns a dict with the per-group root-PEHE, the overall value under 'all',
     the worst-to-best ratio under 'max_min_ratio', and a boolean 'passes' that is
-    True when the ratio is below max_ratio.
+    True when the ratio is below max_ratio. A negative integer label marks a
+    sample whose group is unknown (e.g. missing sex): it counts in 'all' but
+    forms no group of its own, so a handful of unlabelled samples cannot drive
+    the ratio.
     """
     cate_pred = np.asarray(cate_pred).ravel()
     cate_true = np.asarray(cate_true).ravel()
@@ -23,6 +26,8 @@ def stratified_pehe(cate_pred, cate_true, groups, max_ratio: float = 2.0) -> dic
     out = {"all": root_pehe(cate_pred, cate_true)}
     per_group = {}
     for g in np.unique(groups):
+        if np.issubdtype(groups.dtype, np.number) and g < 0:
+            continue
         m = groups == g
         if m.sum() >= 1:
             per_group[str(g)] = root_pehe(cate_pred[m], cate_true[m])
