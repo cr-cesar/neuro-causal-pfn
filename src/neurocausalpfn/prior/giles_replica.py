@@ -367,6 +367,7 @@ def group_folds(files: Sequence[str], groups: Dict[str, Tuple[str, int]],
     - ``strict``: a later acquisition trains only in the folds where its
       group's earliest image trains, so no group ever straddles the split.
 
+    A group with no rank-0 image is train-only in every fold (both modes).
     Files absent from the table are treated as single-image groups when
     ``allow_missing`` is set, else raise.
     """
@@ -388,9 +389,10 @@ def group_folds(files: Sequence[str], groups: Dict[str, Tuple[str, int]],
         if g in seen:
             raise ValueError(f"group {g} has two rank-0 images ({names[seen[g]]}, {names[i]})")
         seen[g] = i
-    orphan = [g for g in extras_by_group if g not in seen]
-    if orphan:
-        raise ValueError(f"{len(orphan)} groups have later acquisitions but no rank-0 image")
+    # a group with no rank-0 image is never tested: all its images train in
+    # every fold (this is how a table can mark whole groups as train-only,
+    # e.g. the paper's multi-acquisition subjects)
+    train_only = [i for g, lst in extras_by_group.items() if g not in seen for i in lst]
     prim_idx = np.array([i for i, _ in primary])
     prim_grp = [g for _, g in primary]
     all_extras = [i for lst in extras_by_group.values() for i in lst]
@@ -400,7 +402,7 @@ def group_folds(files: Sequence[str], groups: Dict[str, Tuple[str, int]],
         if mode == "giles":
             tr = list(prim_idx[tr_p]) + all_extras
         elif mode == "strict":
-            tr = list(prim_idx[tr_p])
+            tr = list(prim_idx[tr_p]) + train_only
             for k in tr_p:
                 tr += extras_by_group.get(prim_grp[k], [])
         else:

@@ -39,7 +39,17 @@ def _keys(name: str):
     return {base, _strip_ext(base)}
 
 
-def build(crosswalk_rows, info_rows, path_col, id_col, date_col, salt, rank_col=None):
+def build(crosswalk_rows, info_rows, path_col, id_col, date_col, salt, rank_col=None,
+          all_rows=None, singles_only=False):
+    """all_rows: the FULL metadata table (before any selection); when given,
+    n_all = acquisitions of the subject in it is written per row, and with
+    singles_only the rank-0 (testable) status is granted only to subjects with
+    a single acquisition there; every other subject becomes train-only."""
+    n_all = {}
+    if all_rows is not None:
+        for r in all_rows:
+            sid = str(r[id_col]).strip()
+            n_all[sid] = n_all.get(sid, 0) + 1
     info = {}
     for r in info_rows:
         first = ""
@@ -73,8 +83,11 @@ def build(crosswalk_rows, info_rows, path_col, id_col, date_col, salt, rank_col=
     out = []
     for sid, items in by_subject.items():
         group = hashlib.sha256((salt + "|" + sid).encode()).hexdigest()[:12]
+        n_full = n_all.get(sid, len(items)) if all_rows is not None else len(items)
+        offset = 1 if (singles_only and n_full != 1) else 0   # train-only: no rank-0 image
         for rank, (_, a_file) in enumerate(sorted(items)):
-            out.append({"filename": a_file, "group": group, "rank": rank, "n_in_group": len(items)})
+            out.append({"filename": a_file, "group": group, "rank": rank + offset,
+                        "n_in_group": len(items), "n_all": n_full})
     out.sort(key=lambda d: d["filename"])
     return out, unmatched
 
@@ -89,6 +102,11 @@ def main() -> None:
     ap.add_argument("--date-col", required=True)
     ap.add_argument("--salt", required=True, help="secret phrase; keep it out of every repository")
     ap.add_argument("--sep", default=None, help="delimiter of the metadata table (auto: tab or comma)")
+    ap.add_argument("--all-info", default=None,
+                    help="the FULL metadata table (before selection): adds n_all per row")
+    ap.add_argument("--singles-only", action="store_true",
+                    help="with --all-info: only subjects with one acquisition in the full table "
+                         "are testable (rank 0); the others are train-only in every fold")
     ap.add_argument("--rank-col", default=None,
                     help="optional column that already marks each group's earliest image (truthy "
                          "value); when given it overrides the date ordering")
@@ -108,15 +126,29 @@ def main() -> None:
         if col not in info[0]:
             sys.exit(f"column {col!r} not in {args.info}; columns: {list(info[0])}")
 
+    all_rows = None
+    if args.all_info:
+        with open(args.all_info, newline="") as f:
+            head = f.read(8192)
+            f.seek(0)
+            sep_all = args.sep or ("\t" if head.count("\t") > head.count(",") else ",")
+            all_rows = list(csv.DictReader(f, delimiter=sep_all))
     rows, unmatched = build(cw, info, args.path_col, args.id_col, args.date_col, args.salt,
-                            rank_col=args.rank_col)
+                            rank_col=args.rank_col, all_rows=all_rows,
+                            singles_only=args.singles_only)
     with open(args.out, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["filename", "group", "rank", "n_in_group"])
+        w = csv.DictWriter(f, fieldnames=["filename", "group", "rank", "n_in_group", "n_all"])
         w.writeheader()
         w.writerows(rows)
 
     n_groups = len({r["group"] for r in rows})
     n_extra = sum(1 for r in rows if r["rank"] > 0)
+    n_testable = len(rows) - n_extra
+    if all_rows is not None:
+        singles = sum(1 for r in rows if r["n_all"] == 1)
+        print(f"subjects' acquisitions in the full table: {singles} rows from single-acquisition "
+              f"subjects, {len(rows) - singles} from multi-acquisition subjects")
+    print(f"testable rows (rank 0) {n_testable} | train-only rows {n_extra}")
     sizes = defaultdict(int)
     for r in rows:
         if r["rank"] == 0:
@@ -132,7 +164,7 @@ def main() -> None:
         print(f"expected repeats {args.expect_extra}: {'OK' if n_extra == args.expect_extra else 'DIFFERS'}")
     if unmatched:
         print("first unmatched:", unmatched[:5])
-    print(f"wrote {args.out} (filename, group, rank, n_in_group only)")
+    print(f"wrote {args.out} (filename, group, rank, n_in_group, n_all only)")
 
 
 if __name__ == "__main__":

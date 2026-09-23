@@ -70,6 +70,17 @@ def test_missing_and_malformed_tables_are_rejected():
         group_folds(files, bad, n_folds=3)
 
 
+def test_group_without_earliest_image_is_train_only_everywhere():
+    files, groups = _cohort()
+    groups["f03.nii.gz"] = ("B", 1)                        # B has no rank-0 image any more
+    for mode in ("giles", "strict"):
+        folds = group_folds(files, groups, n_folds=3, mode=mode)
+        for tr, te in folds:
+            assert 3 in tr and 4 in tr and 3 not in te and 4 not in te
+        tested = np.concatenate([te for _, te in folds])
+        assert sorted(tested.tolist()) == [0, 5, 6, 7, 8, 9, 10, 11]
+
+
 def test_build_group_table_ranks_by_date_and_hides_the_key():
     cw = [{"a_file": "pub1.nii.gz", "b_file": "orig_x.nii.gz"},
           {"a_file": "pub2.nii.gz", "b_file": "orig_y.nii.gz"},
@@ -86,3 +97,18 @@ def test_build_group_table_ranks_by_date_and_hides_the_key():
     blob = str(rows)
     assert "P1" not in blob and "20200105" not in blob and "20191230" not in blob   # nothing sensitive copied
     assert by["pub1.nii.gz"]["n_in_group"] == 2
+
+
+def test_build_group_table_marks_multi_acquisition_subjects_train_only():
+    cw = [{"a_file": "p1", "b_file": "x.nii.gz"}, {"a_file": "p2", "b_file": "y.nii.gz"},
+          {"a_file": "p3", "b_file": "z.nii.gz"}]
+    info = [{"seg": "x.nii.gz", "pid": "A", "date": "20200101"},
+            {"seg": "y.nii.gz", "pid": "A", "date": "20200301"},
+            {"seg": "z.nii.gz", "pid": "B", "date": "20200101"}]
+    full = info + [{"seg": "w.nii.gz", "pid": "B", "date": "20190101"}]   # B's other scan was excluded
+    rows, _ = bgt.build(cw, info, "seg", "pid", "date", "s", all_rows=full, singles_only=True)
+    by = {r["filename"]: r for r in rows}
+    assert by["p1"]["rank"] == 1 and by["p2"]["rank"] == 2      # multi-acquisition: train-only
+    assert by["p3"]["rank"] == 1 and by["p3"]["n_all"] == 2      # single kept, but multi in the full table
+    rows, _ = bgt.build(cw, info, "seg", "pid", "date", "s", all_rows=full, singles_only=False)
+    assert [r["rank"] for r in sorted(rows, key=lambda r: r["filename"])] == [0, 1, 0]
