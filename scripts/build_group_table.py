@@ -39,11 +39,14 @@ def _keys(name: str):
     return {base, _strip_ext(base)}
 
 
-def build(crosswalk_rows, info_rows, path_col, id_col, date_col, salt):
+def build(crosswalk_rows, info_rows, path_col, id_col, date_col, salt, rank_col=None):
     info = {}
     for r in info_rows:
+        first = ""
+        if rank_col:
+            first = "0" if str(r.get(rank_col, "")).strip() in ("1", "True", "true", "yes") else "1"
         for k in _keys(r[path_col]):
-            info[k] = (str(r[id_col]).strip(), str(r[date_col]).strip())
+            info[k] = (str(r[id_col]).strip(), first + str(r[date_col]).strip())
     linked, unmatched = [], []
     for r in crosswalk_rows:
         hit = next((info[k] for k in _keys(r["b_file"]) if k in info), None)
@@ -72,6 +75,10 @@ def main() -> None:
     ap.add_argument("--id-col", required=True)
     ap.add_argument("--date-col", required=True)
     ap.add_argument("--salt", required=True, help="secret phrase; keep it out of every repository")
+    ap.add_argument("--sep", default=None, help="delimiter of the metadata table (auto: tab or comma)")
+    ap.add_argument("--rank-col", default=None,
+                    help="optional column that already marks each group's earliest image (truthy "
+                         "value); when given it overrides the date ordering")
     ap.add_argument("-o", "--out", default="groups_public.csv")
     ap.add_argument("--expect-groups", type=int, default=None)
     ap.add_argument("--expect-extra", type=int, default=None)
@@ -80,12 +87,16 @@ def main() -> None:
     with open(args.crosswalk, newline="") as f:
         cw = list(csv.DictReader(f))
     with open(args.info, newline="") as f:
-        info = list(csv.DictReader(f))
+        head = f.read(8192)
+        f.seek(0)
+        sep = args.sep or ("\t" if head.count("\t") > head.count(",") else ",")
+        info = list(csv.DictReader(f, delimiter=sep))
     for col in (args.path_col, args.id_col, args.date_col):
         if col not in info[0]:
             sys.exit(f"column {col!r} not in {args.info}; columns: {list(info[0])}")
 
-    rows, unmatched = build(cw, info, args.path_col, args.id_col, args.date_col, args.salt)
+    rows, unmatched = build(cw, info, args.path_col, args.id_col, args.date_col, args.salt,
+                            rank_col=args.rank_col)
     with open(args.out, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=["filename", "group", "rank", "n_in_group"])
         w.writeheader()
