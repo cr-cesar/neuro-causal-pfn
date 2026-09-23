@@ -47,13 +47,26 @@ def build(crosswalk_rows, info_rows, path_col, id_col, date_col, salt, rank_col=
             first = "0" if str(r.get(rank_col, "")).strip() in ("1", "True", "true", "yes") else "1"
         for k in _keys(r[path_col]):
             info[k] = (str(r[id_col]).strip(), first + str(r[date_col]).strip())
-    linked, unmatched = [], []
+    # one public file may match several originals (the same mask stored under
+    # more than one folder): resolve per public file, require one subject
+    hits_by_public = defaultdict(list)
     for r in crosswalk_rows:
         hit = next((info[k] for k in _keys(r["b_file"]) if k in info), None)
-        if hit is None:
-            unmatched.append(r["a_file"])
+        if hit is not None:
+            hits_by_public[r["a_file"]].append(hit)
+        else:
+            hits_by_public.setdefault(r["a_file"], [])
+    linked, unmatched, conflicts = [], [], []
+    for a_file, hits in hits_by_public.items():
+        if not hits:
+            unmatched.append(a_file)
             continue
-        linked.append((r["a_file"], hit[0], hit[1]))
+        subjects = {sid for sid, _ in hits}
+        if len(subjects) > 1:
+            conflicts.append(a_file)
+        sid, date = sorted(hits, key=lambda t: t[1])[0]        # earliest date wins
+        linked.append((a_file, sid, date))
+    build.conflicts = conflicts
     by_subject = defaultdict(list)
     for a_file, sid, date in linked:
         by_subject[sid].append((date, a_file))
@@ -108,7 +121,9 @@ def main() -> None:
     for r in rows:
         if r["rank"] == 0:
             sizes[r["n_in_group"]] += 1
-    print(f"crosswalk rows {len(cw)} | linked {len(rows)} | unmatched {len(unmatched)}")
+    print(f"crosswalk rows {len(cw)} | public files {len(rows) + len(unmatched)} | "
+          f"linked {len(rows)} | unmatched {len(unmatched)} | "
+          f"subject conflicts {len(getattr(build, 'conflicts', []))}")
     print(f"groups {n_groups} | repeat images (rank > 0) {n_extra}")
     print("group sizes:", ", ".join(f"{k}: {v}" for k, v in sorted(sizes.items())))
     if args.expect_groups is not None:
