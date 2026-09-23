@@ -22,3 +22,11 @@ venv/
 .ipynb_checkpoints/
 wandb/
 .DS_Store
+
+# tablas de enlace local (trial): nunca al repositorio
+crosswalk*.csv
+*_sig.csv
+groups_public*.csv
+groups*.csv
+lesion_info*.csv
+participants*.csv
