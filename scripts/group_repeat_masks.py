@@ -9,7 +9,9 @@ acquisition of a lesion on the same side of the split (group-aware folds).
 Method: block by sex and age (|difference| <= --age-tol); inside a block,
 pre-filter pairs by centroid distance and volume ratio, compute the Dice
 overlap of the two binary masks, and union the pairs whose Dice reaches the
-threshold (union-find). All masks must share one voxel grid (MNI 2 mm here).
+threshold. Groups use complete linkage by default (a group is a clique of
+mutually overlapping masks), because single linkage chains large lesions of
+different origin into giant components. All masks must share one voxel grid.
 
     python scripts/group_repeat_masks.py "data/Full data/lesions" -o groups.csv \\
         --dice-thr 0.3 --expect-groups 2830 --expect-extra 1289
@@ -98,6 +100,50 @@ def group_summary(groups: np.ndarray) -> Dict[str, int]:
             "n_groups_ge2": int((sizes >= 2).sum())}
 
 
+def cluster(n: int, pairs, thr: float, linkage: str = "complete") -> np.ndarray:
+    """Group indices from scored pairs ``(i, j, dice, ...)``.
+
+    ``single``: union-find over every pair with dice >= thr (transitive: A~B
+    and B~C put A and C together even if they do not overlap, which chains
+    large territorial lesions of different origin into giant components).
+    ``complete``: two groups merge only if EVERY cross pair has dice >= thr,
+    so a group is a clique of mutually overlapping masks and its size stays
+    at the natural repeat count."""
+    if linkage == "single":
+        uf = UnionFind(n)
+        for i, j, d, *_ in pairs:
+            if d >= thr:
+                uf.union(i, j)
+        return uf.groups()
+    if linkage != "complete":
+        raise ValueError("linkage must be 'single' or 'complete'")
+    dice = {(min(i, j), max(i, j)): d for i, j, d, *_ in pairs}
+    group_of = list(range(n))
+    members = {i: [i] for i in range(n)}
+    for i, j, d, *_ in sorted(pairs, key=lambda t: -t[2]):
+        if d < thr:
+            break
+        gi, gj = group_of[i], group_of[j]
+        if gi == gj:
+            continue
+        if all(dice.get((min(a, b), max(a, b)), 0.0) >= thr
+               for a in members[gi] for b in members[gj]):
+            keep, drop = (gi, gj) if len(members[gi]) >= len(members[gj]) else (gj, gi)
+            for m in members.pop(drop):
+                group_of[m] = keep
+                members[keep].append(m)
+    remap = {g: k for k, g in enumerate(sorted(members))}
+    return np.array([remap[g] for g in group_of], dtype=int)
+
+
+def dice_histogram(pairs, edges=(0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.01)) -> List[Tuple[float, float, int]]:
+    d = np.array([t[2] for t in pairs], dtype=float)
+    out = []
+    for lo, hi in zip(edges[:-1], edges[1:]):
+        out.append((lo, min(hi, 1.0), int(((d >= lo) & (d < hi)).sum())))
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # Loading
 # --------------------------------------------------------------------------- #
@@ -128,11 +174,13 @@ def main() -> None:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("directory", help="folder of binary masks (*.nii, *.nii.gz), one grid")
     ap.add_argument("-o", "--out", default="groups.csv")
-    ap.add_argument("--dice-thr", type=float, default=0.3, help="Dice at or above which two masks are grouped")
+    ap.add_argument("--dice-thr", type=float, default=0.6, help="Dice at or above which two masks are grouped")
     ap.add_argument("--centroid-mm", type=float, default=20.0, help="pre-filter: max centroid distance")
     ap.add_argument("--vol-ratio", type=float, default=5.0, help="pre-filter: max volume ratio (larger/smaller)")
     ap.add_argument("--age-tol", type=float, default=1.0, help="block: max age difference (years)")
-    ap.add_argument("--sweep", type=float, nargs="*", default=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+    ap.add_argument("--linkage", default="complete", choices=["complete", "single"],
+                    help="complete = groups are cliques (no chaining, default); single = union-find")
+    ap.add_argument("--sweep", type=float, nargs="*", default=[0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
                     help="Dice thresholds to report group counts for")
     ap.add_argument("--expect-groups", type=int, default=None, help="expected number of groups, if known")
     ap.add_argument("--expect-extra", type=int, default=None, help="expected number of repeat images, if known")
@@ -181,25 +229,28 @@ def main() -> None:
             w.writerow([names[i], names[j], f"{d:.4f}", f"{dist:.2f}", f"{ratio:.3f}",
                         ages[i], ages[j], sexes[i], sexes[j]])
 
-    print("\nthreshold sweep (Dice >= thr):")
+    print("\nDice histogram of the overlapping pairs (a separate bump at the top "
+          "is the repeat-acquisition population):")
+    for lo, hi, c in dice_histogram(pairs):
+        print(f"  [{lo:.1f}, {hi:.1f})  {c:6d}")
+    high = [t for t in pairs if t[2] >= 0.7]
+    same_age = sum(1 for i, j, *_ in high if ages[i] == ages[j])
+    print(f"  pairs with Dice >= 0.7: {len(high)} ({same_age} with identical age)")
+
+    print(f"\nthreshold sweep (Dice >= thr, {args.linkage} linkage):")
     print(f"{'thr':>5s} {'groups':>7s} {'extra':>6s} {'ge2':>5s} {'max':>4s}")
     for thr in sorted(set(args.sweep) | {args.dice_thr}):
-        uf = UnionFind(len(paths))
-        for i, j, d, _, _ in pairs:
-            if d >= thr:
-                uf.union(i, j)
-        s = group_summary(uf.groups())
+        s = group_summary(cluster(len(paths), pairs, thr, args.linkage))
         flag = " <-- chosen" if abs(thr - args.dice_thr) < 1e-9 else ""
         print(f"{thr:5.2f} {s['n_groups']:7d} {s['n_extra']:6d} {s['n_groups_ge2']:5d} {s['max_group']:4d}{flag}")
     if args.expect_groups is not None or args.expect_extra is not None:
         print(f"expected: groups {args.expect_groups}, extra {args.expect_extra}")
 
-    uf = UnionFind(len(paths))
-    for i, j, d, _, _ in pairs:
-        if d >= args.dice_thr:
-            uf.union(i, j)
-    groups = uf.groups()
+    groups = cluster(len(paths), pairs, args.dice_thr, args.linkage)
     sizes = np.bincount(groups)
+    hist = np.bincount(sizes)
+    print("group-size histogram (size: count): " +
+          ", ".join(f"{k}: {int(c)}" for k, c in enumerate(hist) if k >= 1 and c > 0))
     with open(args.out, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["filename", "group", "group_size"])
