@@ -189,6 +189,12 @@ def main():
                     help="intracranial mask nifti for nmf50_nimfa "
                          "(default: <atlas-dir>/icv_mask_2mm.nii.gz)")
     ap.add_argument("--folds", type=int, default=10)
+    ap.add_argument("--groups", default=None,
+                    help="CSV (filename, group, rank) for group-aware folds: only rank-0 "
+                         "images are tested, later acquisitions train")
+    ap.add_argument("--group-mode", default="giles", choices=["giles", "strict"],
+                    help="giles = repeats train in every fold (paper protocol); "
+                         "strict = a group never straddles the split")
     ap.add_argument("--deficits", type=int, nargs="*", default=None, help="subset 1..16")
     ap.add_argument("--limit", type=int, default=0, help="use only the first N images (smoke)")
     ap.add_argument("--out", default="outputs/giles_replica")
@@ -230,6 +236,14 @@ def main():
         reps[os.path.basename(os.path.normpath(d))] = _fold_latent_representation(
             d, len(files))
 
+    folds = None
+    if args.groups:
+        folds = gr.group_folds(files, gr.load_group_table(args.groups),
+                               n_folds=args.folds, mode=args.group_mode)
+        n_te = sum(len(te) for _, te in folds)
+        print(f"group-aware folds ({args.group_mode}): {n_te} tested images, "
+              f"{len(files) - n_te} later acquisitions train-only")
+
     os.makedirs(args.out, exist_ok=True)
     import pandas as pd
     all_results, headline_rows, sims = [], [], []
@@ -237,7 +251,7 @@ def main():
         collect = sims if not sims else None   # export the simulations once
         res = gr.evaluate_representation(Z, labels, pairs, scenario,
                                          n_folds=args.folds, deficits=args.deficits,
-                                         collect_sims=collect)
+                                         collect_sims=collect, folds=folds)
         res.insert(0, "representation", name)
         all_results.append(res)
         agg = gr.headline_row(res)

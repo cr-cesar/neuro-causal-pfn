@@ -332,12 +332,90 @@ MIN_N = 15   # prescription_processor.min_n: slices smaller than this are skippe
 # --------------------------------------------------------------------------- #
 # Evaluation driver
 # --------------------------------------------------------------------------- #
+def image_folds(n: int, n_folds: int = 10, seed: int = 0):
+    """The default folds: KFold over images, shuffled, fixed seed."""
+    from sklearn.model_selection import KFold
+
+    return [(tr, te) for tr, te in
+            KFold(n_splits=n_folds, shuffle=True, random_state=seed).split(np.arange(n))]
+
+
+def load_group_table(path: str) -> Dict[str, Tuple[str, int]]:
+    """``filename -> (group, rank)`` from a CSV with columns filename, group,
+    rank (rank 0 = the group's earliest acquisition)."""
+    import csv
+
+    table: Dict[str, Tuple[str, int]] = {}
+    with open(path, newline="") as f:
+        for r in csv.DictReader(f):
+            table[os.path.basename(r["filename"])] = (str(r["group"]), int(r["rank"]))
+    return table
+
+
+def group_folds(files: Sequence[str], groups: Dict[str, Tuple[str, int]],
+                n_folds: int = 10, seed: int = 0, mode: str = "giles",
+                allow_missing: bool = False):
+    """Group-aware folds over a file listing.
+
+    Only the rank-0 image of each group (its earliest acquisition) is ever
+    tested: the rank-0 images are split with the same KFold as image_folds and
+    the later acquisitions are added to the training side. Two placements:
+
+    - ``giles``: every later acquisition trains in EVERY fold (the paper's
+      protocol; a group may then sit in train through a repeat while its
+      earliest image is in test).
+    - ``strict``: a later acquisition trains only in the folds where its
+      group's earliest image trains, so no group ever straddles the split.
+
+    Files absent from the table are treated as single-image groups when
+    ``allow_missing`` is set, else raise.
+    """
+    from sklearn.model_selection import KFold
+
+    names = [os.path.basename(f) for f in files]
+    missing = [nm for nm in names if nm not in groups]
+    if missing and not allow_missing:
+        raise KeyError(f"{len(missing)} files missing from the group table, e.g. {missing[:3]}")
+    primary, extras_by_group = [], {}
+    for i, nm in enumerate(names):
+        g, rank = groups.get(nm, (f"__solo__{nm}", 0))
+        if rank == 0:
+            primary.append((i, g))
+        else:
+            extras_by_group.setdefault(g, []).append(i)
+    seen = {}
+    for i, g in primary:
+        if g in seen:
+            raise ValueError(f"group {g} has two rank-0 images ({names[seen[g]]}, {names[i]})")
+        seen[g] = i
+    orphan = [g for g in extras_by_group if g not in seen]
+    if orphan:
+        raise ValueError(f"{len(orphan)} groups have later acquisitions but no rank-0 image")
+    prim_idx = np.array([i for i, _ in primary])
+    prim_grp = [g for _, g in primary]
+    all_extras = [i for lst in extras_by_group.values() for i in lst]
+    folds = []
+    for tr_p, te_p in KFold(n_splits=n_folds, shuffle=True, random_state=seed).split(prim_idx):
+        te = prim_idx[te_p]
+        if mode == "giles":
+            tr = list(prim_idx[tr_p]) + all_extras
+        elif mode == "strict":
+            tr = list(prim_idx[tr_p])
+            for k in tr_p:
+                tr += extras_by_group.get(prim_grp[k], [])
+        else:
+            raise ValueError("mode must be 'giles' or 'strict'")
+        folds.append((np.array(sorted(tr)), np.array(sorted(te))))
+    return folds
+
+
 def evaluate_representation(Z: np.ndarray, labels_df, pairs: Dict[int, RoiPair],
                             scenario: Dict, n_folds: int = 10,
                             deficits: Optional[Sequence[int]] = None,
                             classifiers: Sequence[str] = ("logistic_regression", "extra_trees"),
                             learners: Sequence[str] = ("one", "two"),
-                            collect_sims: Optional[list] = None):
+                            collect_sims: Optional[list] = None,
+                            folds: Optional[Sequence[Tuple[np.ndarray, np.ndarray]]] = None):
     """Score a representation on the Giles scale.
 
     Z is [n, d], row-aligned with labels_df (one row per lesion file). For
@@ -357,15 +435,18 @@ def evaluate_representation(Z: np.ndarray, labels_df, pairs: Dict[int, RoiPair],
     When ``collect_sims`` is a list, every simulated train slice is appended
     to it as records (filename, deficit, fold, y_true, W, Y, scenario) so the
     raw simulations with outcomes can be exported.
+
+    ``folds`` overrides the default image-level KFold with an explicit list of
+    (train_idx, test_idx) pairs, e.g. from :func:`group_folds`.
     """
     import pandas as pd
-    from sklearn.model_selection import KFold
 
     deficits = list(deficits) if deficits is not None else list(range(1, 17))
     results = []
     n = len(labels_df)
-    for k, (tr_idx, te_idx) in enumerate(
-            KFold(n_splits=n_folds, shuffle=True, random_state=0).split(np.arange(n))):
+    if folds is None:
+        folds = image_folds(n, n_folds)
+    for k, (tr_idx, te_idx) in enumerate(folds):
         df_tr, df_te = labels_df.iloc[tr_idx], labels_df.iloc[te_idx]
         if callable(Z):
             Z_tr_all, Z_te_all = Z(tr_idx, te_idx)
