@@ -6,6 +6,7 @@
 #   qsub -v IMAGES="data/Full data/lesions" scripts/run_giles_replica_myriad.qsub.sh
 #   qsub -v LATENTS="outputs/foo/latents.npz" ... to score encoder latents too
 #   qsub -v NMF_PER_FOLD=1 ... to refit NMF per fold (paper protocol, leak-free)
+#   qsub -v GROUPS=outputs/groups_public.csv,OUT=outputs/giles_replica_ideal_grp ... group-aware folds
 #
 #$ -N giles-replica
 #$ -l h_rt=8:0:0
@@ -37,6 +38,12 @@ if [ -n "${FOLD_LATENTS:-}" ]; then
 fi
 if [ -n "${NMF_PER_FOLD:-}" ]; then
     EXTRA+=(--nmf-per-fold)
+fi
+# GROUPS=outputs/groups_public.csv (filename, group, rank; kept out of git)
+# switches to group-aware folds; GROUP_MODE=giles|strict. Set OUT explicitly
+# to keep the image-level results apart.
+if [ -n "${GROUPS:-}" ]; then
+    EXTRA+=(--groups "$GROUPS" --group-mode "${GROUP_MODE:-giles}")
 fi
 
 python scripts/run_giles_replica.py \
