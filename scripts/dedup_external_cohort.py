@@ -30,6 +30,7 @@ import csv
 import glob
 import hashlib
 import os
+import re
 import sys
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -110,6 +111,9 @@ def main() -> None:
     ap.add_argument("--file-col", default="filename")
     ap.add_argument("--id-col", default=None, help="subject key column of --new-table")
     ap.add_argument("--site-col", default=None, help="site label column of --new-table")
+    ap.add_argument("--site-regex", default=r"^sub-([A-Za-z]+)",
+                    help="regex whose group 1 is the site label inside the new filename "
+                         "(default: the letters after 'sub-'); --site-col overrides it")
     ap.add_argument("--salt", default=None, help="the SAME secret used for the group table")
     ap.add_argument("--groups", default=None, help="training group table (filename, group, rank)")
     ap.add_argument("-o", "--out", default="external_screen.csv")
@@ -134,6 +138,12 @@ def main() -> None:
 
     site: Dict[str, str] = {}
     subj: Dict[str, bool] = {}
+    if args.site_regex:
+        pat = re.compile(args.site_regex)
+        for p in new_paths:
+            m = pat.search(os.path.basename(p))
+            if m:
+                site[os.path.basename(p)] = m.group(1).lower()
     if args.new_table:
         with open(args.new_table, newline="") as f:
             rows = list(csv.DictReader(f))
