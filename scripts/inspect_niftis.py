@@ -53,12 +53,17 @@ def main() -> None:
     ap.add_argument("folder")
     ap.add_argument("--ref", default=None, help="a NIfTI whose grid is the target (e.g. one training lesion)")
     ap.add_argument("--sample", type=int, default=300, help="files to open per name pattern")
+    ap.add_argument("--include", default=None,
+                    help="only files whose name contains this substring (e.g. lesion-msk)")
     args = ap.parse_args()
 
     files = sorted(glob.glob(os.path.join(args.folder, "**", "*.nii.gz"), recursive=True)
                    + glob.glob(os.path.join(args.folder, "**", "*.nii"), recursive=True))
+    if args.include:
+        files = [f for f in files if args.include in os.path.basename(f)]
     if not files:
-        raise SystemExit(f"no NIfTI files under {args.folder}")
+        raise SystemExit(f"no NIfTI files under {args.folder}"
+                         + (f" containing {args.include!r}" if args.include else ""))
     ref_affine = nib.load(args.ref).affine if args.ref else None
 
     by_pattern = collections.defaultdict(list)
@@ -68,6 +73,7 @@ def main() -> None:
           + (f" | reference grid {nib.load(args.ref).shape} from {pattern(os.path.basename(args.ref))}"
              if args.ref else ""))
     for pat, paths in sorted(by_pattern.items(), key=lambda kv: -len(kv[1])):
+        print(f"\n== {pat}   ({len(paths)} files, {min(len(paths), args.sample)} inspected)", flush=True)
         groups = collections.Counter()
         n_bin = n_same = n_pos_zero = 0
         vmins, vmaxs, npos = [], [], []
@@ -79,13 +85,12 @@ def main() -> None:
             n_pos_zero += d["n_pos"] == 0
             vmins.append(d["vmin"]); vmaxs.append(d["vmax"]); npos.append(d["n_pos"])
         n = min(len(paths), args.sample)
-        print(f"\n== {pat}   ({len(paths)} files, {n} inspected)")
         for (shape, zooms, orient, dtype, ndim), c in groups.most_common():
             print(f"   {c:5d}  shape {shape}  voxel mm {zooms}  orient {orient}  dtype {dtype}"
                   + (f"  ndim {ndim}" if ndim != 3 else ""))
         print(f"   binary {n_bin}/{n} | values [{np.nanmin(vmins):.3g}, {np.nanmax(vmaxs):.3g}] | "
               f"empty {n_pos_zero} | positive voxels median {int(np.median(npos))}"
-              + (f" | same affine as ref {n_same}/{n}" if ref_affine is not None else ""))
+              + (f" | same affine as ref {n_same}/{n}" if ref_affine is not None else ""), flush=True)
 
 
 if __name__ == "__main__":
