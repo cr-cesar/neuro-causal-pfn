@@ -30,3 +30,5 @@ groups_public*.csv
 groups*.csv
 lesion_info*.csv
 participants*.csv
+participants*.tsv
+external_screen*.csv
