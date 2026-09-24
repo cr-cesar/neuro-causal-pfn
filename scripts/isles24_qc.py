@@ -24,7 +24,7 @@ import numpy as np
 import nibabel as nib
 
 OUTCOME_COLS = ["Center", "Sex", "Age", "NIHSS at admission", "NIHSS 24h", "NIHSS discharge",
-                "mRS premorbid", "mRS at admission", "mRS discharge", "mRS 3 months",
+                "mRS premorbid", "mRS at admission", "mRS 24h", "mRS discharge", "mRS 3 months",
                 "TICI postinterventional", "Door to recanalization"]
 
 
