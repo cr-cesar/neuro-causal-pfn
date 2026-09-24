@@ -30,8 +30,10 @@ def describe(path: str, ref_affine=None):
     img = nib.load(path)
     data = np.asanyarray(img.dataobj)
     finite = data[np.isfinite(data)]
-    vals = np.unique(finite) if finite.size and finite.size < 5_000_000 else np.array([])
-    binary = bool(vals.size <= 2 and set(np.round(vals, 6).tolist()) <= {0.0, 1.0}) if vals.size else False
+    # binary = every finite voxel is exactly 0 or 1 (vectorised, size-independent)
+    binary = bool(finite.size and finite.size == data.size
+                  and np.array_equal(data, (data > 0).astype(data.dtype))
+                  and float(finite.max()) <= 1.0)
     same_affine = (np.allclose(img.affine, ref_affine, atol=1e-3) if ref_affine is not None else None)
     return {
         "shape": tuple(int(s) for s in img.shape[:3]),
