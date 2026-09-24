@@ -289,6 +289,35 @@ def score_predictions(p1: np.ndarray, p0: np.ndarray, true_ITE: np.ndarray) -> D
     return out
 
 
+VOLUME_STRATA = 4
+
+
+def volume_strata(vols_all, vols) -> np.ndarray:
+    """Cohort-level lesion-volume quartile (0 = smallest .. 3 = largest) of
+    each entry of ``vols``. The cut points come from the WHOLE cohort so every
+    fold and deficit shares the same strata (the equity gate of E11a uses the
+    same convention on the proxy scale)."""
+    edges = np.quantile(np.asarray(vols_all, dtype=float), [0.25, 0.5, 0.75])
+    return np.searchsorted(edges, np.asarray(vols, dtype=float), side="right")
+
+
+def stratified_pehe_paper(p1: np.ndarray, p0: np.ndarray, true_ITE: np.ndarray,
+                          strata: np.ndarray, n_strata: int = VOLUME_STRATA) -> Dict[str, float]:
+    """``pehe_paper`` inside each stratum (nan when the stratum is empty in
+    this test slice) plus the member counts. Same estimand as the headline,
+    restricted to the participants of one stratum, so a ratio between strata
+    is an equity statement on the paper scale rather than on the proxy."""
+    tau_hat = np.asarray(p1, dtype=float) - np.asarray(p0, dtype=float)
+    tau = 2.0 * np.asarray(true_ITE, dtype=float) - 1.0
+    strata = np.asarray(strata)
+    out: Dict[str, float] = {}
+    for s in range(n_strata):
+        m = strata == s
+        out[f"pehe_paper_vq{s}"] = pehe(tau_hat[m], tau[m]) if m.any() else float("nan")
+        out[f"n_vq{s}"] = int(m.sum())
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # Estimators (one-model / two-model, as in prescription.py)
 # --------------------------------------------------------------------------- #
@@ -448,6 +477,9 @@ def evaluate_representation(Z: np.ndarray, labels_df, pairs: Dict[int, RoiPair],
     n = len(labels_df)
     if folds is None:
         folds = image_folds(n, n_folds)
+    # equity on the paper scale: cohort-level volume quartile of every image
+    strata_all = (volume_strata(labels_df["vol"], labels_df["vol"])
+                  if "vol" in labels_df.columns else None)
     for k, (tr_idx, te_idx) in enumerate(folds):
         df_tr, df_te = labels_df.iloc[tr_idx], labels_df.iloc[te_idx]
         if callable(Z):
@@ -472,6 +504,7 @@ def evaluate_representation(Z: np.ndarray, labels_df, pairs: Dict[int, RoiPair],
                 for fn, yt, w, y in zip(sl_tr["filename"], sl_tr["y_true"], W, Y):
                     collect_sims.append({"filename": fn, "deficit": name, "fold": k,
                                          "y_true": yt, "W": int(w), "Y": int(y), **scenario})
+            strata_te = strata_all[te_idx][mask_te] if strata_all is not None else None
             for cname in classifiers:
                 for learner in learners:
                     fit = _fit_predict_one_model if learner == "one" else _fit_predict_two_model
@@ -479,6 +512,8 @@ def evaluate_representation(Z: np.ndarray, labels_df, pairs: Dict[int, RoiPair],
                     row = {"deficit": name, "fold": k, "classifier": cname,
                            "learner": learner, "n_train": len(Xtr), "n_test": len(Xte),
                            **scenario, **score_predictions(p1, p0, true_ITE)}
+                    if strata_te is not None:
+                        row.update(stratified_pehe_paper(p1, p0, true_ITE, strata_te))
                     results.append(row)
     return pd.DataFrame(results)
 
@@ -535,4 +570,15 @@ def headline_row(results) -> Dict[str, float]:
                          ("pehe_paper", "pehe_paper_mean")):
             if col in cfg.columns:
                 agg[key] = float(cfg.groupby("deficit")[col].mean().mean())
+        # equity by lesion-volume quartile on the paper scale (same estimand,
+        # same configuration; folds where a quartile is empty are skipped by
+        # the nan-aware means). volume_ratio = worst / best quartile.
+        vq_cols = sorted(c for c in cfg.columns if c.startswith("pehe_paper_vq"))
+        if vq_cols:
+            means = [float(cfg.groupby("deficit")[c].mean().mean()) for c in vq_cols]
+            for c, m in zip(vq_cols, means):
+                agg[f"{c}_mean"] = m
+            finite = [m for m in means if np.isfinite(m)]
+            agg["volume_ratio"] = (float(max(finite) / min(finite))
+                                   if finite and min(finite) > 0 else float("nan"))
     return agg

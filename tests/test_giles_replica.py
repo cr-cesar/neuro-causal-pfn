@@ -139,3 +139,35 @@ def test_headline_fixed_configuration_not_flattered_by_selection():
     assert agg["pehe_per_deficit_best"] <= agg["pehe_mean"] + 1e-12
     assert agg["classifier"] in {"logistic_regression", "extra_trees"}
     assert agg["learner"] in {"one", "two"}
+
+
+def test_volume_strata_and_stratified_pehe_paper():
+    vols_all = np.arange(1, 101)                       # quartile edges 25.75, 50.5, 75.25
+    strata = gr.volume_strata(vols_all, [1, 26, 51, 76, 100])
+    assert strata.tolist() == [0, 1, 2, 3, 3]
+    true = np.array([1.0, 0.0, 0.5, 1.0])             # tau = +1, -1, 0, +1
+    p = np.full(4, 0.5)                                # uninformative: error = |tau|
+    s = gr.stratified_pehe_paper(p, p, true, np.array([0, 0, 1, 3]))
+    assert s["pehe_paper_vq0"] == pytest.approx(1.0) and s["n_vq0"] == 2
+    assert s["pehe_paper_vq1"] == pytest.approx(0.0) and s["n_vq1"] == 1
+    assert np.isnan(s["pehe_paper_vq2"]) and s["n_vq2"] == 0
+    assert s["pehe_paper_vq3"] == pytest.approx(1.0)
+
+
+def test_evaluate_representation_reports_volume_equity():
+    df = _labels(160)
+    pair = _fake_pair()
+    Z = np.random.default_rng(1).normal(size=(160, 4))
+    res = gr.evaluate_representation(Z, df, {1: pair}, gr.HEADLINE_SCENARIOS["ideal"],
+                                     n_folds=4, deficits=[1], classifiers=["logistic_regression"])
+    vq = [f"pehe_paper_vq{s}" for s in range(gr.VOLUME_STRATA)]
+    assert set(vq) <= set(res.columns)
+    counts = res[[f"n_vq{s}" for s in range(gr.VOLUME_STRATA)]].sum(axis=1)
+    assert (counts == res["n_test"]).all()            # every tested participant in one stratum
+    agg = gr.headline_row(res)
+    assert np.isfinite(agg["volume_ratio"]) and agg["volume_ratio"] >= 1.0
+    assert all(np.isfinite(agg[f"{c}_mean"]) for c in vq)
+    # the headline itself is untouched by the extra columns
+    cfg = res[(res["classifier"] == agg["classifier"]) & (res["learner"] == agg["learner"])]
+    assert agg["pehe_paper_mean"] == pytest.approx(
+        float(cfg.groupby("deficit")["pehe_paper"].mean().mean()))
