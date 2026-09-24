@@ -34,11 +34,19 @@ def _vol_ml(img) -> float:
 
 
 def _read_phenotype(root: str, sub: str) -> dict:
-    """Merge every CSV of the case found anywhere under phenotype/ (the release
-    documentation and the actual folder names differ), first row of each."""
+    """Merge every phenotype table of the case found anywhere under phenotype/
+    (the release ships one .xlsx per case and session; .csv is accepted too).
+    First row of each table; header cells are stripped."""
     out = {}
-    paths = sorted(glob.glob(os.path.join(root, "phenotype", "**", f"{sub}*.csv"), recursive=True))
+    paths = sorted(glob.glob(os.path.join(root, "phenotype", "**", f"{sub}*.xlsx"), recursive=True)
+                   + glob.glob(os.path.join(root, "phenotype", "**", f"{sub}*.csv"), recursive=True))
     for p in paths:
+        if p.lower().endswith(".xlsx"):
+            import pandas as pd
+            df = pd.read_excel(p)
+            if len(df):
+                out.update({str(k).strip(): ("" if pd.isna(v) else v) for k, v in df.iloc[0].items()})
+            continue
         with open(p, newline="") as f:
             head = f.read(4096)
             f.seek(0)
