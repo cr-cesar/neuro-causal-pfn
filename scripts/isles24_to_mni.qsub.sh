@@ -21,6 +21,9 @@
 #$ -j y
 set -euo pipefail
 
+# Myriad loads the Intel compilers by default and fsl/6.0.4 requires
+# compilers/gnu/4.9.2; unload the defaults first or the module fails.
+module unload compilers mpi 2>/dev/null || true
 module load "${FSL_MODULE:-fsl}"
 export FSLOUTPUTTYPE=NIFTI_GZ
 
