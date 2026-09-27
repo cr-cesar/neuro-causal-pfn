@@ -20,8 +20,16 @@ Both image sets must be on one voxel grid (MNI 2 mm here).
          --salt "<same secret as the group table>" --groups outputs/groups_public.csv]
 
 Output: one row per new image with exact_match, best_dice, best_dice_file,
-subject_match, site and keep (1 = no link found). A per-site summary is
-printed. Nothing from the new table other than the site label is copied.
+subject_match, site and keep (1 = no link found). A per-site summary and
+per-site best-Dice histograms are printed, with the keep counts at several
+thresholds. Nothing from the new table other than the site label is copied.
+
+    --resummarise <screen.csv> --dice-thr 0.8   re-prints the summary of a
+        finished screen at another threshold without recomputing Dice.
+    --new-dir X --ref-dir X --exclude-same --groups <group table>   scores
+        every training image against every OTHER training subject: the
+        within-cohort null distribution of best Dice between different
+        patients, against which an external cohort's histogram is judged.
 """
 from __future__ import annotations
 
@@ -52,24 +60,71 @@ def mask_hash(flat: np.ndarray, shape: Sequence[int]) -> str:
 
 def best_overlaps(new_flats: List[np.ndarray], new_cents: np.ndarray, new_vols: np.ndarray,
                   ref_flats: List[np.ndarray], ref_cents: np.ndarray, ref_vols: np.ndarray,
-                  centroid_mm: float = 20.0, vol_ratio: float = 3.0) -> Tuple[np.ndarray, np.ndarray]:
+                  centroid_mm: float = 20.0, vol_ratio: float = 3.0,
+                  new_keys: Optional[Sequence[str]] = None,
+                  ref_keys: Optional[Sequence[str]] = None) -> Tuple[np.ndarray, np.ndarray]:
     """For every new mask, the highest Dice against the reference masks among
     the candidates within ``centroid_mm`` and a volume ratio of ``vol_ratio``.
+    When ``new_keys``/``ref_keys`` are given, a reference sharing the new
+    mask's (non-empty) key is skipped: this turns the screen into the
+    within-cohort null (each training image against every OTHER subject).
     Returns (best_dice, best_index); index -1 when no candidate exists."""
     best_d = np.zeros(len(new_flats))
     best_i = np.full(len(new_flats), -1, dtype=int)
     ref_vols = np.asarray(ref_vols, dtype=float)
+    ref_keys_arr = np.asarray(ref_keys, dtype=object) if ref_keys is not None else None
     for i, (flat, c, v) in enumerate(zip(new_flats, new_cents, new_vols)):
         if flat.size == 0 or not np.all(np.isfinite(c)):
             continue
         dist = np.linalg.norm(ref_cents - c, axis=1)
         ratio = np.maximum(ref_vols, v) / np.maximum(np.minimum(ref_vols, v), 1)
-        cand = np.flatnonzero((dist <= centroid_mm) & (ratio <= vol_ratio) & (ref_vols > 0))
-        for j in cand:
+        ok = (dist <= centroid_mm) & (ratio <= vol_ratio) & (ref_vols > 0)
+        if new_keys is not None and ref_keys_arr is not None and new_keys[i]:
+            ok &= ref_keys_arr != new_keys[i]
+        for j in np.flatnonzero(ok):
             d = dice_sorted(flat, ref_flats[j])
             if d > best_d[i]:
                 best_d[i], best_i[i] = d, j
     return best_d, best_i
+
+
+DICE_BINS = [0, 0.3, 0.5, 0.7, 0.8, 0.9, 0.95, 1.01]
+DICE_BIN_LABEL = "[0-.3,.3-.5,.5-.7,.7-.8,.8-.9,.9-.95,.95-1]"
+
+
+def summarise(rows: List[Dict], dice_thr: float) -> Dict[str, Dict]:
+    """Per-site counts (key '' = all rows) at the given Dice threshold: n,
+    exact, near-dup (Dice >= thr and not exact), subject, keep, and the
+    best-Dice histogram over DICE_BINS. ``rows`` are the screen CSV rows."""
+    out: Dict[str, Dict] = {}
+    sites = [""] + sorted({str(r.get("site", "")) for r in rows if str(r.get("site", ""))})
+    for s in sites:
+        sub = rows if s == "" else [r for r in rows if str(r.get("site", "")) == s]
+        ex = [bool(str(r["exact_match"]).strip()) for r in sub]
+        bd = np.array([float(r["best_dice"]) for r in sub], dtype=float)
+        sj = [str(r.get("subject_match", "")).strip() == "1" for r in sub]
+        keep = [decide(e, d, dice_thr, j) for e, d, j in zip(ex, bd, sj)]
+        out[s] = {"n": len(sub), "exact": int(sum(ex)),
+                  "near_dup": int(sum(1 for e, d in zip(ex, bd) if not e and d >= dice_thr)),
+                  "subject": int(sum(sj)), "keep": int(sum(keep)),
+                  "hist": np.histogram(bd, bins=DICE_BINS)[0].tolist() if len(sub) else []}
+    return out
+
+
+def print_summary(rows: List[Dict], dice_thr: float) -> None:
+    summ = summarise(rows, dice_thr)
+    for s, c in summ.items():
+        print(f"{s or 'all':12s} n {c['n']:5d} | exact {c['exact']:4d} | "
+              f"near-dup (Dice>={dice_thr}) {c['near_dup']:4d} | subject {c['subject']:4d} | "
+              f"keep {c['keep']:5d}")
+    print(f"best-Dice histogram {DICE_BIN_LABEL}")
+    for s, c in summ.items():
+        print(f"   {s or 'all':12s} {c['hist']}")
+    if len(summ) > 1:
+        print("keep per site at other thresholds:")
+        for thr in (0.5, 0.7, 0.8, 0.9, 0.95):
+            alt = summarise(rows, thr)
+            print(f"   Dice>={thr:<5}" + "  ".join(f"{s or 'all'} {c['keep']}" for s, c in alt.items()))
 
 
 def hash_subject(salt: str, sid: str) -> str:
@@ -116,8 +171,19 @@ def main() -> None:
                          "(default: the letters after 'sub-'); --site-col overrides it")
     ap.add_argument("--salt", default=None, help="the SAME secret used for the group table")
     ap.add_argument("--groups", default=None, help="training group table (filename, group, rank)")
+    ap.add_argument("--exclude-same", action="store_true",
+                    help="skip references that are the same file or, with --groups, the same "
+                         "group as the new image (within-cohort null: --new-dir == --ref-dir)")
+    ap.add_argument("--resummarise", default=None, metavar="CSV",
+                    help="only re-print the summary of an existing screen CSV at --dice-thr")
     ap.add_argument("-o", "--out", default="external_screen.csv")
     args = ap.parse_args()
+
+    if args.resummarise:
+        with open(args.resummarise, newline="") as f:
+            rows = list(csv.DictReader(f))
+        print_summary(rows, args.dice_thr)
+        return
 
     new_paths, ref_paths = _list(args.new_dir), _list(args.ref_dir)
     if not new_paths or not ref_paths:
@@ -128,13 +194,31 @@ def main() -> None:
     if tuple(nshape) != tuple(rshape):
         sys.exit(f"grids differ: new {nshape} vs reference {rshape}; resample first")
 
-    ref_hash = {}
-    for p, flat in zip(ref_paths, rf):
-        ref_hash.setdefault(mask_hash(flat, rshape), os.path.basename(p))
-    exact = [ref_hash.get(mask_hash(flat, nshape), "") for flat in nf]
+    # key of an image for --exclude-same: its group when the table knows it, else its name
+    new_keys = ref_keys = None
+    if args.exclude_same:
+        grp: Dict[str, str] = {}
+        if args.groups:
+            with open(args.groups, newline="") as f:
+                grp = {os.path.basename(r["filename"]): r["group"] for r in csv.DictReader(f)}
+        key = lambda p: grp.get(os.path.basename(p), os.path.basename(p))  # noqa: E731
+        new_keys = [key(p) for p in new_paths]
+        ref_keys = [key(p) for p in ref_paths]
+
+    ref_hash: Dict[str, List[Tuple[str, str]]] = {}
+    for k, (p, flat) in enumerate(zip(ref_paths, rf)):
+        ref_hash.setdefault(mask_hash(flat, rshape), []).append(
+            (os.path.basename(p), ref_keys[k] if ref_keys else ""))
+    exact = []
+    for k, flat in enumerate(nf):
+        hits = ref_hash.get(mask_hash(flat, nshape), [])
+        if new_keys:
+            hits = [h for h in hits if h[1] != new_keys[k]]
+        exact.append(hits[0][0] if hits else "")
 
     print("Dice stage ...", flush=True)
-    best_d, best_i = best_overlaps(nf, nc, nv, rf, rc, rv, args.centroid_mm, args.vol_ratio)
+    best_d, best_i = best_overlaps(nf, nc, nv, rf, rc, rv, args.centroid_mm, args.vol_ratio,
+                                   new_keys, ref_keys)
 
     site: Dict[str, str] = {}
     subj: Dict[str, bool] = {}
@@ -171,20 +255,7 @@ def main() -> None:
         w.writeheader()
         w.writerows(out_rows)
 
-    def _summary(rows, label):
-        n = len(rows)
-        ex = sum(1 for r in rows if r["exact_match"])
-        nd = sum(1 for r in rows if not r["exact_match"] and r["best_dice"] >= args.dice_thr)
-        sj = sum(1 for r in rows if r["subject_match"] == 1)
-        keep = sum(r["keep"] for r in rows)
-        print(f"{label:12s} n {n:5d} | exact {ex:4d} | near-dup (Dice>={args.dice_thr}) {nd:4d} | "
-              f"subject {sj:4d} | keep {keep:5d}")
-
-    _summary(out_rows, "all")
-    for s in sorted({r["site"] for r in out_rows if r["site"]}):
-        _summary([r for r in out_rows if r["site"] == s], s)
-    hist = np.histogram(best_d, bins=[0, 0.3, 0.5, 0.7, 0.8, 0.9, 0.95, 1.01])[0]
-    print("best-Dice histogram [0-.3,.3-.5,.5-.7,.7-.8,.8-.9,.9-.95,.95-1]:", hist.tolist())
+    print_summary(out_rows, args.dice_thr)
     print(f"wrote {args.out}")
 
 
