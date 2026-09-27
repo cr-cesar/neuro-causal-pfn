@@ -117,14 +117,16 @@ def main() -> None:
         if not os.path.exists(mni):
             reasons.append("not_registered")
         else:
-            if row["empty"] == 1:
-                reasons.append("empty")
             if row["grid_ok"] != 1:
                 reasons.append("grid")
-            if row["ratio_adj"] == "" or not (0.75 <= float(row["ratio_adj"]) <= 1.35):
-                reasons.append("volume")
-            if row["frac_in_brain"] != "" and float(row["frac_in_brain"]) < 0.95:
-                reasons.append("outside_brain")
+            if row["empty"] == 1:
+                # an empty mask has no volume or location to judge: one reason only
+                reasons.append("empty")
+            else:
+                if row["ratio_adj"] == "" or not (0.75 <= float(row["ratio_adj"]) <= 1.35):
+                    reasons.append("volume")
+                if row["frac_in_brain"] != "" and float(row["frac_in_brain"]) < 0.95:
+                    reasons.append("outside_brain")
         row["fail_reason"] = ";".join(reasons)
         row["ok"] = int(not reasons)
         rows.append(row)
@@ -149,6 +151,10 @@ def main() -> None:
     import collections
     fails = collections.Counter(x for r in rows for x in r["fail_reason"].split(";") if x)
     print("failures by criterion:", dict(fails) if fails else "none")
+    for r in rows:
+        if not r["ok"]:
+            print(f"   {r['sub']}: {r['fail_reason']} | native {r['vol_native_ml']} ml | "
+                  f"ratio_adj {r['ratio_adj']} | in brain {r['frac_in_brain']} | centre {r['Center']}")
     for c in ("Center", "NIHSS 24h", "mRS 3 months", "TICI postinterventional"):
         have = sum(1 for r in rows if str(r[c]).strip() != "")
         print(f"{c}: present in {have}/{n}")
