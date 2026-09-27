@@ -7,6 +7,7 @@
 #   qsub -v LATENTS="outputs/foo/latents.npz" ... to score encoder latents too
 #   qsub -v NMF_PER_FOLD=1 ... to refit NMF per fold (paper protocol, leak-free)
 #   qsub -v GROUP_TABLE=outputs/groups_public.csv,OUT=outputs/giles_replica_ideal_grp ... group-aware folds
+#   qsub -v SUBSAMPLE=1207,SUBSAMPLE_SEED=0,OUT=... size-matched control for an external cohort
 #
 #$ -N giles-replica
 #$ -l h_rt=8:0:0
@@ -46,6 +47,11 @@ fi
 # that never set it still passed "--groups 4527" and crashed.
 if [ -n "${GROUP_TABLE:-}" ]; then
     EXTRA+=(--groups "$GROUP_TABLE" --group-mode "${GROUP_MODE:-giles}")
+fi
+# SUBSAMPLE=1207 (and SUBSAMPLE_SEED) runs the replica on a random subset of
+# the images: the size-matched internal control for a smaller external cohort.
+if [ -n "${SUBSAMPLE:-}" ]; then
+    EXTRA+=(--subsample "$SUBSAMPLE" --subsample-seed "${SUBSAMPLE_SEED:-0}")
 fi
 
 python scripts/run_giles_replica.py \

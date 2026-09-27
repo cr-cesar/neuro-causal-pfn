@@ -158,6 +158,13 @@ def _built_in_representations(labels_df, files, which, nmf_per_fold=False,
     return reps
 
 
+def subsample_indices(n_all: int, n_keep: int, seed: int) -> np.ndarray:
+    """Sorted random subset of ``n_keep`` positions out of ``n_all`` (fixed seed),
+    so images, labels and latent rows stay aligned."""
+    rng = np.random.default_rng(seed)
+    return np.sort(rng.choice(n_all, size=n_keep, replace=False))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -197,6 +204,10 @@ def main():
                          "strict = a group never straddles the split")
     ap.add_argument("--deficits", type=int, nargs="*", default=None, help="subset 1..16")
     ap.add_argument("--limit", type=int, default=0, help="use only the first N images (smoke)")
+    ap.add_argument("--subsample", type=int, default=0,
+                    help="random subset of N images (size-matched control for a smaller "
+                         "external cohort); --latents rows are subset the same way")
+    ap.add_argument("--subsample-seed", type=int, default=0)
     ap.add_argument("--out", default="outputs/giles_replica")
     args = ap.parse_args()
 
@@ -211,6 +222,11 @@ def main():
         files = files[:args.limit]
     if not files:
         sys.exit(f"no niftis in {args.images_dir}")
+    n_all, sub_idx = len(files), None
+    if args.subsample and args.subsample < n_all:
+        sub_idx = subsample_indices(n_all, args.subsample, args.subsample_seed)
+        files = [files[i] for i in sub_idx]
+        print(f"size-matched subsample: {len(files)} of {n_all} images (seed {args.subsample_seed})")
     print(f"{len(files)} images | scenario {scenario} | modality {args.modality}")
 
     pairs = gr.load_atlas_pairs(args.atlas_dir, args.modality)
@@ -229,9 +245,13 @@ def main():
     for path in args.latents:
         with np.load(path) as z:
             Z = z["Z"]
+        if sub_idx is not None and len(Z) == n_all:
+            Z = Z[sub_idx]                      # latents exported over the full listing
         if len(Z) != len(files):
             sys.exit(f"{path}: Z has {len(Z)} rows but there are {len(files)} images")
         reps[os.path.basename(path)] = Z
+    if args.fold_latents and sub_idx is not None:
+        sys.exit("--fold-latents and --subsample cannot be combined")
     for d in args.fold_latents:
         reps[os.path.basename(os.path.normpath(d))] = _fold_latent_representation(
             d, len(files))
