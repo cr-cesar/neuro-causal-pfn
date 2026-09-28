@@ -20,7 +20,7 @@
 #
 #$ -N disco-bcb
 #$ -l h_rt=12:0:0
-#$ -l mem=16G
+#$ -l mem=8G
 #$ -pe smp 4
 #$ -l tmpfs=10G
 #$ -cwd
