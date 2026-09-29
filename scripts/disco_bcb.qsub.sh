@@ -25,10 +25,12 @@
 #$ -l tmpfs=10G
 #$ -cwd
 #$ -j y
-set -euo pipefail
-
+# strict mode only after the module/venv lines: `module load` can return
+# non-zero on Myriad although the module is loaded, and set -e would then
+# abort the job silently right after the module banner.
 module load python3/3.11
 source ~/venvs/neuro/bin/activate
+set -euo pipefail
 
 BCB="${BCB:?folder that contains the bcbtoolkit python package}"
 LESIONS="${LESIONS:?folder of binary lesion masks on the MNI 2 mm grid}"
