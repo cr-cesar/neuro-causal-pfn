@@ -25,9 +25,7 @@
 #$ -l tmpfs=10G
 #$ -cwd
 #$ -j y
-# strict mode only after the module/venv lines: `module load` can return
-# non-zero on Myriad although the module is loaded, and set -e would then
-# abort the job silently right after the module banner.
+# strict mode after the module/venv lines (their scripts are not written for it)
 module load python3/3.11
 source ~/venvs/neuro/bin/activate
 set -euo pipefail
@@ -56,7 +54,7 @@ for f in "${sel[@]}"; do
 done
 [ $todo -gt 0 ] || { echo "task $SGE_TASK_ID: all ${#sel[@]} lesions already done"; exit 0; }
 
-ntrk=$(ls "$TRACKS"/*.trk "$TRACKS"/*.bcbtrk 2>/dev/null | wc -l)
+ntrk=$( (ls "$TRACKS"/*.trk "$TRACKS"/*.bcbtrk 2>/dev/null || true) | wc -l)   # no .bcbtrk is fine
 echo "task $SGE_TASK_ID: $todo lesions | $ntrk tractograms | threshold $THRESHOLD | $(date)"
 cd "$BCB"
 python -m bcbtoolkit disconnectome -l "$work/in" -r "$work/out" \
