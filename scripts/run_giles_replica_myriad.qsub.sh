@@ -53,6 +53,12 @@ fi
 if [ -n "${SUBSAMPLE:-}" ]; then
     EXTRA+=(--subsample "$SUBSAMPLE" --subsample-seed "${SUBSAMPLE_SEED:-0}")
 fi
+# SECOND_IMAGES=<dir of the other channel, same file names> enables the
+# nmf50_both builtin (BUILTIN="volume nmf50_both"): one per-fold NMF per
+# channel, factors concatenated, the linear counterpart of E6 "both".
+if [ -n "${SECOND_IMAGES:-}" ]; then
+    EXTRA+=(--second-images-dir "$SECOND_IMAGES")
+fi
 
 python scripts/run_giles_replica.py \
     --images-dir "$IMAGES" \

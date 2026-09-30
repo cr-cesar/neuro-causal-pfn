@@ -129,9 +129,40 @@ def _fold_latent_representation(fold_dir, n):
     return _lookup
 
 
+def _second_channel_files(files, second_dir):
+    """The other channel's nifti for every image in ``files``, matched by
+    basename (lesion mask <-> disconnectome map share their file name)."""
+    out = []
+    for path in files:
+        base = os.path.basename(path)
+        cand = os.path.join(second_dir, base)
+        if not os.path.exists(cand):
+            sys.exit(f"--second-images-dir: no file named {base} under {second_dir}")
+        out.append(cand)
+    return out
+
+
 def _built_in_representations(labels_df, files, which, nmf_per_fold=False,
-                              icv_path=None):
+                              icv_path=None, second_files=None):
     reps = {}
+    if "nmf50_both" in which:
+        # linear counterpart of the E6 "both channels concatenated" VAE: one
+        # NMF per channel, each refit on the train side of the fold, and the
+        # two factor sets concatenated (50 + 50). Always per fold.
+        if not second_files:
+            sys.exit("nmf50_both needs --second-images-dir (the other channel, same file names)")
+        X1, X2 = _sparse_voxel_matrix(files), _sparse_voxel_matrix(second_files)
+        k = min(50, len(files) - 1)
+
+        def _refit_both(tr_idx, te_idx, X1=X1, X2=X2, k=k):
+            parts_tr, parts_te = [], []
+            for X in (X1, X2):
+                m = _nmf(min(k, len(tr_idx)))       # nndsvd needs k <= n_train (small cohorts, smokes)
+                parts_tr.append(m.fit_transform(X[tr_idx]))
+                parts_te.append(m.transform(X[te_idx]))
+            return (np.concatenate(parts_tr, axis=1).astype(np.float32),
+                    np.concatenate(parts_te, axis=1).astype(np.float32))
+        reps["nmf50_both_perfold"] = _refit_both
     if "volume" in which:
         v = labels_df["vol"].to_numpy(dtype=float)
         reps["volume"] = (v[:, None] / max(v.max(), 1.0))
@@ -149,7 +180,7 @@ def _built_in_representations(labels_df, files, which, nmf_per_fold=False,
             # the paper's protocol: fit the reduction on the train side of each
             # fold only, transform the held-out side (no anatomy leakage)
             def _refit(tr_idx, te_idx, X=X, k=k):
-                m = _nmf(k)
+                m = _nmf(min(k, len(tr_idx)))
                 Ztr = m.fit_transform(X[tr_idx])
                 return Ztr.astype(np.float32), m.transform(X[te_idx]).astype(np.float32)
             reps["nmf50_perfold"] = _refit
@@ -185,10 +216,14 @@ def main():
                          "per-fold encoders (train_giles_style_vae50.py); "
                          "each dir becomes one representation")
     ap.add_argument("--builtin", nargs="*", default=["volume"],
-                    choices=["volume", "nmf50", "nmf50_nimfa"],
+                    choices=["volume", "nmf50", "nmf50_nimfa", "nmf50_both"],
                     help="reference representations (nmf50_nimfa = Giles' exact "
                          "nimfa NMF: continuous ICV-masked voxels, per-fold fit, "
-                         "pinv projection for test)")
+                         "pinv projection for test; nmf50_both = per-fold NMF on "
+                         "--images-dir and on --second-images-dir, factors concatenated)")
+    ap.add_argument("--second-images-dir", default=None,
+                    help="the other channel (same file names as --images-dir), "
+                         "for nmf50_both")
     ap.add_argument("--nmf-per-fold", action="store_true",
                     help="refit sklearn NMF on each fold's train side only (the "
                          "paper's protocol; nmf50_nimfa is always per-fold)")
@@ -239,9 +274,11 @@ def main():
             if os.path.exists(p):
                 icv_path = p
                 break
+    second_files = (_second_channel_files(files, args.second_images_dir)
+                    if args.second_images_dir else None)
     reps = _built_in_representations(labels, files, args.builtin,
                                      nmf_per_fold=args.nmf_per_fold,
-                                     icv_path=icv_path)
+                                     icv_path=icv_path, second_files=second_files)
     for path in args.latents:
         with np.load(path) as z:
             Z = z["Z"]
