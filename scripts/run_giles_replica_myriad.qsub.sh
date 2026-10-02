@@ -59,6 +59,11 @@ fi
 if [ -n "${SECOND_IMAGES:-}" ]; then
     EXTRA+=(--second-images-dir "$SECOND_IMAGES")
 fi
+# LATENT_PCA=100 reduces wide external embeddings (--latents) with a PCA
+# fitted on the train side of each fold.
+if [ -n "${LATENT_PCA:-}" ]; then
+    EXTRA+=(--latent-pca "$LATENT_PCA")
+fi
 
 python scripts/run_giles_replica.py \
     --images-dir "$IMAGES" \

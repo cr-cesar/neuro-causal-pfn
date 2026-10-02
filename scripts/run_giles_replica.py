@@ -189,6 +189,25 @@ def _built_in_representations(labels_df, files, which, nmf_per_fold=False,
     return reps
 
 
+def pca_per_fold(Z: np.ndarray, k: int):
+    """A per-fold representation: PCA with ``k`` components fitted on the train
+    rows of each fold only, applied to both sides (no test rows in the fit).
+    Standardises each column on the train side first so a few large-scale
+    dimensions do not dominate."""
+    from sklearn.decomposition import PCA
+
+    Z = np.asarray(Z, dtype=np.float32)
+
+    def _refit(tr_idx, te_idx, Z=Z, k=k):
+        mu = Z[tr_idx].mean(axis=0)
+        sd = Z[tr_idx].std(axis=0) + 1e-6
+        p = PCA(n_components=min(k, len(tr_idx) - 1, Z.shape[1]), random_state=0)
+        Ztr = p.fit_transform((Z[tr_idx] - mu) / sd)
+        return Ztr.astype(np.float32), p.transform((Z[te_idx] - mu) / sd).astype(np.float32)
+
+    return _refit
+
+
 def subsample_indices(n_all: int, n_keep: int, seed: int) -> np.ndarray:
     """Sorted random subset of ``n_keep`` positions out of ``n_all`` (fixed seed),
     so images, labels and latent rows stay aligned."""
@@ -211,6 +230,10 @@ def main():
     ap.add_argument("--biastype", default=None, choices=["observed", "unobserved"])
     ap.add_argument("--latents", nargs="*", default=[],
                     help=".npz files with Z aligned to the sorted images")
+    ap.add_argument("--latent-pca", type=int, default=0,
+                    help="reduce every --latents matrix wider than K to K components "
+                         "with a PCA fitted on the train side of each fold (for wide "
+                         "external embeddings, e.g. 4,096 dims)")
     ap.add_argument("--fold-latents", nargs="*", default=[],
                     help="dirs of fold{K}.npz (Ztr/Zte/tr_idx/te_idx) from "
                          "per-fold encoders (train_giles_style_vae50.py); "
@@ -286,6 +309,8 @@ def main():
             Z = Z[sub_idx]                      # latents exported over the full listing
         if len(Z) != len(files):
             sys.exit(f"{path}: Z has {len(Z)} rows but there are {len(files)} images")
+        if args.latent_pca and Z.shape[1] > args.latent_pca:
+            Z = pca_per_fold(Z, args.latent_pca)
         reps[os.path.basename(path)] = Z
     if args.fold_latents and sub_idx is not None:
         sys.exit("--fold-latents and --subsample cannot be combined")
