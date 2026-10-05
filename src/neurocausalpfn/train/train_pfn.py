@@ -98,9 +98,9 @@ def _build_prior(cfg: Dict, seed_offset: int = 0):
     it is built once and reused."""
     p = cfg["pfn"]
     pr = cfg.get("prior", {"kind": "synthetic"})
-    if pr.get("kind") == "intersynth":
+    if pr.get("kind") in ("intersynth", "neuro_prior"):
         from ..prior.atlas import FunctionalAtlas
-        from ..prior.cohort import NeuroPriorInterSynth, build_synthetic_lesion_pool
+        from ..prior.cohort import NeuroPriorCohort, NeuroPriorInterSynth, build_synthetic_lesion_pool
 
         shape = tuple(pr.get("atlas_shape", [48, 56, 48]))
         seed = cfg["seed"] + seed_offset
@@ -108,6 +108,17 @@ def _build_prior(cfg: Dict, seed_offset: int = 0):
         atlas = FunctionalAtlas.from_dir(pr.get("atlas_dir"), shape=shape, seed=seed, modality=modality)
         shape = atlas.shape   # the lesion set must live on the atlas grid
         pool = build_synthetic_lesion_pool(int(pr.get("pool_size", 128)), shape=shape, seed=seed)
+        if pr.get("kind") == "neuro_prior":
+            # Neuro-Prior v1: a hyper-prior over virtual-trial generators
+            # (prior/neuro_prior.py); ranges can be narrowed per curriculum
+            # stage through pr["hyper"] = {"p_te": [lo, hi], ...}.
+            from ..prior.neuro_prior import HyperPrior
+
+            hyper = HyperPrior(**{k: tuple(v) if isinstance(v, list) else v
+                                  for k, v in pr.get("hyper", {}).items()})
+            prior = NeuroPriorCohort(atlas, pool, seed=seed, n_context=p["context_max"],
+                                     n_query=p["n_query"], hyper=hyper)
+            return prior, prior.d_x, True
         prior = NeuroPriorInterSynth(atlas, pool, seed=seed,
                                      n_context=p["context_max"], n_query=p["n_query"],
                                      unobserved_strength=float(pr.get("unobserved_strength", 0.0)))

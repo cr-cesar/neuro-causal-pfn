@@ -110,3 +110,54 @@ class NeuroPriorInterSynth:
         items = [self._one(n_ctx) for _ in range(batch_size)]
         keys = ("Xc", "Tc", "Yc", "Xq", "Tq", "mu_q", "mu0", "mu1")
         return {k: np.stack([it[k] for it in items], axis=0) for k in keys}
+
+
+class NeuroPriorCohort(NeuroPriorInterSynth):
+    """Neuro-Prior v1 cohort: like ``NeuroPriorInterSynth`` but every batch
+    item is a process drawn from the hyper-prior of ``neuro_prior`` (several
+    causal networks, variable threshold, three allocation mechanisms, label
+    noise). Processes with susceptibility-driven allocation are passed to the
+    verifier with the susceptibility as the unobserved variable, so they are
+    rejected unless their strength is negligible."""
+
+    def __init__(self, atlas: FunctionalAtlas, lesion_pool: np.ndarray, seed: int = 0,
+                 z_pool=None, n_context: int = 128, n_query: int = 16, hyper=None,
+                 max_tries: int = 64):
+        super().__init__(atlas, lesion_pool, seed=seed, z_pool=z_pool,
+                         n_context=n_context, n_query=n_query)
+        from .neuro_prior import HyperPrior
+
+        self.hyper = hyper or HyperPrior()
+        self.max_tries = int(max_tries)
+        self.volumes = np.asarray([float(lesion_pool[i].sum()) for i in range(self.m)])
+        self.n_rejected = 0
+
+    def sample_process(self):
+        from .neuro_prior import NeuroPriorDGP
+
+        return NeuroPriorDGP(self.atlas, self.rng, self.hyper)
+
+    def _one(self, n_context: int) -> Dict[str, np.ndarray]:
+        from .neuro_prior import make_prior_dataset
+
+        data = None
+        for _ in range(self.max_tries):
+            dgp = self.sample_process()
+            ci, qi = self._indices(n_context), self._indices(self.n_query)
+            data = make_prior_dataset(dgp, self.overlaps[ci], self.centroids[ci], self.volumes[ci], self.X[ci],
+                                      self.overlaps[qi], self.centroids[qi], self.volumes[qi], self.X[qi], self.rng)
+            U = data["u_ctx"][:, None] if dgp.bias_type == "agnostic" else None
+            if verify_identifiability(data["Tc"], data["Xc"], None, None, U=U):
+                data["process"] = dgp.describe()
+                return data
+            self.n_rejected += 1
+        data["process"] = dgp.describe()
+        return data
+
+    def sample_batch(self, batch_size: int, n_context=None) -> Dict[str, np.ndarray]:
+        n_ctx = self.n_context if n_context is None else int(n_context)
+        items = [self._one(n_ctx) for _ in range(batch_size)]
+        keys = ("Xc", "Tc", "Yc", "Xq", "Tq", "mu_q", "mu0", "mu1")
+        out = {k: np.stack([it[k] for it in items], axis=0) for k in keys}
+        out["processes"] = [it["process"] for it in items]
+        return out
