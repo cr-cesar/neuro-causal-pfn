@@ -246,6 +246,13 @@ The transformer is trained on a process prior, chosen by configuration in
   this distribution (`NeuroPriorDGP.from_giles`), which a test enforces. The
   ranges can be narrowed per curriculum stage with `cfg["prior"]["hyper"]`.
 
+The trained transformer is scored inside the Phase 1 replica with
+`scripts/run_giles_replica.py --pfn-ckpt outputs/<run>/pfn.pt` (`pfn/estimator.py`,
+registered through `giles_replica.register_estimator`): in every fold the train
+slice is the context and the test slice the query set, so the PFN gets the same
+folds, simulated trials and PEHE scale as the logistic regression and extra
+trees, and competes with them in the headline (learner `in_context`).
+
 ## Transformer wiring on real data (run_stage2_real)
 
 `train/run_stage2_real.py` joins the two components on real data: it loads the frozen
