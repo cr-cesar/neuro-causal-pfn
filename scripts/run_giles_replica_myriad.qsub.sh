@@ -34,6 +34,11 @@ EXTRA=()
 if [ -n "${LATENTS:-}" ]; then
     EXTRA+=(--latents ${LATENTS})
 fi
+# LATENTS_ENSEMBLE="E5_lesion_x3=outputs/latents_kch/E5_seed*_lesion.npz" (space-
+# separated NAME=GLOB specs, quote the globs) scores seed ensembles.
+if [ -n "${LATENTS_ENSEMBLE:-}" ]; then
+    EXTRA+=(--latents-ensemble ${LATENTS_ENSEMBLE})
+fi
 if [ -n "${FOLD_LATENTS:-}" ]; then
     EXTRA+=(--fold-latents ${FOLD_LATENTS})
 fi
