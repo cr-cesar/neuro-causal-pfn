@@ -85,6 +85,25 @@ def full_config() -> Dict:
     }
 
 
+def reduced_config() -> Dict:
+    """First real training: fits in 20-40 A100-hours. TabICL encoder, 6 row
+    layers of width 256, context curriculum 256 -> 4,119 (the UCLH cohort),
+    Neuro-Prior v1 on a precomputed anatomy cache (set prior.cache and
+    prior.atlas_dir). d_x comes from the cache."""
+    return {
+        "seed": 0,
+        "out_dir": "outputs/pfn_reduced",
+        "pfn": {"d_x": 50, "d_model": 256, "n_layers": 6, "n_heads": 8,
+                "n_bins": 256, "sigma": 0.02, "arch": "tabicl", "n_col_layers": 2,
+                "n_query": 64, "batch_size": 4, "lr": 2e-4, "weight_decay": 0.01,
+                "grad_clip": 1.0, "iters": 20000, "context_min": 256, "context_max": 4119},
+        "prior": {"kind": "neuro_prior", "cache": None, "atlas_dir": str(ATLAS_DIR), "augment": True},
+        "device": "auto",
+        "amp": True,
+        "log_every": 100,
+    }
+
+
 def _context_length(cfg: Dict, it: int) -> int:
     """Linear context-length curriculum from shorter to longer."""
     p = cfg["pfn"]
@@ -107,7 +126,7 @@ def _build_prior(cfg: Dict, seed_offset: int = 0):
         modality = pr.get("modality", "receptor")
         atlas = FunctionalAtlas.from_dir(pr.get("atlas_dir"), shape=shape, seed=seed, modality=modality)
         shape = atlas.shape   # the lesion set must live on the atlas grid
-        pool = build_synthetic_lesion_pool(int(pr.get("pool_size", 128)), shape=shape, seed=seed)
+        pool = None if pr.get("cache") else build_synthetic_lesion_pool(int(pr.get("pool_size", 128)), shape=shape, seed=seed)
         if pr.get("kind") == "neuro_prior":
             # Neuro-Prior v1: a hyper-prior over virtual-trial generators
             # (prior/neuro_prior.py); ranges can be narrowed per curriculum
@@ -116,8 +135,13 @@ def _build_prior(cfg: Dict, seed_offset: int = 0):
 
             hyper = HyperPrior(**{k: tuple(v) if isinstance(v, list) else v
                                   for k, v in pr.get("hyper", {}).items()})
-            prior = NeuroPriorCohort(atlas, pool, seed=seed, n_context=p["context_max"],
-                                     n_query=p["n_query"], hyper=hyper)
+            kw = dict(seed=seed, n_context=p["context_max"], n_query=p["n_query"], hyper=hyper,
+                      augment=bool(pr.get("augment", True)))
+            if pr.get("cache"):
+                # real anatomy and latents, precomputed by scripts/build_prior_cache.py
+                prior = NeuroPriorCohort.from_cache(atlas, pr["cache"], **kw)
+            else:
+                prior = NeuroPriorCohort(atlas, pool, **kw)
             return prior, prior.d_x, True
         prior = NeuroPriorInterSynth(atlas, pool, seed=seed,
                                      n_context=p["context_max"], n_query=p["n_query"],

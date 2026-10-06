@@ -21,7 +21,7 @@ import numpy as np
 
 class PFNEstimator:
     def __init__(self, ckpt_path: str, device: Optional[str] = None,
-                 standardize: bool = False, max_queries: int = 512):
+                 standardize: Optional[bool] = None, max_queries: int = 512):
         import torch
 
         from ..train.train_pfn import build_model
@@ -29,15 +29,20 @@ class PFNEstimator:
         ckpt = torch.load(ckpt_path, map_location="cpu")
         self.cfg: Dict = ckpt["cfg"]
         state = ckpt["state_dict"]
-        # d_x is recovered from the context embedding of the saved weights
-        w = state.get("ctx_emb.weight")
-        if w is None:                                   # TabICL variant
-            w = next(v for k, v in state.items() if k.endswith("ctx_emb.weight"))
-        self.d_x = int(w.shape[1]) - 2
+        # d_x is recovered from the saved weights: the context embedding of the
+        # linear model (d_x + 2 inputs) or the column table of the TabICL one
+        if "ctx_emb.weight" in state:
+            self.d_x = int(state["ctx_emb.weight"].shape[1]) - 2
+        else:
+            self.d_x = int(state["col_embed"].shape[0]) - 2
         self.model = build_model(self.cfg, self.d_x)
         self.model.load_state_dict(state)
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device).eval()
+        # a prior trained with coordinate-free augmentation standardised its
+        # pool, so the context is standardised the same way unless overridden
+        if standardize is None:
+            standardize = bool(self.cfg.get("prior", {}).get("augment", False))
         self.standardize = bool(standardize)
         self.max_queries = int(max_queries)
         self.name = "pfn"

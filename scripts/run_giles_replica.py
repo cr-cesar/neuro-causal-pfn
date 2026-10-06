@@ -257,8 +257,9 @@ def main():
                     help="checkpoint of a trained Neuro-Causal-PFN (train_pfn, pfn.pt): scored "
                          "in context as a further estimator next to logistic regression and "
                          "extra trees, on the same folds and simulated trials")
-    ap.add_argument("--pfn-standardize", action="store_true",
-                    help="standardise the latents with the context statistics before the PFN")
+    ap.add_argument("--pfn-standardize", default=None, choices=["on", "off"],
+                    help="standardise the latents with the context statistics before the PFN "
+                         "(default: what the checkpoint's prior did)")
     ap.add_argument("--only-pfn", action="store_true",
                     help="score only the PFN (skip the sklearn classifiers)")
     ap.add_argument("--folds", type=int, default=10)
@@ -340,7 +341,7 @@ def main():
     if args.pfn_ckpt:
         from neurocausalpfn.pfn.estimator import PFNEstimator
 
-        est = PFNEstimator(args.pfn_ckpt, standardize=args.pfn_standardize)
+        est = PFNEstimator(args.pfn_ckpt, standardize=None if args.pfn_standardize is None else args.pfn_standardize == "on")
         gr.register_estimator("pfn", est)
         classifiers = ["pfn"] if args.only_pfn else classifiers + ["pfn"]
         print(f"PFN estimator: {args.pfn_ckpt} (d_x {est.d_x}, device {est.device})")

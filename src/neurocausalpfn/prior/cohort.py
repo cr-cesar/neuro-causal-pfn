@@ -5,7 +5,7 @@ identifiability verifier and stacks contexts and queries into batches to train
 the transformer. Returns numpy arrays; the conversion to tensors is done in the
 model layer so that this module does not depend on torch.
 """
-from typing import Dict, Sequence
+from typing import Dict, Optional, Sequence
 
 import numpy as np
 
@@ -120,17 +120,59 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
     verifier with the susceptibility as the unobserved variable, so they are
     rejected unless their strength is negligible."""
 
-    def __init__(self, atlas: FunctionalAtlas, lesion_pool: np.ndarray, seed: int = 0,
+    def __init__(self, atlas: FunctionalAtlas, lesion_pool: Optional[np.ndarray], seed: int = 0,
                  z_pool=None, n_context: int = 128, n_query: int = 16, hyper=None,
-                 max_tries: int = 64):
-        super().__init__(atlas, lesion_pool, seed=seed, z_pool=z_pool,
-                         n_context=n_context, n_query=n_query)
+                 max_tries: int = 64, augment: bool = True, cache: Optional[Dict] = None):
         from .neuro_prior import HyperPrior
 
+        if cache is None:
+            super().__init__(atlas, lesion_pool, seed=seed, z_pool=z_pool,
+                             n_context=n_context, n_query=n_query)
+            self.volumes = np.asarray([float(lesion_pool[i].sum()) for i in range(self.m)])
+        else:
+            # precomputed anatomy (scripts/build_prior_cache.py): no masks in memory
+            self.atlas = atlas
+            self.rng = np.random.default_rng(seed)
+            self.n_context, self.n_query = int(n_context), int(n_query)
+            self.unobserved_strength = 0.0
+            self.overlaps = np.asarray(cache["overlaps"], dtype=np.float32)
+            self.centroids = np.asarray(cache["centroids"], dtype=np.float32)
+            self.volumes = np.asarray(cache["volumes"], dtype=np.float64)
+            self.m = len(self.overlaps)
+            if z_pool is None and "Z" in cache:
+                z_pool = cache["Z"]
+            if z_pool is not None:
+                self.X = np.asarray(z_pool, dtype=np.float64)
+            else:
+                geo = self.centroids / np.array(atlas.shape, dtype=np.float64)
+                self.X = np.concatenate([self.overlaps.reshape(self.m, -1), geo], axis=1)
+            self.d_x = int(self.X.shape[1])
+            if len(self.X) != self.m or self.overlaps.shape[1:] != (atlas.n_networks, 2):
+                raise ValueError("prior cache does not match the atlas or the latent pool")
         self.hyper = hyper or HyperPrior()
         self.max_tries = int(max_tries)
-        self.volumes = np.asarray([float(lesion_pool[i].sum()) for i in range(self.m)])
         self.n_rejected = 0
+        # Coordinate-free covariates: the per-fold encoders (and external
+        # cohorts) each have their own latent basis, so the transformer must
+        # not learn one. The pool is standardised once and every process
+        # applies its own random orthogonal rotation to context and queries;
+        # at scoring time PFNEstimator standardises with the context statistics.
+        self.augment = bool(augment)
+        if self.augment:
+            mu, sd = self.X.mean(0, keepdims=True), self.X.std(0, keepdims=True) + 1e-6
+            self.X = (self.X - mu) / sd
+
+    @classmethod
+    def from_cache(cls, atlas: FunctionalAtlas, cache_path: str, **kw):
+        """Cohort from an npz written by scripts/build_prior_cache.py (keys
+        overlaps, centroids, volumes, optional Z and files)."""
+        with np.load(cache_path, allow_pickle=True) as z:
+            cache = {k: z[k] for k in z.files}
+        return cls(atlas, None, cache=cache, **kw)
+
+    def _rotation(self) -> np.ndarray:
+        q, r = np.linalg.qr(self.rng.normal(size=(self.d_x, self.d_x)))
+        return q * np.sign(np.diag(r))[None, :]
 
     def sample_process(self):
         from .neuro_prior import NeuroPriorDGP
@@ -144,8 +186,11 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
         for _ in range(self.max_tries):
             dgp = self.sample_process()
             ci, qi = self._indices(n_context), self._indices(self.n_query)
-            data = make_prior_dataset(dgp, self.overlaps[ci], self.centroids[ci], self.volumes[ci], self.X[ci],
-                                      self.overlaps[qi], self.centroids[qi], self.volumes[qi], self.X[qi], self.rng)
+            Xc, Xq = self.X[ci], self.X[qi]
+            if self.augment:
+                R = self._rotation(); Xc, Xq = Xc @ R, Xq @ R
+            data = make_prior_dataset(dgp, self.overlaps[ci], self.centroids[ci], self.volumes[ci], Xc,
+                                      self.overlaps[qi], self.centroids[qi], self.volumes[qi], Xq, self.rng)
             U = data["u_ctx"][:, None] if dgp.bias_type == "agnostic" else None
             if verify_identifiability(data["Tc"], data["Xc"], None, None, U=U):
                 data["process"] = dgp.describe()

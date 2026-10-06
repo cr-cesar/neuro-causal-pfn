@@ -64,6 +64,12 @@ fi
 if [ -n "${LATENT_PCA:-}" ]; then
     EXTRA+=(--latent-pca "$LATENT_PCA")
 fi
+# PFN_CKPT=outputs/<run>/pfn.pt scores the trained transformer in context on
+# the same folds, next to the sklearn classifiers (ONLY_PFN=1 to skip them).
+if [ -n "${PFN_CKPT:-}" ]; then
+    EXTRA+=(--pfn-ckpt "$PFN_CKPT")
+    if [ -n "${ONLY_PFN:-}" ]; then EXTRA+=(--only-pfn); fi
+fi
 
 python scripts/run_giles_replica.py \
     --images-dir "$IMAGES" \
