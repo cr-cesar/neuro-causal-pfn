@@ -189,6 +189,25 @@ def _built_in_representations(labels_df, files, which, nmf_per_fold=False,
     return reps
 
 
+def ensemble_latents(paths, n_files: int, sub_idx=None, n_all: int = None) -> np.ndarray:
+    """Seed ensemble of a frozen encoder: the latents of several checkpoints
+    concatenated column-wise (each VAE has its own basis, so averaging across
+    seeds would be meaningless; concatenation keeps every seed's geometry and
+    the estimator weighs them). Rows are checked against the image listing."""
+    mats = []
+    for path in paths:
+        with np.load(path) as z:
+            Z = np.asarray(z["Z"], dtype=np.float32)
+        if sub_idx is not None and n_all is not None and len(Z) == n_all:
+            Z = Z[sub_idx]
+        if len(Z) != n_files:
+            sys.exit(f"{path}: Z has {len(Z)} rows but there are {n_files} images")
+        mats.append(Z)
+    if not mats:
+        sys.exit("ensemble without members")
+    return np.concatenate(mats, axis=1)
+
+
 def pca_per_fold(Z: np.ndarray, k: int):
     """A per-fold representation: PCA with ``k`` components fitted on the train
     rows of each fold only, applied to both sides (no test rows in the fit).
@@ -234,6 +253,11 @@ def main():
                     help="reduce every --latents matrix wider than K to K components "
                          "with a PCA fitted on the train side of each fold (for wide "
                          "external embeddings, e.g. 4,096 dims)")
+    ap.add_argument("--latents-ensemble", nargs="*", default=[], metavar="NAME=GLOB",
+                    help="seed ensembles: NAME=glob of .npz files whose Z are concatenated "
+                         "column-wise into one representation NAME (e.g. "
+                         "E5_lesion_x3='outputs/latents_kch/E5_seed*_lesion.npz'); "
+                         "--latent-pca applies to the result")
     ap.add_argument("--fold-latents", nargs="*", default=[],
                     help="dirs of fold{K}.npz (Ztr/Zte/tr_idx/te_idx) from "
                          "per-fold encoders (train_giles_style_vae50.py); "
@@ -325,6 +349,16 @@ def main():
         if args.latent_pca and Z.shape[1] > args.latent_pca:
             Z = pca_per_fold(Z, args.latent_pca)
         reps[os.path.basename(path)] = Z
+    for spec in args.latents_ensemble:
+        name, _, pattern = spec.partition("=")
+        members = sorted(glob.glob(pattern)) if pattern else []
+        if not name or len(members) < 2:
+            sys.exit(f"--latents-ensemble {spec!r}: need NAME=GLOB matching at least two files")
+        Z = ensemble_latents(members, len(files), sub_idx, n_all)
+        print(f"ensemble {name}: {len(members)} members, {Z.shape[1]} dims")
+        if args.latent_pca and Z.shape[1] > args.latent_pca:
+            Z = pca_per_fold(Z, args.latent_pca)
+        reps[name] = Z
     if args.fold_latents and sub_idx is not None:
         sys.exit("--fold-latents and --subsample cannot be combined")
     for d in args.fold_latents:

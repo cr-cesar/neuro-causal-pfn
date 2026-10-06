@@ -56,3 +56,17 @@ def test_pca_per_fold_fits_on_train_rows_only():
     Z2 = Z.copy(); Z2[te] = rng.normal(size=(15, 40))
     Ztr2, _ = rep.pca_per_fold(Z2, 5)(tr, te)
     assert np.allclose(Ztr, Ztr2)
+
+
+def test_ensemble_latents_concatenates_members_and_checks_rows(tmp_path):
+    rep = _load("run_giles_replica")
+    rng = np.random.default_rng(0)
+    a, b = rng.normal(size=(20, 5)).astype(np.float32), rng.normal(size=(20, 7)).astype(np.float32)
+    np.savez(tmp_path / "s0.npz", Z=a); np.savez(tmp_path / "s1.npz", Z=b)
+    Z = rep.ensemble_latents([str(tmp_path / "s0.npz"), str(tmp_path / "s1.npz")], 20)
+    assert Z.shape == (20, 12) and np.allclose(Z[:, :5], a) and np.allclose(Z[:, 5:], b)
+    # a full-listing export is subset like --latents
+    Zs = rep.ensemble_latents([str(tmp_path / "s0.npz")], 4, sub_idx=np.array([0, 2, 4, 6]), n_all=20)
+    assert np.allclose(Zs, a[[0, 2, 4, 6]])
+    with pytest.raises(SystemExit):
+        rep.ensemble_latents([str(tmp_path / "s0.npz")], 19)
