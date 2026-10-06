@@ -6,6 +6,7 @@
 #   bash scripts/myriad_phase1b.sh setup      # causalpfn + faiss, pretrained weights, pull both repos
 #   bash scripts/myriad_phase1b.sh t4         # Tier 4 of the design: off-the-shelf CausalPFN on the per-fold latents of E1/E5 (CPU)
 #   bash scripts/myriad_phase1b.sh ensemble E1 E5   # seed ensemble (3 seeds concatenated fold by fold) of finished per-fold reps, LR/ET + CausalPFN
+#   bash scripts/myriad_phase1b.sh repair            # resubmit published-budget folds that died (time limit after a slow start) + their scoring
 #   bash scripts/myriad_phase1b.sh perfold E1 E3 E11b    # published-budget (32-epoch) per-fold training into PUB_ROOT, independent jobs, scoring chained
 #   bash scripts/myriad_phase1b.sh clinical <cohort.csv> <id-col> <images-dir> "<latents glob>" "<outcome specs>" "<covariates>" <vol-col> [regress cols]
 #   bash scripts/myriad_phase1b.sh status     # queue by state and block, latest leaderboards
@@ -113,6 +114,40 @@ PY
       echo "$eid run$run seed$seed: folds ${HOLD[$key]} -> scoring $sj"
     done
     rm -f /tmp/perfold_submit_$$.sh
+    ;;
+
+  repair)
+    # resubmit the published-budget folds that died (a job killed at its time
+    # limit after a slow start leaves no fold<k>.npz) with a 3 h limit, and
+    # hold a fresh scoring job on them. Only tasks that are neither queued nor
+    # running are resubmitted, so it is safe to run at any time. The queued
+    # jobs cannot be altered (Myriad's JSV rejects qalter -l), hence the repair.
+    activate
+    cd "$PERFOLD"
+    plan=$(python -m ncpfold.plan --eids ${*:-E1 E3 E11b} --seeds "$SEEDS" --budget published --emit-qsub --independent \
+           --h-rt 3:0:0 --groups "$PF_GROUPS" --out-root "$PUB_ROOT")
+    queued=$(qstat 2>/dev/null | awk 'NR>2 {print $3}')
+    for d in "$PUB_ROOT"/E*/*/seed*/folds; do
+      [ -d "$d" ] || continue
+      rel=${d#$PUB_ROOT/}; eid=${rel%%/*}
+      label=$(basename "$(dirname "$(dirname "$d")")"); seed=${d%/folds}; seed=${seed##*/seed}
+      hold=""
+      for k in $(seq 1 10); do
+        [ -f "$d/fold$((k - 1)).npz" ] && continue
+        line=$(printf '%s\n' "$plan" | grep -F -- "EID=$eid," | grep -F -- "SEED=$seed," | grep -F -- " -t $k " | grep -F -- "# $label")
+        [ -n "$line" ] || { echo "no plan line for $eid $label seed$seed task $k"; continue; }
+        name=$(echo "$line" | sed -E 's/.*-N ([^ ]+).*/\1/')
+        if printf '%s\n' "$queued" | grep -qx "$name"; then continue; fi    # still queued or running
+        jid=$(eval "$line" | cut -d. -f1)
+        echo "$eid $label seed$seed fold$((k - 1)): resubmitted as $jid (3 h limit)"
+        hold="${hold:+$hold,}$jid"
+      done
+      if [ -n "$hold" ]; then
+        sj=$(qsub -terse -N sc-${eid,,}s$seed-r -hold_jid "$hold" -l h_rt=3:0:0 \
+             -v REPS="$d",GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,WITH_VOLUME=1,OUT=$PUB_ROOT qsub/perfold_score.qsub.sh)
+        echo "  scoring $sj held on $hold"
+      fi
+    done
     ;;
 
   clinical)
