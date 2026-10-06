@@ -32,5 +32,7 @@ lesion_info*.csv
 participants*.csv
 participants*.tsv
 external_screen*.csv
+
+# local agent context and permissions: never in the repository
 CLAUDE.local.md
 .claude/settings.local.json

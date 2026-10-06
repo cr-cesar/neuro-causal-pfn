@@ -105,7 +105,7 @@ def _fold_latent_representation(fold_dir, n):
     """Per-fold latents saved by train_giles_style_vae50.py, matched to the
     replica's folds by their test indices (never by call order)."""
     by_key = {}
-    for path in sorted(glob.glob(os.path.join(fold_dir, "fold*.npz"))):
+    for path in sorted(glob.glob(os.path.join(glob.escape(fold_dir), "fold*.npz"))):
         with np.load(path, allow_pickle=False) as z:
             tr, te = z["tr_idx"], z["te_idx"]
             if len(tr) + len(te) != n:
@@ -312,7 +312,7 @@ def main():
         if val is not None:
             scenario[key] = val
 
-    files = sorted(glob.glob(os.path.join(args.images_dir, "*.nii*")))
+    files = sorted(glob.glob(os.path.join(glob.escape(args.images_dir), "*.nii*")))
     if args.limit:
         files = files[:args.limit]
     if not files:
