@@ -32,3 +32,5 @@ lesion_info*.csv
 participants*.csv
 participants*.tsv
 external_screen*.csv
+CLAUDE.local.md
+.claude/settings.local.json
