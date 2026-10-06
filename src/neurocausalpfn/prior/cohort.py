@@ -113,17 +113,34 @@ class NeuroPriorInterSynth:
 
 
 class NeuroPriorCohort(NeuroPriorInterSynth):
-    """Neuro-Prior v1 cohort: like ``NeuroPriorInterSynth`` but every batch
-    item is a process drawn from the hyper-prior of ``neuro_prior`` (several
-    causal networks, variable threshold, three allocation mechanisms, label
-    noise). Processes with susceptibility-driven allocation are passed to the
-    verifier with the susceptibility as the unobserved variable, so they are
-    rejected unless their strength is negligible."""
+    """Neuro-Prior cohort: like ``NeuroPriorInterSynth`` but every batch item
+    is a process drawn from a hyper-prior. Two families share the same
+    anatomy cache and latent pool:
+
+    * ``family="theory"`` (default): the design's InterSynth, disruption and
+      susceptibility scores D and S, outcomes (1 - D) + alpha D and
+      + beta S D, four allocation mechanisms of strength gamma
+      (``intersynth_theory``); ignorable by construction.
+    * ``family="giles"``: the v1 distribution over virtual-trial generators of
+      the reference paper (``neuro_prior``: causal networks, threshold, TE,
+      RE, three allocation mechanisms, label noise). Processes with
+      susceptibility-driven allocation go to the verifier with the
+      susceptibility as the unobserved variable and are rejected unless their
+      strength is negligible.
+
+    ``hyper`` is a ``TheoryHyperPrior`` or a ``HyperPrior`` matching the
+    family (None gives the family's defaults)."""
 
     def __init__(self, atlas: FunctionalAtlas, lesion_pool: Optional[np.ndarray], seed: int = 0,
                  z_pool=None, n_context: int = 128, n_query: int = 16, hyper=None,
-                 max_tries: int = 64, augment: bool = True, cache: Optional[Dict] = None):
+                 max_tries: int = 64, augment: bool = True, cache: Optional[Dict] = None,
+                 family: str = "theory"):
+        from .intersynth_theory import TheoryHyperPrior
         from .neuro_prior import HyperPrior
+
+        if family not in ("theory", "giles"):
+            raise ValueError(f"unknown prior family {family!r}")
+        self.family = family
 
         if cache is None:
             super().__init__(atlas, lesion_pool, seed=seed, z_pool=z_pool,
@@ -149,7 +166,7 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
             self.d_x = int(self.X.shape[1])
             if len(self.X) != self.m or self.overlaps.shape[1:] != (atlas.n_networks, 2):
                 raise ValueError("prior cache does not match the atlas or the latent pool")
-        self.hyper = hyper or HyperPrior()
+        self.hyper = hyper or (TheoryHyperPrior() if family == "theory" else HyperPrior())
         self.max_tries = int(max_tries)
         self.n_rejected = 0
         # Coordinate-free covariates: the per-fold encoders (and external
@@ -175,11 +192,18 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
         return q * np.sign(np.diag(r))[None, :]
 
     def sample_process(self):
+        if self.family == "theory":
+            from .intersynth_theory import InterSynthTheoryDGP
+
+            # the D and S scales are fixed on the whole pool, so the ground
+            # truth of a process does not depend on the batch it is sampled in
+            return InterSynthTheoryDGP(self.atlas, self.rng, self.hyper).calibrate(self.overlaps)
         from .neuro_prior import NeuroPriorDGP
 
         return NeuroPriorDGP(self.atlas, self.rng, self.hyper)
 
     def _one(self, n_context: int) -> Dict[str, np.ndarray]:
+        from .intersynth_theory import make_theory_dataset
         from .neuro_prior import make_prior_dataset
 
         data = None
@@ -189,9 +213,14 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
             Xc, Xq = self.X[ci], self.X[qi]
             if self.augment:
                 R = self._rotation(); Xc, Xq = Xc @ R, Xq @ R
-            data = make_prior_dataset(dgp, self.overlaps[ci], self.centroids[ci], self.volumes[ci], Xc,
-                                      self.overlaps[qi], self.centroids[qi], self.volumes[qi], Xq, self.rng)
-            U = data["u_ctx"][:, None] if dgp.bias_type == "agnostic" else None
+            if self.family == "theory":
+                data = make_theory_dataset(dgp, self.overlaps[ci], self.centroids[ci], Xc,
+                                           self.overlaps[qi], self.centroids[qi], Xq, self.rng)
+                U = None
+            else:
+                data = make_prior_dataset(dgp, self.overlaps[ci], self.centroids[ci], self.volumes[ci], Xc,
+                                          self.overlaps[qi], self.centroids[qi], self.volumes[qi], Xq, self.rng)
+                U = data["u_ctx"][:, None] if dgp.bias_type == "agnostic" else None
             if verify_identifiability(data["Tc"], data["Xc"], None, None, U=U):
                 data["process"] = dgp.describe()
                 return data

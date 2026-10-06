@@ -97,7 +97,8 @@ def reduced_config() -> Dict:
                 "n_bins": 256, "sigma": 0.02, "arch": "tabicl", "n_col_layers": 2,
                 "n_query": 64, "batch_size": 4, "lr": 2e-4, "weight_decay": 0.01,
                 "grad_clip": 1.0, "iters": 20000, "context_min": 256, "context_max": 4119},
-        "prior": {"kind": "neuro_prior", "cache": None, "atlas_dir": str(ATLAS_DIR), "augment": True},
+        "prior": {"kind": "neuro_prior", "family": "theory", "cache": None, "atlas_dir": str(ATLAS_DIR),
+                  "augment": True},
         "device": "auto",
         "amp": True,
         "log_every": 100,
@@ -128,15 +129,21 @@ def _build_prior(cfg: Dict, seed_offset: int = 0):
         shape = atlas.shape   # the lesion set must live on the atlas grid
         pool = None if pr.get("cache") else build_synthetic_lesion_pool(int(pr.get("pool_size", 128)), shape=shape, seed=seed)
         if pr.get("kind") == "neuro_prior":
-            # Neuro-Prior v1: a hyper-prior over virtual-trial generators
-            # (prior/neuro_prior.py); ranges can be narrowed per curriculum
-            # stage through pr["hyper"] = {"p_te": [lo, hi], ...}.
-            from ..prior.neuro_prior import HyperPrior
-
-            hyper = HyperPrior(**{k: tuple(v) if isinstance(v, list) else v
-                                  for k, v in pr.get("hyper", {}).items()})
+            # Neuro-Prior: a hyper-prior over processes on the anatomy cache.
+            # family "theory" (default) is the design's InterSynth (D, S,
+            # alpha, beta, gamma, four mechanisms; prior/intersynth_theory.py);
+            # family "giles" the v1 virtual-trial generators (prior/neuro_prior.py).
+            # Ranges can be narrowed per curriculum stage through
+            # pr["hyper"] = {"gamma": [0, 0.3], "beta": [0.2, 0.4], ...}.
+            family = pr.get("family", "theory")
+            if family == "theory":
+                from ..prior.intersynth_theory import TheoryHyperPrior as _Hyper
+            else:
+                from ..prior.neuro_prior import HyperPrior as _Hyper
+            hyper = _Hyper(**{k: tuple(v) if isinstance(v, list) else v
+                              for k, v in pr.get("hyper", {}).items()})
             kw = dict(seed=seed, n_context=p["context_max"], n_query=p["n_query"], hyper=hyper,
-                      augment=bool(pr.get("augment", True)))
+                      augment=bool(pr.get("augment", True)), family=family)
             if pr.get("cache"):
                 # real anatomy and latents, precomputed by scripts/build_prior_cache.py
                 prior = NeuroPriorCohort.from_cache(atlas, pr["cache"], **kw)

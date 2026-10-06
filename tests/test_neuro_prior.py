@@ -130,7 +130,7 @@ def test_outcomes_follow_te_and_re_in_expectation(atlas, pool):
 
 
 def test_cohort_batches_are_identifiable_and_agnostic_bias_is_rejected(atlas, pool):
-    prior = NeuroPriorCohort(atlas, pool, seed=5, n_context=96, n_query=8)
+    prior = NeuroPriorCohort(atlas, pool, family="giles", seed=5, n_context=96, n_query=8)
     batch = prior.sample_batch(4, n_context=96)
     assert batch["Xc"].shape == (4, 96, prior.d_x) and batch["mu_q"].shape == (4, 8)
     assert ((batch["Yc"] == 0) | (batch["Yc"] == 1)).all()
@@ -155,7 +155,7 @@ def test_cohort_batches_are_identifiable_and_agnostic_bias_is_rejected(atlas, po
 
 
 def test_hyper_prior_can_be_narrowed_for_a_curriculum_stage(atlas, pool):
-    prior = NeuroPriorCohort(atlas, pool, seed=9, n_context=64, n_query=4,
+    prior = NeuroPriorCohort(atlas, pool, family="giles", seed=9, n_context=64, n_query=4,
                              hyper=HyperPrior(p_te=(0.9, 1.0), p_re=(0.0, 0.0), bias=(0.0, 0.0),
                                               bias_types=("axis",), bias_weights=(1.0,), label_noise=(0.0, 0.0)))
     b = prior.sample_batch(3, n_context=64)
@@ -164,7 +164,7 @@ def test_hyper_prior_can_be_narrowed_for_a_curriculum_stage(atlas, pool):
 
 
 def test_augmentation_is_a_rotation_of_the_standardised_pool(atlas, pool):
-    prior = NeuroPriorCohort(atlas, pool, seed=11, n_context=40, n_query=6, augment=True)
+    prior = NeuroPriorCohort(atlas, pool, family="giles", seed=11, n_context=40, n_query=6, augment=True)
     assert np.allclose(prior.X.mean(0), 0, atol=1e-6) and np.allclose(prior.X.std(0), 1, atol=1e-3)
     R = prior._rotation()
     assert np.allclose(R @ R.T, np.eye(prior.d_x), atol=1e-6)
@@ -176,23 +176,23 @@ def test_augmentation_is_a_rotation_of_the_standardised_pool(atlas, pool):
     norms_ctx = np.linalg.norm(Xc, axis=1)
     assert all(np.min(np.abs(norms_pool - v)) < 1e-4 for v in norms_ctx)   # norms preserved
     assert D.shape == (40, 40) and np.allclose(D, D.T)
-    raw = NeuroPriorCohort(atlas, pool, seed=11, n_context=40, n_query=6, augment=False)
+    raw = NeuroPriorCohort(atlas, pool, family="giles", seed=11, n_context=40, n_query=6, augment=False)
     assert not np.allclose(raw.X.mean(0), 0)
 
 
 def test_from_cache_matches_the_in_memory_cohort(atlas, pool, tmp_path):
     from neurocausalpfn.prior.intersynth_atlas import compute_overlaps
-    mem = NeuroPriorCohort(atlas, pool, seed=2, n_context=32, n_query=4, augment=False)
+    mem = NeuroPriorCohort(atlas, pool, family="giles", seed=2, n_context=32, n_query=4, augment=False)
     Z = np.random.default_rng(0).normal(size=(len(pool), 7)).astype(np.float32)
     path = tmp_path / "cache.npz"
     np.savez(path, overlaps=np.stack([compute_overlaps(atlas, m) for m in pool]),
              centroids=mem.centroids, volumes=mem.volumes, Z=Z,
              files=np.array([f"l{i}.nii.gz" for i in range(len(pool))]))
-    cached = NeuroPriorCohort.from_cache(atlas, str(path), seed=2, n_context=32, n_query=4, augment=False)
+    cached = NeuroPriorCohort.from_cache(atlas, str(path), family="giles", seed=2, n_context=32, n_query=4, augment=False)
     assert cached.m == mem.m and cached.d_x == 7
     assert np.allclose(cached.overlaps, mem.overlaps) and np.allclose(cached.volumes, mem.volumes)
     b = cached.sample_batch(2, n_context=32)
     assert b["Xc"].shape == (2, 32, 7)
     with pytest.raises(ValueError):
         np.savez(tmp_path / "bad.npz", overlaps=mem.overlaps[:5], centroids=mem.centroids, volumes=mem.volumes)
-        NeuroPriorCohort.from_cache(atlas, str(tmp_path / "bad.npz"))
+        NeuroPriorCohort.from_cache(atlas, str(tmp_path / "bad.npz"), family="giles")
