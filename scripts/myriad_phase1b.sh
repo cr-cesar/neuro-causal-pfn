@@ -29,7 +29,15 @@ case "$cmd" in
     activate
     (cd "$MAIN" && git pull -q origin main && pip install -q -e . >/dev/null)
     (cd "$PERFOLD" && git pull -q origin main)
-    pip install -q "causalpfn==0.1.4" faiss-cpu
+    # faiss must come as a wheel: the source build needs a C++17 compiler and
+    # fails with Myriad's icc 18. Newer wheels need a newer glibc than the
+    # login nodes have, so try from newest to oldest.
+    pip install -q --only-binary=:all: "faiss-cpu==1.9.0.post1" \
+      || pip install -q --only-binary=:all: "faiss-cpu==1.8.0.post1" \
+      || pip install -q --only-binary=:all: "faiss-cpu==1.7.4"
+    pip install -q --no-deps "causalpfn==0.1.4"
+    pip install -q --only-binary=:all: huggingface_hub tqdm
+    python -c "import faiss, causalpfn; print('faiss', faiss.__version__)"
     python - <<'PY'
 from causalpfn import CATEEstimator
 CATEEstimator("cpu").load_model()
