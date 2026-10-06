@@ -37,6 +37,10 @@ def test_item_total_is_nan_when_an_item_is_missing():
     df.iloc[1, 0] = 0
     t = p.item_total(df, "S2NihssArrival")
     assert t.iloc[0] == 15 and t.iloc[1] == 28 and np.isnan(t.iloc[2])
+    df2 = pd.DataFrame({f"S2NihssArrival{k}": [1, 1, 1] for k in range(15)})
+    df2.iloc[1, 3] = -1; df2.iloc[2, 5] = 9          # missing / untestable codes
+    t2 = p.item_total(df2, "S2NihssArrival")
+    assert t2.iloc[0] == 15 and np.isnan(t2.iloc[1]) and np.isnan(t2.iloc[2])
 
 
 def test_diagnose_prints_shapes_not_ids(capsys):

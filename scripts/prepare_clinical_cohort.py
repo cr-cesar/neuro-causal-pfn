@@ -108,6 +108,13 @@ def item_total(df: pd.DataFrame, prefix: str, n_expected: int = 15) -> pd.Series
     if len(cols) != n_expected:
         print(f"warning: {len(cols)} item columns with prefix {prefix!r} (expected {n_expected})")
     vals = df[cols].apply(pd.to_numeric, errors="coerce")
+    # item scores live in 0..4; negative or larger values are missing /
+    # untestable codes and make the total undefined for that row
+    bad = (vals < 0) | (vals > 4)
+    n_bad = int(bad.any(axis=1).sum())
+    if n_bad:
+        print(f"{n_bad} rows have an item outside 0..4 (missing or untestable code): total set to NaN")
+    vals = vals.mask(bad)
     total = vals.sum(axis=1, min_count=len(cols))
     return total.where(vals.notna().all(axis=1))
 
