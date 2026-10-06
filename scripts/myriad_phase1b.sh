@@ -146,6 +146,18 @@ PY
         sj=$(qsub -terse -N sc-${eid,,}s$seed-r -hold_jid "$hold" -l h_rt=3:0:0 \
              -v REPS="$d",GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,WITH_VOLUME=1,OUT=$PUB_ROOT qsub/perfold_score.qsub.sh)
         echo "  scoring $sj held on $hold"
+        continue
+      fi
+      # all ten folds present but no headline and no scoring queued: the
+      # chained scoring failed (or was never submitted) -> score now
+      headline="$PUB_ROOT/replica/$eid/${label//\//_}/seed$seed/primary-singles/replica_headline.csv"
+      n_npz=$(ls "$d"/fold*.npz 2>/dev/null | wc -l)
+      if [ "$n_npz" -eq 10 ] && [ ! -f "$headline" ]; then
+        run_name=$(printf '%s\n' "$plan" | grep -F -- "EID=$eid," | grep -F -- "SEED=$seed," | grep -F -- " -t 1 " | grep -F -- "# $label" | sed -E 's/.*-N ([^ ]+)f1 .*/\1/')
+        if printf '%s\n' "$queued" | grep -qx "sc-$run_name" || printf '%s\n' "$queued" | grep -qx "sc-${eid,,}s$seed-r"; then continue; fi
+        sj=$(qsub -terse -N sc-${eid,,}s$seed-r -l h_rt=3:0:0 \
+             -v REPS="$d",GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,WITH_VOLUME=1,OUT=$PUB_ROOT qsub/perfold_score.qsub.sh)
+        echo "$eid $label seed$seed: 10 folds, no headline -> scoring $sj"
       fi
     done
     ;;
