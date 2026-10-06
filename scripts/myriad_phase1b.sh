@@ -98,14 +98,9 @@ PY
     # clinical cohort_csv id_col images_dir "latents glob" "outcome specs" "covariates" vol_col [regress cols...]
     cd "$MAIN"
     cohort=$1; idcol=$2; images=$3; latents=$4; outcomes=$5; covars=$6; volcol=$7; shift 7
-    regress=""; for c in "$@"; do regress="$regress --regress \"$c\""; done
-    outs=""; for o in $outcomes; do outs="$outs --outcome \"$o\""; done
     name=$(basename "$cohort" .csv)
-    jid=$(qsub -terse -N clin-$name -l h_rt=4:0:0 -l mem=8G -pe smp 4 -cwd -j y -b y \
-          "module load python3/3.11; source ~/venvs/neuro/bin/activate; \
-           python scripts/clinical_validation.py --cohort '$cohort' --id-col '$idcol' --images-dir '$images' \
-           --latents $latents $outs --covariates $covars --volume-col '$volcol' --with-covariates $regress \
-           --out outputs/clinical_$name.csv")
+    jid=$(qsub -terse -N clin-$name -v COHORT="$cohort",IDCOL="$idcol",IMAGES="$images",LATENTS="$latents",OUTCOMES="$outcomes",COVARS="$covars",VOLCOL="$volcol",REGRESS="$*",OUT=outputs/clinical_$name.csv \
+          scripts/clinical_validation_myriad.qsub.sh)
     echo "clinical $name -> job $jid (outputs/clinical_$name.csv)"
     ;;
 
