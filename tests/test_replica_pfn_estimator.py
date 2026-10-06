@@ -77,3 +77,14 @@ def test_pfn_estimator_on_prototype_checkpoint(tmp_path):
     res = gr.evaluate_representation(Z, df, {1: _fake_pair()}, gr.HEADLINE_SCENARIOS["ideal"],
                                      n_folds=3, deficits=[1], classifiers=["pfn"])
     assert len(res) > 0 and set(res["learner"]) == {"in_context"} and np.isfinite(res["pehe"]).all()
+
+
+def test_off_the_shelf_causalpfn_wrapper_returns_potential_outcomes():
+    pytest.importorskip("causalpfn")
+    from neurocausalpfn.pfn.estimator import CausalPFNEstimator
+    est = CausalPFNEstimator(device="cpu")
+    rng = np.random.default_rng(0)
+    Xtr, Xte = rng.normal(size=(60, 4)), rng.normal(size=(10, 4))
+    W = rng.integers(0, 2, 60).astype(float); Y = (Xtr[:, 0] + W > 0.5).astype(float)
+    p1, p0 = est(Xtr, W, Y, Xte)
+    assert p1.shape == p0.shape == (10,) and (0 <= p0).all() and (p1 <= 1).all()

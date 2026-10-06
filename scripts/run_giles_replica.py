@@ -262,6 +262,10 @@ def main():
                          "(default: what the checkpoint's prior did)")
     ap.add_argument("--only-pfn", action="store_true",
                     help="score only the PFN (skip the sklearn classifiers)")
+    ap.add_argument("--causalpfn", action="store_true",
+                    help="also score the off-the-shelf CausalPFN (Balazadeh et al. 2025, fixed weights): "
+                         "the design's Tier-4 evaluator, in context on the same folds")
+    ap.add_argument("--only-causalpfn", action="store_true")
     ap.add_argument("--folds", type=int, default=10)
     ap.add_argument("--groups", default=None,
                     help="CSV (filename, group, rank) for group-aware folds: only rank-0 "
@@ -345,6 +349,13 @@ def main():
         gr.register_estimator("pfn", est)
         classifiers = ["pfn"] if args.only_pfn else classifiers + ["pfn"]
         print(f"PFN estimator: {args.pfn_ckpt} (d_x {est.d_x}, device {est.device})")
+    if args.causalpfn or args.only_causalpfn:
+        from neurocausalpfn.pfn.estimator import CausalPFNEstimator
+
+        cp = CausalPFNEstimator()
+        gr.register_estimator("causalpfn", cp)
+        classifiers = ["causalpfn"] if args.only_causalpfn else classifiers + ["causalpfn"]
+        print(f"CausalPFN (off-the-shelf) estimator on {cp.device}")
     all_results, headline_rows, sims = [], [], []
     for name, Z in reps.items():
         collect = sims if not sims else None   # export the simulations once

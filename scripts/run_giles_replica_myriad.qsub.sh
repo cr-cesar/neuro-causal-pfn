@@ -70,6 +70,14 @@ if [ -n "${PFN_CKPT:-}" ]; then
     EXTRA+=(--pfn-ckpt "$PFN_CKPT")
     if [ -n "${ONLY_PFN:-}" ]; then EXTRA+=(--only-pfn); fi
 fi
+# CAUSALPFN=1 adds the off-the-shelf CausalPFN (fixed weights, the design's
+# Tier-4 evaluator); ONLY_CAUSALPFN=1 scores it alone. Weights must already be
+# in ~/.cache/causalpfn (download once on a login node).
+if [ -n "${ONLY_CAUSALPFN:-}" ]; then
+    EXTRA+=(--only-causalpfn)
+elif [ -n "${CAUSALPFN:-}" ]; then
+    EXTRA+=(--causalpfn)
+fi
 
 python scripts/run_giles_replica.py \
     --images-dir "$IMAGES" \

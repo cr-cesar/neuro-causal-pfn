@@ -68,3 +68,44 @@ class PFNEstimator:
             out = predict_cate(self.model, Xc, Tc, Yc, Xq)
             p1.append(out["mu1"][0].float().cpu().numpy()); p0.append(out["mu0"][0].float().cpu().numpy())
         return np.clip(np.concatenate(p1), 0, 1), np.clip(np.concatenate(p0), 0, 1)
+
+
+class CausalPFNEstimator:
+    """The off-the-shelf CausalPFN of Balazadeh et al. (2025) with fixed weights:
+    the Tier-4 evaluator of the design (encoder selection under a fixed
+    estimator). Same ``fn(Xtr, W, Y, Xte) -> (p1, p0)`` signature, so it is
+    scored inside the replica exactly like the sklearn classifiers and our own
+    transformer. Needs ``pip install causalpfn faiss-cpu`` and the pretrained
+    weights in the cache (download once on a node with internet:
+    ``python -c "from causalpfn import CATEEstimator; CATEEstimator('cpu').load_model()"``).
+    Nothing is fine-tuned; ``fit`` only stores the context and trains the
+    package's own stratification model for long contexts."""
+
+    def __init__(self, device: Optional[str] = None, model_path: str = "vdblm/causalpfn",
+                 cache_dir: Optional[str] = None, max_context_length: int = 4096,
+                 num_neighbours: int = 1024):
+        import torch
+        from causalpfn import CATEEstimator
+
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.est = CATEEstimator(device=self.device, model_path=model_path, cache_dir=cache_dir,
+                                 max_context_length=max_context_length, max_query_length=max_context_length,
+                                 num_neighbours=num_neighbours, calibrate=False, verbose=False)
+        self._k = int(num_neighbours)
+        self.name = "causalpfn"
+
+    def __call__(self, Xtr: np.ndarray, W: np.ndarray, Y: np.ndarray,
+                 Xte: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        Xtr = np.asarray(Xtr, dtype=np.float32); Xte = np.asarray(Xte, dtype=np.float32)
+        W = np.asarray(W, dtype=np.float32); Y = np.asarray(Y, dtype=np.float32)
+        # the neighbour search needs k <= smallest treatment group of the context
+        self.est.num_neighbours = max(1, min(self._k, int((W == 1).sum()), int((W == 0).sum())))
+        self.est.fit(Xtr, W, Y)
+        n = len(Xte)
+        Xq = np.concatenate([Xte, Xte], axis=0)
+        if self.est.max_feature_size is not None and Xq.shape[1] > self.est.max_feature_size:
+            Xq = self.est.x_dim_transformer.transform(Xq)
+        tq = np.concatenate([np.zeros(n, dtype=np.float32), np.ones(n, dtype=np.float32)])
+        mu = np.asarray(self.est._predict_cepo(self.est.X_train, self.est.t_train, self.est.y_train,
+                                               Xq, tq, temperature=self.est.temperature), dtype=float)
+        return np.clip(mu[n:], 0, 1), np.clip(mu[:n], 0, 1)
