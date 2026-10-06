@@ -37,3 +37,11 @@ def test_item_total_is_nan_when_an_item_is_missing():
     df.iloc[1, 0] = 0
     t = p.item_total(df, "S2NihssArrival")
     assert t.iloc[0] == 15 and t.iloc[1] == 28 and np.isnan(t.iloc[2])
+
+
+def test_diagnose_prints_shapes_not_ids(capsys):
+    p = _load()
+    df = pd.DataFrame({"participant_id": ["sub-1234", "sub-0007"], "id": ["k9", "k8"]})
+    p.diagnose(df, ["participant_id", "id"], ["sub-1234_lesion.nii.gz", "sub-0007_lesion.nii.gz", "other.nii.gz"])
+    out = capsys.readouterr().out
+    assert "sub-####" in out and "1234" not in out and "files matched: 2/3" in out

@@ -54,6 +54,41 @@ def match_column(df: pd.DataFrame, id_cols, basenames):
     return best
 
 
+def mask_digits(s: str) -> str:
+    """Shape of a string with every digit replaced by '#', letters kept: safe to print."""
+    import re
+    return re.sub(r"\d", "#", s)
+
+
+def diagnose(df: pd.DataFrame, id_cols, basenames, n_show: int = 5):
+    """Print how the table's ids and the file names look and how they match,
+    without echoing any id: digit-masked shapes, counts, ambiguities."""
+    print(f"files: {len(basenames)}; name shapes (digits masked):")
+    for shp, n in pd.Series([mask_digits(b) for b in basenames]).value_counts().head(n_show).items():
+        print(f"   {n:5d}  {shp}")
+    for col in id_cols:
+        if col not in df.columns:
+            print(f"column {col!r}: absent"); continue
+        ids = df[col].astype(str).str.strip()
+        ids = ids[(ids != "") & (ids.str.lower() != "nan")]
+        print(f"column {col!r}: {len(ids)} non-empty, {ids.nunique()} unique, "
+              f"{int(ids.duplicated().sum())} duplicated; id shapes:")
+        for shp, n in ids.map(mask_digits).value_counts().head(n_show).items():
+            print(f"   {n:5d}  {shp}")
+        uniq = sorted(set(ids), key=len, reverse=True)
+        n_match, n_ambig = 0, 0
+        for b in basenames:
+            hits = [i for i in uniq if b.startswith(i)]
+            if hits:
+                n_match += 1
+                # ambiguous when a shorter id is a strict prefix of the longest hit's match
+                if len(hits) > 1 and not all(hits[0].startswith(h) for h in hits):
+                    n_ambig += 1
+        rows_hit = ids[ids.isin({i for i in uniq if any(b.startswith(i) for b in basenames)})]
+        print(f"   files matched: {n_match}/{len(basenames)}; ambiguous files: {n_ambig}; "
+              f"table rows matched: {len(rows_hit)} (of which duplicated ids: {int(rows_hit.duplicated().sum())})")
+
+
 def item_total(df: pd.DataFrame, prefix: str, n_expected: int = 15) -> pd.Series:
     cols = [c for c in df.columns if c.startswith(prefix)]
     if len(cols) != n_expected:
@@ -81,14 +116,21 @@ def main():
     ap.add_argument("--total-name", default="nihss_total")
     ap.add_argument("--keep", nargs="*", default=[], help="further columns to carry over as is")
     ap.add_argument("--no-volume", action="store_true")
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--dry-run", action="store_true",
+                    help="only print digit-masked shapes of ids and file names and the match counts")
+    ap.add_argument("--out", default=None)
     args = ap.parse_args()
+    if not args.dry_run and not args.out:
+        ap.error("--out is required unless --dry-run")
 
     df = read_table(args.table)
     files = sorted(glob.glob(os.path.join(os.path.expanduser(args.lesions_dir), "*.nii*")))
     if not files:
         sys.exit(f"no niftis in {args.lesions_dir}")
     base = [os.path.basename(f) for f in files]
+    if args.dry_run:
+        diagnose(df, args.id_cols, base)
+        return
     col, rows, n = match_column(df, args.id_cols, base)
     print(f"table: {len(df)} rows; lesions: {len(files)}; matched {n} files by column {col!r}")
     if n == 0:
