@@ -58,3 +58,13 @@ def test_cv_scores_separable_signal_scores_high_and_noise_near_chance():
     assert s1["bal_acc"] > 0.95 and s1["auc"] > 0.95
     assert 0.3 < s0["bal_acc"] < 0.7
     assert s1["folds"] == 5
+
+
+def test_cv_regress_recovers_linear_signal_and_not_noise():
+    cv = _load()
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(120, 5)); y = X @ np.array([2, -1, 0, 0, 0.5]) + rng.normal(scale=0.3, size=120)
+    good = cv.cv_regress(X, y, n_splits=5, n_repeats=2)
+    bad = cv.cv_regress(rng.normal(size=(120, 5)), y, n_splits=5, n_repeats=2)
+    assert good["r2"] > 0.9 and good["mae"] < 0.5
+    assert bad["r2"] < 0.2 and good["folds"] == 5

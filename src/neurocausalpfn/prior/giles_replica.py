@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -359,6 +359,24 @@ MIN_N = 15   # prescription_processor.min_n: slices smaller than this are skippe
 
 
 # --------------------------------------------------------------------------- #
+# In-context estimators (Phase 2): scored inside the same replica
+# --------------------------------------------------------------------------- #
+# name -> fn(Xtr, W, Y, Xte) -> (p1, p0). An in-context estimator takes the
+# whole train slice as its context and predicts both potential outcomes of the
+# test slice in one call, so it has no one-/two-model learner variant: it is
+# scored once per (deficit, fold) with learner "in_context" and competes with
+# the classifiers in the headline. Register with ``register_estimator``; the
+# PFN wrapper lives in ``neurocausalpfn.pfn.estimator``.
+ESTIMATORS: Dict[str, Callable] = {}
+
+
+def register_estimator(name: str, fn: Callable) -> None:
+    if name in ("logistic_regression", "extra_trees"):
+        raise ValueError(f"{name!r} is a built-in classifier")
+    ESTIMATORS[name] = fn
+
+
+# --------------------------------------------------------------------------- #
 # Evaluation driver
 # --------------------------------------------------------------------------- #
 def image_folds(n: int, n_folds: int = 10, seed: int = 0):
@@ -506,9 +524,14 @@ def evaluate_representation(Z: np.ndarray, labels_df, pairs: Dict[int, RoiPair],
                                          "y_true": yt, "W": int(w), "Y": int(y), **scenario})
             strata_te = strata_all[te_idx][mask_te] if strata_all is not None else None
             for cname in classifiers:
-                for learner in learners:
-                    fit = _fit_predict_one_model if learner == "one" else _fit_predict_two_model
-                    p1, p0 = fit(Xtr, W, Y, Xte, cname)
+                in_context = cname in ESTIMATORS
+                for learner in (("in_context",) if in_context else learners):
+                    if in_context:
+                        p1, p0 = ESTIMATORS[cname](Xtr, W, Y, Xte)
+                        p1, p0 = np.asarray(p1, float).ravel(), np.asarray(p0, float).ravel()
+                    else:
+                        fit = _fit_predict_one_model if learner == "one" else _fit_predict_two_model
+                        p1, p0 = fit(Xtr, W, Y, Xte, cname)
                     row = {"deficit": name, "fold": k, "classifier": cname,
                            "learner": learner, "n_train": len(Xtr), "n_test": len(Xte),
                            **scenario, **score_predictions(p1, p0, true_ITE)}

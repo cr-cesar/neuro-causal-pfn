@@ -102,13 +102,37 @@ def cv_scores(X, y, n_splits=10, n_repeats=5, seed=0):
             "folds": k}
 
 
+def cv_regress(X, y, n_splits=10, n_repeats=5, seed=0):
+    """Tier-2 probing of a continuous clinical variable: ridge regression with
+    repeated k-fold cross-validation; R2 and MAE (mean, SD over repeats)."""
+    from sklearn.linear_model import Ridge
+    from sklearn.metrics import mean_absolute_error, r2_score
+    from sklearn.model_selection import RepeatedKFold
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    k = max(2, min(n_splits, len(y) // 5))
+    rkf = RepeatedKFold(n_splits=k, n_repeats=n_repeats, random_state=seed)
+    r2, mae = [], []
+    for tr, te in rkf.split(X):
+        m = make_pipeline(StandardScaler(), Ridge(alpha=1.0)).fit(X[tr], y[tr])
+        p = m.predict(X[te])
+        r2.append(r2_score(y[te], p)); mae.append(mean_absolute_error(y[te], p))
+    r2, mae = np.array(r2).reshape(n_repeats, k), np.array(mae).reshape(n_repeats, k)
+    rr, rm = r2.mean(axis=1), mae.mean(axis=1)
+    return {"r2": float(rr.mean()), "r2_sd": float(rr.std(ddof=1)) if n_repeats > 1 else 0.0,
+            "mae": float(rm.mean()), "mae_sd": float(rm.std(ddof=1)) if n_repeats > 1 else 0.0, "folds": k}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--cohort", required=True)
     ap.add_argument("--id-col", default="sub")
     ap.add_argument("--images-dir", required=True, help="the listing the latents are aligned to")
     ap.add_argument("--latents", nargs="*", default=[])
-    ap.add_argument("--outcome", action="append", required=True, help="'column:<=2' (repeatable)")
+    ap.add_argument("--outcome", action="append", default=[], help="'column:<=2' (repeatable)")
+    ap.add_argument("--regress", action="append", default=[],
+                    help="continuous column probed by ridge regression, R2 and MAE (repeatable; Tier 2)")
     ap.add_argument("--covariates", nargs="*", default=[])
     ap.add_argument("--volume-col", default=None)
     ap.add_argument("--with-covariates", action="store_true",
@@ -147,7 +171,22 @@ def main():
         for name in [n for n in reps if not n.startswith("clinical")]:
             reps[name + " + clinical"] = np.column_stack([reps[name], C])
 
+    if not args.outcome and not args.regress:
+        sys.exit("give at least one --outcome or --regress")
     results = []
+    for col in args.regress:
+        if col not in cohort.columns:
+            sys.exit(f"column {col!r} not in cohort")
+        v = pd.to_numeric(cohort[col], errors="coerce").to_numpy(dtype=float)
+        keep = ~np.isnan(v); y = v[keep]
+        print(f"\n== regress {col}: n = {int(keep.sum())}, mean {y.mean():.2f}, sd {y.std():.2f}")
+        if keep.sum() < 20:
+            print("   too few values; skipped"); continue
+        for name, X in reps.items():
+            s = cv_regress(X[keep], y, n_repeats=args.repeats)
+            results.append({"outcome": f"regress {col}", "n": int(keep.sum()), "positives": np.nan,
+                            "representation": name, "dim": X.shape[1], **s})
+            print(f"   {name:48s} dim {X.shape[1]:4d}  R2 {s['r2']:.3f} ±{s['r2_sd']:.3f}  MAE {s['mae']:.2f} ±{s['mae_sd']:.2f}")
     for spec in args.outcome:
         col, rule, fn = parse_outcome(spec)
         if col not in cohort.columns:

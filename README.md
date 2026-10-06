@@ -235,6 +235,24 @@ The transformer is trained on a process prior, chosen by configuration in
   are labels 1 and 2. The modality is `receptor` (Hansen receptome) or `genetics`
   (Allen transcriptome), selectable by configuration.
 
+- `neuro_prior`: Neuro-Prior v1 (`prior/neuro_prior.py`, cohort
+  `prior/cohort.py:NeuroPriorCohort`), a hyper-prior over virtual-trial
+  generators on the anatomical substrate: one to three causal networks per
+  process, overlap threshold 2-10 %, response probability 0.3-1.0, spontaneous
+  recovery 0-0.5, allocation by centroid axis (the paper's observed bias), by
+  lesion volume or towards the true susceptibility (the paper's unobserved
+  type, rejected by the verifier), and label noise up to 5 %. The reference
+  virtual trial of Phase 1 (`giles_replica.HEADLINE_SCENARIOS`) is one draw of
+  this distribution (`NeuroPriorDGP.from_giles`), which a test enforces. The
+  ranges can be narrowed per curriculum stage with `cfg["prior"]["hyper"]`.
+
+The trained transformer is scored inside the Phase 1 replica with
+`scripts/run_giles_replica.py --pfn-ckpt outputs/<run>/pfn.pt` (`pfn/estimator.py`,
+registered through `giles_replica.register_estimator`): in every fold the train
+slice is the context and the test slice the query set, so the PFN gets the same
+folds, simulated trials and PEHE scale as the logistic regression and extra
+trees, and competes with them in the headline (learner `in_context`).
+
 ## Transformer wiring on real data (run_stage2_real)
 
 `train/run_stage2_real.py` joins the two components on real data: it loads the frozen
