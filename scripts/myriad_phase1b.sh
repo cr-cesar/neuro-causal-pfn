@@ -5,6 +5,7 @@
 #
 #   bash scripts/myriad_phase1b.sh setup      # causalpfn + faiss, pretrained weights, pull both repos
 #   bash scripts/myriad_phase1b.sh t4         # Tier 4 of the design: off-the-shelf CausalPFN on the per-fold latents of E1/E5 (CPU)
+#   bash scripts/myriad_phase1b.sh ensemble E1 E5   # seed ensemble (3 seeds concatenated fold by fold) of finished per-fold reps, LR/ET + CausalPFN
 #   bash scripts/myriad_phase1b.sh perfold E1 E3 E11b    # published-budget (32-epoch) per-fold training into PUB_ROOT, independent jobs, scoring chained
 #   bash scripts/myriad_phase1b.sh clinical <cohort.csv> <id-col> <images-dir> "<latents glob>" "<outcome specs>" "<covariates>" <vol-col> [regress cols]
 #   bash scripts/myriad_phase1b.sh status     # queue by state and block, latest leaderboards
@@ -64,6 +65,26 @@ PY
       done
     done
     echo "leaderboard: $PERFOLD/$T4_OUT/leaderboard.csv (classifier column tells LR/ET vs causalpfn)"
+    ;;
+
+  ensemble)
+    # seed ensemble of finished per-fold representations: the three seeds'
+    # fold latents concatenated column-wise (label <eid>+x3), scored on the
+    # same folds and singles twice, with LR/ET (into ROOT) and with the fixed
+    # CausalPFN (into T4_OUT). ROOT defaults to the 200-epoch root; set
+    # ROOT=outputs_perfold_pub for the published-budget folds.
+    cd "$PERFOLD"
+    root="${ROOT:-$OUT_ROOT}"
+    for eid in "${@:-E1 E5}"; do
+      reps="$root/$eid/$eid/seed?/folds"
+      n=$(ls -d $reps 2>/dev/null | wc -l)
+      [ "$n" -ge 2 ] || { echo "skip $eid: $n seed folders under $root"; continue; }
+      j1=$(qsub -terse -N ens-${eid,,} -l h_rt=4:0:0 \
+           -v REPS="$reps",GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ENSEMBLE=1,ENSEMBLE_ONLY=1,OUT=$root qsub/perfold_score.qsub.sh)
+      j2=$(qsub -terse -N ens-${eid,,}-t4 -l h_rt=6:0:0 -l mem=8G \
+           -v REPS="$reps",GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ENSEMBLE=1,ENSEMBLE_ONLY=1,ESTIMATORS=causalpfn,ONLY_ESTIMATORS=1,OUT=$T4_OUT qsub/perfold_score.qsub.sh)
+      echo "ensemble $eid ($n seeds, $root): LR/ET job $j1 -> $root/leaderboard.csv; CausalPFN job $j2 -> $T4_OUT/leaderboard.csv"
+    done
     ;;
 
   perfold)
