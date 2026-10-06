@@ -8,6 +8,7 @@
 #   bash scripts/myriad_phase1b.sh ensemble E1 E5   # seed ensemble (3 seeds concatenated fold by fold) of finished per-fold reps, LR/ET + CausalPFN
 #   bash scripts/myriad_phase1b.sh repair            # resubmit published-budget folds that died (time limit after a slow start) + their scoring
 #   bash scripts/myriad_phase1b.sh perfold E1 E3 E11b    # published-budget (32-epoch) per-fold training into PUB_ROOT, independent jobs, scoring chained
+#   POOL_LESIONS=<dir> POOL_LATENTS=<npz> bash scripts/myriad_phase1b.sh phase2   # cache -> reduced PFN (GPU) -> scored on E1 per-fold
 #   bash scripts/myriad_phase1b.sh clinical <cohort.csv> <id-col> <images-dir> "<latents glob>" "<outcome specs>" "<covariates>" <vol-col> [regress cols]
 #   bash scripts/myriad_phase1b.sh status     # queue by state and block, latest leaderboards
 #
@@ -28,7 +29,13 @@ PUB_ROOT="${PUB_ROOT:-outputs_perfold_pub}"
 PF_GROUPS="${PF_GROUPS:-outputs_perfold/groups_public.csv}"
 cmd="${1:-status}"; shift || true
 
-activate() { module load python3/3.11 2>/dev/null || true; source ~/venvs/neuro/bin/activate; }
+# works from a non-interactive ssh too: the module command is a shell function
+# that only login shells define
+activate() {
+  type module >/dev/null 2>&1 || source /etc/profile.d/modules.sh 2>/dev/null || true
+  module load python3/3.11 2>/dev/null || true
+  source ~/venvs/neuro/bin/activate
+}
 
 case "$cmd" in
   setup)
@@ -150,9 +157,10 @@ PY
       fi
       # all ten folds present but no headline and no scoring queued: the
       # chained scoring failed (or was never submitted) -> score now
-      headline="$PUB_ROOT/replica/$eid/${label//\//_}/seed$seed/primary-singles/replica_headline.csv"
+      # the replica folder is named after the channel (disconnectome-singles, ...)
+      n_head=$(ls "$PUB_ROOT/replica/$eid/${label//\//_}/seed$seed"/*-singles/replica_headline.csv 2>/dev/null | wc -l)
       n_npz=$(ls "$d"/fold*.npz 2>/dev/null | wc -l)
-      if [ "$n_npz" -eq 10 ] && [ ! -f "$headline" ]; then
+      if [ "$n_npz" -eq 10 ] && [ "$n_head" -eq 0 ]; then
         run_name=$(printf '%s\n' "$plan" | grep -F -- "EID=$eid," | grep -F -- "SEED=$seed," | grep -F -- " -t 1 " | grep -F -- "# $label" | sed -E 's/.*-N ([^ ]+)f1 .*/\1/')
         if printf '%s\n' "$queued" | grep -qx "sc-$run_name" || printf '%s\n' "$queued" | grep -qx "sc-${eid,,}s$seed-r"; then continue; fi
         sj=$(qsub -terse -N sc-${eid,,}s$seed-r -l h_rt=3:0:0 \
@@ -160,6 +168,26 @@ PY
         echo "$eid $label seed$seed: 10 folds, no headline -> scoring $sj"
       fi
     done
+    ;;
+
+  phase2)
+    # Phase 2 pilot as one chain: anatomy cache of the covariate pool (CPU)
+    # -> reduced Neuro-Causal-PFN, one sequential GPU job -> the checkpoint
+    # scored as a fixed in-context estimator on the E1 per-fold folds (CPU),
+    # next to the CausalPFN rows of T4_OUT. The pool is given on the command
+    # line: POOL_LESIONS (lesion dir) and POOL_LATENTS (matching latents npz).
+    cd "$MAIN"
+    lesions="${POOL_LESIONS:?set POOL_LESIONS to the lesion directory of the pool}"
+    latents="${POOL_LATENTS:?set POOL_LATENTS to the latents npz of the pool}"
+    tag="${TAG:-pilot}"; cache="outputs/prior_cache/${tag}.npz"; out="outputs/pfn_reduced_${tag}"
+    cj=$(qsub -terse -N prior-$tag -v LESIONS="$lesions",LATENTS="$latents",OUT="$cache" scripts/build_prior_cache_myriad.qsub.sh)
+    tj=$(qsub -terse -N pfn-$tag -hold_jid "$cj" \
+         -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="${SEED:-0}",ARCH="${ARCH:-tabicl}" scripts/train_pfn_myriad.qsub.sh)
+    cd "$PERFOLD"
+    sj=$(qsub -terse -N sc-pfn-$tag -hold_jid "$tj" -l h_rt=6:0:0 -l mem=8G \
+         -v REPS="$OUT_ROOT/E1/E1/seed0/folds",GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS="$MAIN/$out/pfn.pt",ONLY_ESTIMATORS=1,OUT=outputs_perfold_pfn \
+         qsub/perfold_score.qsub.sh)
+    echo "phase2 $tag: cache $cj -> pfn $tj ($out/pfn.pt, 20-40 h) -> scoring on E1 per-fold $sj -> $PERFOLD/outputs_perfold_pfn/leaderboard.csv"
     ;;
 
   clinical)
