@@ -68,3 +68,10 @@ def test_cv_regress_recovers_linear_signal_and_not_noise():
     bad = cv.cv_regress(rng.normal(size=(120, 5)), y, n_splits=5, n_repeats=2)
     assert good["r2"] > 0.9 and good["mae"] < 0.5
     assert bad["r2"] < 0.2 and good["folds"] == 5
+
+
+def test_match_rows_prefers_exact_stem_over_shorter_prefix():
+    cv = _load()
+    ids = ["sub-K12", "sub-K123"]
+    files = ["/d/sub-K123.nii.gz", "/d/sub-K12.nii.gz"]
+    assert list(cv.match_rows(ids, files)) == [1, 0]

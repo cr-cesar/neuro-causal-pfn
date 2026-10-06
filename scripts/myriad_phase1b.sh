@@ -5,7 +5,7 @@
 #
 #   bash scripts/myriad_phase1b.sh setup      # causalpfn + faiss, pretrained weights, pull both repos
 #   bash scripts/myriad_phase1b.sh t4         # Tier 4 of the design: off-the-shelf CausalPFN on the per-fold latents of E1/E5 (CPU)
-#   bash scripts/myriad_phase1b.sh perfold E3 E11b [E1]   # published-budget per-fold training, independent jobs, scoring chained
+#   bash scripts/myriad_phase1b.sh perfold E1 E3 E11b    # published-budget (32-epoch) per-fold training into PUB_ROOT, independent jobs, scoring chained
 #   bash scripts/myriad_phase1b.sh clinical <cohort.csv> <id-col> <images-dir> "<latents glob>" "<outcome specs>" "<covariates>" <vol-col> [regress cols]
 #   bash scripts/myriad_phase1b.sh status     # queue by state and block, latest leaderboards
 #
@@ -19,6 +19,10 @@ PERFOLD="${PERFOLD:-$HOME/Scratch/neuro-causal-pfn-perfold}"
 SEEDS="${SEEDS:-3}"
 OUT_ROOT="${OUT_ROOT:-outputs_perfold_grp}"
 T4_OUT="${T4_OUT:-outputs_perfold_t4}"
+# published-budget (32-epoch) per-fold runs go to their own root: the layout is
+# <root>/<eid>/<label>/seed<S>/folds with no budget in the path, so reusing
+# outputs_perfold_grp would overwrite the 200-epoch E1/E5 folds
+PUB_ROOT="${PUB_ROOT:-outputs_perfold_pub}"
 PF_GROUPS="${PF_GROUPS:-outputs_perfold/groups_public.csv}"
 cmd="${1:-status}"; shift || true
 
@@ -29,7 +33,15 @@ case "$cmd" in
     activate
     (cd "$MAIN" && git pull -q origin main && pip install -q -e . >/dev/null)
     (cd "$PERFOLD" && git pull -q origin main)
-    pip install -q "causalpfn==0.1.4" faiss-cpu
+    # faiss must come as a wheel: the source build needs a C++17 compiler and
+    # fails with Myriad's icc 18. Newer wheels need a newer glibc than the
+    # login nodes have, so try from newest to oldest.
+    pip install -q --only-binary=:all: "faiss-cpu==1.9.0.post1" \
+      || pip install -q --only-binary=:all: "faiss-cpu==1.8.0.post1" \
+      || pip install -q --only-binary=:all: "faiss-cpu==1.7.4"
+    pip install -q --no-deps "causalpfn==0.1.4"
+    pip install -q --only-binary=:all: huggingface_hub tqdm
+    python -c "import faiss, causalpfn; print('faiss', faiss.__version__)"
     python - <<'PY'
 from causalpfn import CATEEstimator
 CATEEstimator("cpu").load_model()
@@ -63,7 +75,7 @@ PY
     eids="${*:-E3 E11b}"
     python -m ncpfold.plan --eids $eids --seeds "$SEEDS" --budget published
     python -m ncpfold.plan --eids $eids --seeds "$SEEDS" --budget published --emit-qsub --independent \
-        --h-rt 1:30:0 --groups "$PF_GROUPS" --out-root "$OUT_ROOT" > /tmp/perfold_submit_$$.sh
+        --h-rt 1:30:0 --groups "$PF_GROUPS" --out-root "$PUB_ROOT" > /tmp/perfold_submit_$$.sh
     declare -A HOLD
     while read -r line; do
       [[ "$line" =~ ^qsub ]] || continue
@@ -74,9 +86,9 @@ PY
     for key in "${!HOLD[@]}"; do
       set -- $key; eid=$1; run=$2; seed=$3
       label=$(python -c "from ncpfold.catalogue import find_run; print(find_run('$eid', $run).label)")
-      reps="$OUT_ROOT/$eid/$label/seed$seed/folds"
+      reps="$PUB_ROOT/$eid/$label/seed$seed/folds"
       sj=$(qsub -terse -N sc-${eid,,}r${run}s$seed -hold_jid "${HOLD[$key]}" -l h_rt=3:0:0 \
-           -v REPS="$reps",GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,OUT=$OUT_ROOT qsub/perfold_score.qsub.sh)
+           -v REPS="$reps",GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,WITH_VOLUME=1,OUT=$PUB_ROOT qsub/perfold_score.qsub.sh)
       echo "$eid run$run seed$seed: folds ${HOLD[$key]} -> scoring $sj"
     done
     rm -f /tmp/perfold_submit_$$.sh
@@ -101,7 +113,7 @@ PY
     echo "== queue (state x block)"
     qstat 2>/dev/null | awk 'NR>2 {split($3,a,"-"); split(a[1],b,"r"); print $5, substr($3,1,4)}' | sort | uniq -c | sort -k2,2 -k3,3
     echo "== running now"; qstat 2>/dev/null | awk 'NR>2 && $5=="r" {print "  "$3, $6, $7}'
-    for lb in "$PERFOLD/$OUT_ROOT/leaderboard.csv" "$PERFOLD/$T4_OUT/leaderboard.csv"; do
+    for lb in "$PERFOLD/$OUT_ROOT/leaderboard.csv" "$PERFOLD/$T4_OUT/leaderboard.csv" "$PERFOLD/$PUB_ROOT/leaderboard.csv"; do
       [ -f "$lb" ] && { echo "== $lb"; column -s, -t < "$lb" | cut -c1-140; }
     done
     ;;
