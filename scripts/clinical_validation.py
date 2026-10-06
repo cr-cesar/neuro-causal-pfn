@@ -66,13 +66,17 @@ def encode_covariates(df: pd.DataFrame, cols):
 
 
 def match_rows(ids, files):
-    """Row index of each image in the cohort table (by id prefix of the file name)."""
+    """Row index of each image in the cohort table: the id equal to the file
+    stem wins, otherwise the longest id that prefixes the file name."""
     pos = {str(i): k for k, i in enumerate(ids)}
     rows = []
     for f in files:
         base = os.path.basename(f)
-        hit = [i for i in pos if base.startswith(i)]
-        if len(hit) != 1:
+        st = base.split(".")[0]
+        if st in pos:
+            rows.append(pos[st]); continue
+        hit = sorted((i for i in pos if base.startswith(i)), key=len, reverse=True)
+        if not hit or (len(hit) > 1 and not all(hit[0].startswith(h) for h in hit)):
             sys.exit(f"{base}: {len(hit)} cohort rows match its id prefix")
         rows.append(pos[hit[0]])
     return np.array(rows)

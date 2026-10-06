@@ -45,3 +45,11 @@ def test_diagnose_prints_shapes_not_ids(capsys):
     p.diagnose(df, ["participant_id", "id"], ["sub-1234_lesion.nii.gz", "sub-0007_lesion.nii.gz", "other.nii.gz"])
     out = capsys.readouterr().out
     assert "sub-####" in out and "1234" not in out and "files matched: 2/3" in out
+
+
+def test_exact_match_with_stripped_prefix_is_unambiguous():
+    p = _load()
+    df = pd.DataFrame({"participant_id": ["K12", "K123", "U123"], "id": ["kch_12", "kch_123", "uclh_123"]})
+    files = ["sub-K123.nii.gz", "sub-K12.nii.gz", "sub-U123.nii.gz", "sub-K9.nii.gz"]
+    col, rows, n = p.match_column(df, ["participant_id", "id"], files, strip_prefix="sub-", exact=True)
+    assert col == "participant_id" and list(rows) == [1, 0, 2, -1] and n == 3

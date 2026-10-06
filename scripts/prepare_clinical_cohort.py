@@ -31,9 +31,18 @@ def read_table(path: str) -> pd.DataFrame:
     return pd.read_csv(path, sep=sep, dtype=str)
 
 
-def match_column(df: pd.DataFrame, id_cols, basenames):
-    """(column, row index per file or -1) for the id column that matches most files."""
+def stem(basename: str) -> str:
+    """File name without extensions: sub-K123.nii.gz -> sub-K123."""
+    return basename.split(".")[0]
+
+
+def match_column(df: pd.DataFrame, id_cols, basenames, strip_prefix: str = "", exact: bool = False):
+    """(column, row index per file or -1) for the id column that matches most
+    files. ``strip_prefix`` is removed from the file names first (``sub-``);
+    ``exact`` requires the file stem to equal the id, otherwise the longest id
+    that prefixes the name wins."""
     best = (None, None, -1)
+    names = [b[len(strip_prefix):] if strip_prefix and b.startswith(strip_prefix) else b for b in basenames]
     for col in id_cols:
         if col not in df.columns:
             continue
@@ -45,8 +54,11 @@ def match_column(df: pd.DataFrame, id_cols, basenames):
         # longest id first so that "sub-10" does not capture "sub-100_..."
         keys = sorted(pos, key=len, reverse=True)
         rows = []
-        for b in basenames:
-            hit = next((i for i in keys if b.startswith(i)), None)
+        for b in names:
+            if exact:
+                hit = stem(b) if stem(b) in pos else None
+            else:
+                hit = next((i for i in keys if b.startswith(i)), None)
             rows.append(pos[hit] if hit is not None else -1)
         n = sum(r >= 0 for r in rows)
         if n > best[2]:
@@ -60,9 +72,11 @@ def mask_digits(s: str) -> str:
     return re.sub(r"\d", "#", s)
 
 
-def diagnose(df: pd.DataFrame, id_cols, basenames, n_show: int = 5):
+def diagnose(df: pd.DataFrame, id_cols, basenames, n_show: int = 5, strip_prefix: str = ""):
     """Print how the table's ids and the file names look and how they match,
     without echoing any id: digit-masked shapes, counts, ambiguities."""
+    if strip_prefix:
+        basenames = [b[len(strip_prefix):] if b.startswith(strip_prefix) else b for b in basenames]
     print(f"files: {len(basenames)}; name shapes (digits masked):")
     for shp, n in pd.Series([mask_digits(b) for b in basenames]).value_counts().head(n_show).items():
         print(f"   {n:5d}  {shp}")
@@ -116,6 +130,9 @@ def main():
     ap.add_argument("--total-name", default="nihss_total")
     ap.add_argument("--keep", nargs="*", default=[], help="further columns to carry over as is")
     ap.add_argument("--no-volume", action="store_true")
+    ap.add_argument("--strip-prefix", default="", help="prefix removed from file names before matching, e.g. sub-")
+    ap.add_argument("--match", default="prefix", choices=["prefix", "exact"],
+                    help="exact: file stem must equal the id (no ambiguity possible)")
     ap.add_argument("--dry-run", action="store_true",
                     help="only print digit-masked shapes of ids and file names and the match counts")
     ap.add_argument("--out", default=None)
@@ -129,9 +146,10 @@ def main():
         sys.exit(f"no niftis in {args.lesions_dir}")
     base = [os.path.basename(f) for f in files]
     if args.dry_run:
-        diagnose(df, args.id_cols, base)
+        diagnose(df, args.id_cols, base, strip_prefix=args.strip_prefix)
         return
-    col, rows, n = match_column(df, args.id_cols, base)
+    col, rows, n = match_column(df, args.id_cols, base, strip_prefix=args.strip_prefix,
+                                exact=args.match == "exact")
     print(f"table: {len(df)} rows; lesions: {len(files)}; matched {n} files by column {col!r}")
     if n == 0:
         sys.exit("no file matches any id; check --id-cols or the file names")
@@ -139,7 +157,8 @@ def main():
     if dup:
         print(f"warning: {dup} files share a table row (several images per participant)")
 
-    out = pd.DataFrame({"sub": [df[col].iloc[r] if r >= 0 else "" for r in rows], "file": base})
+    out = pd.DataFrame({"sub": [stem(b) for b in base], "table_id": [df[col].iloc[r] if r >= 0 else "" for r in rows],
+                        "file": base})
     if args.age_col:
         out["Age"] = pd.to_numeric(df[args.age_col], errors="coerce").to_numpy()[rows]
         out.loc[rows < 0, "Age"] = np.nan
@@ -160,7 +179,7 @@ def main():
     out.to_csv(args.out, index=False)
     print(f"wrote {args.out}: {len(out)} rows")
     for c in out.columns:
-        if c in ("sub", "file"):
+        if c in ("sub", "file", "table_id"):
             continue
         v = pd.to_numeric(out[c], errors="coerce")
         if v.notna().sum():
