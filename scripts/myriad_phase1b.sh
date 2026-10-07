@@ -77,10 +77,15 @@ PY
         n=$(ls "$reps"/fold*.npz 2>/dev/null | wc -l || true)
         [ "$n" -eq 10 ] || { echo "skip $reps ($n folds)"; continue; }
         s=${reps%/folds}; s=${s##*/seed}
+        lbl=$(basename "$(dirname "$(dirname "$reps")")")
+        # already scored under the fixed estimator: skip, so a later run only
+        # picks up the sets that have completed since
+        n_done=$(ls "$T4_OUT/replica/$eid/${lbl//\//_}/seed$s"/*-singles/replica_headline.csv 2>/dev/null | wc -l || true)
+        [ "$n_done" -eq 0 ] || { echo "done  $lbl seed$s"; continue; }
         jid=$(REPS="$reps" qsub -terse -N t4-${eid,,}s$s -l h_rt=6:0:0 -l mem=8G \
               -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS=causalpfn,ONLY_ESTIMATORS=1,OUT=$T4_OUT \
               qsub/perfold_score.qsub.sh)
-        echo "t4 $(basename "$(dirname "$(dirname "$reps")")") seed$s -> job $jid"
+        echo "t4 $lbl seed$s -> job $jid"
       done
     done
     echo "leaderboard: $PERFOLD/$T4_OUT/leaderboard.csv (budget column: chain = 200 epochs, published = 32)"
