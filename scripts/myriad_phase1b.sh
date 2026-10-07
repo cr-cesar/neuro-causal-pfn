@@ -12,6 +12,8 @@
 #   bash scripts/myriad_phase1b.sh clinical <cohort.csv> <id-col> <images-dir> "<latents glob>" "<outcome specs>" "<covariates>" <vol-col> [regress cols]
 #   bash scripts/myriad_phase1b.sh status     # queue by state and block, latest leaderboards
 #
+# Counting with ls | wc -l always carries "|| true": under set -o pipefail an
+# ls with no match would abort the script inside $(...).
 # REPS is always handed to qsub through the environment (-v REPS, no value):
 # variant labels carry commas (E11b[backbone=cnn,w_dice=1.0]) that -v NAME=value would split.
 # Environment knobs: PERFOLD (default ~/Scratch/neuro-causal-pfn-perfold),
@@ -87,7 +89,7 @@ PY
     root="${ROOT:-$OUT_ROOT}"
     for eid in "${@:-E1 E5}"; do
       reps="$root/$eid/$eid/seed?/folds"
-      n=$(ls -d $reps 2>/dev/null | wc -l)
+      n=$(ls -d $reps 2>/dev/null | wc -l || true)
       [ "$n" -ge 2 ] || { echo "skip $eid: $n seed folders under $root"; continue; }
       j1=$(REPS="$reps" qsub -terse -N ens-${eid,,} -l h_rt=4:0:0 \
            -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ENSEMBLE=1,ENSEMBLE_ONLY=1,OUT=$root qsub/perfold_score.qsub.sh)
@@ -160,8 +162,8 @@ PY
       # all ten folds present but no headline and no scoring queued: the
       # chained scoring failed (or was never submitted) -> score now
       # the replica folder is named after the channel (disconnectome-singles, ...)
-      n_head=$(ls "$PUB_ROOT/replica/$eid/${label//\//_}/seed$seed"/*-singles/replica_headline.csv 2>/dev/null | wc -l)
-      n_npz=$(ls "$d"/fold*.npz 2>/dev/null | wc -l)
+      n_head=$(ls "$PUB_ROOT/replica/$eid/${label//\//_}/seed$seed"/*-singles/replica_headline.csv 2>/dev/null | wc -l || true)
+      n_npz=$(ls "$d"/fold*.npz 2>/dev/null | wc -l || true)
       if [ "$n_npz" -eq 10 ] && [ "$n_head" -eq 0 ]; then
         run_name=$(printf '%s\n' "$plan" | grep -F -- "EID=$eid," | grep -F -- "SEED=$seed," | grep -F -- " -t 1 " | grep -F -- "# $label" | sed -E 's/.*-N ([^ ]+)f1 .*/\1/')
         if printf '%s\n' "$queued" | grep -qx "sc-$run_name" || printf '%s\n' "$queued" | grep -qx "sc-${eid,,}s$seed-r"; then continue; fi
