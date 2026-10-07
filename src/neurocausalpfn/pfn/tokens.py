@@ -11,9 +11,24 @@ column-then-row tabular encoding described in the plan.
 """
 from typing import Dict
 
+import numpy as np
 import torch
+
+# keys of the cohort batch that are per-process metadata, not model inputs
+METADATA_KEYS = ("processes",)
+
+
+def is_tensor_field(key: str, value) -> bool:
+    """True for the numeric arrays of a batch; False for the metadata the real
+    cohorts attach (``processes``: one dict per item describing its process)."""
+    if key in METADATA_KEYS:
+        return False
+    if isinstance(value, (list, tuple)):
+        return len(value) > 0 and not isinstance(value[0], (dict, str))
+    return not isinstance(value, (dict, str))
 
 
 def to_tensors(batch_np: Dict[str, "object"], device: str = "cpu",
                dtype: torch.dtype = torch.float32) -> Dict[str, torch.Tensor]:
-    return {k: torch.as_tensor(v, dtype=dtype, device=device) for k, v in batch_np.items()}
+    return {k: torch.as_tensor(np.asarray(v), dtype=dtype, device=device)
+            for k, v in batch_np.items() if is_tensor_field(k, v)}
