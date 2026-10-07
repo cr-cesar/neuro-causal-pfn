@@ -235,16 +235,31 @@ The transformer is trained on a process prior, chosen by configuration in
   are labels 1 and 2. The modality is `receptor` (Hansen receptome) or `genetics`
   (Allen transcriptome), selectable by configuration.
 
-- `neuro_prior`: Neuro-Prior v1 (`prior/neuro_prior.py`, cohort
-  `prior/cohort.py:NeuroPriorCohort`), a hyper-prior over virtual-trial
-  generators on the anatomical substrate: one to three causal networks per
+- `neuro_prior`: the Neuro-Prior on the anatomical substrate (cohort
+  `prior/cohort.py:NeuroPriorCohort`), two families on the same anatomy cache
+  and latent pool, chosen with `cfg["prior"]["family"]`:
+  - `theory` (default; `prior/intersynth_theory.py`): the InterSynth of the
+    design document. A disruption score D and a susceptibility score S in
+    [0, 1] (per-process Dirichlet weights over the receptomic and
+    transcriptomic subnetworks, rescaled on the pool), outcomes
+    mu0 = (1 - D) + alpha D and mu1 = mu0 + beta S D with Gaussian noise
+    clipped to [0, 1], and treatment W ~ Bernoulli(sigmoid(6 gamma g + noise))
+    under one of four mechanisms (severity, location = centroid depth,
+    network priority, mixed). Ranges: gamma in [0, 1], beta in [0.05, 0.55],
+    alpha in [0.05, 0.45] (the design's R3); ignorable by construction (R1),
+    bounded CEPOs with CATE = beta S D (R2), enforced by
+    `tests/test_intersynth_theory.py`.
+  - `giles` (`prior/neuro_prior.py`): v1, a hyper-prior over virtual-trial
+    generators of the reference paper: one to three causal networks per
   process, overlap threshold 2-10 %, response probability 0.3-1.0, spontaneous
   recovery 0-0.5, allocation by centroid axis (the paper's observed bias), by
   lesion volume or towards the true susceptibility (the paper's unobserved
   type, rejected by the verifier), and label noise up to 5 %. The reference
   virtual trial of Phase 1 (`giles_replica.HEADLINE_SCENARIOS`) is one draw of
-  this distribution (`NeuroPriorDGP.from_giles`), which a test enforces. The
-  ranges can be narrowed per curriculum stage with `cfg["prior"]["hyper"]`.
+  this distribution (`NeuroPriorDGP.from_giles`), which a test enforces.
+
+  In both families the ranges can be narrowed per curriculum stage with
+  `cfg["prior"]["hyper"]` (e.g. `{"gamma": [0, 0.3], "beta": [0.2, 0.4]}`).
 
 The trained transformer is scored inside the Phase 1 replica with
 `scripts/run_giles_replica.py --pfn-ckpt outputs/<run>/pfn.pt` (`pfn/estimator.py`,
