@@ -137,7 +137,9 @@ PY
     cd "$PERFOLD"
     plan=$(python -m ncpfold.plan --eids ${*:-E1 E3 E11b} --seeds "$SEEDS" --budget published --emit-qsub --independent \
            --h-rt 3:0:0 --groups "$PF_GROUPS" --out-root "$PUB_ROOT")
-    queued=$(qstat 2>/dev/null | awk 'NR>2 {print $3}')
+    # full job names: the plain qstat table truncates them to 10 characters, so
+    # a fold-10 task (e11br2s2f10) would never match and be resubmitted
+    queued=$(qstat -xml 2>/dev/null | sed -n 's/.*<JB_name>\([^<]*\)<\/JB_name>.*/\1/p')
     for d in "$PUB_ROOT"/E*/*/seed*/folds; do
       [ -d "$d" ] || continue
       rel=${d#$PUB_ROOT/}; eid=${rel%%/*}
