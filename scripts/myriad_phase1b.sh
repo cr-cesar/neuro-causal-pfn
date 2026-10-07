@@ -4,7 +4,7 @@
 # submits its jobs with their dependencies and returns at once.
 #
 #   bash scripts/myriad_phase1b.sh setup      # causalpfn + faiss, pretrained weights, pull both repos
-#   bash scripts/myriad_phase1b.sh t4         # Tier 4 of the design: off-the-shelf CausalPFN on the per-fold latents of E1/E5 (CPU)
+#   bash scripts/myriad_phase1b.sh t4 [eids]  # Tier 4 of the design: off-the-shelf CausalPFN on per-fold latents (CPU); ROOT=outputs_perfold_pub for the 32-epoch variants
 #   bash scripts/myriad_phase1b.sh ensemble E1 E5   # seed ensemble (3 seeds concatenated fold by fold) of finished per-fold reps, LR/ET + CausalPFN
 #   bash scripts/myriad_phase1b.sh repair            # resubmit published-budget folds that died (time limit after a slow start) + their scoring
 #   bash scripts/myriad_phase1b.sh perfold E1 E3 E11b    # published-budget (32-epoch) per-fold training into PUB_ROOT, independent jobs, scoring chained
@@ -64,19 +64,26 @@ PY
 
   t4)
     # the design's Tier 4: fixed off-the-shelf estimator over each frozen
-    # per-fold representation, same folds and trials as the LR/ET scoring
+    # per-fold representation, same folds and trials as the LR/ET scoring.
+    # Every label folder of the given eids under ROOT (default the 200-epoch
+    # root; ROOT=outputs_perfold_pub for the published-budget variants) gets
+    # one CPU job; rows land in T4_OUT, where the budget column keeps the
+    # 200-epoch and 32-epoch rows apart.
     cd "$PERFOLD"
-    for eid in E1 E5; do
-      for s in $(seq 0 $((SEEDS - 1))); do
-        reps="$OUT_ROOT/$eid/$eid/seed$s/folds"
-        [ -d "$reps" ] || { echo "skip $reps (no folds)"; continue; }
+    root="${ROOT:-$OUT_ROOT}"
+    for eid in "${@:-E1 E5}"; do
+      for reps in "$root/$eid"/*/seed*/folds; do
+        [ -d "$reps" ] || { echo "skip $eid: no folds under $root/$eid"; continue; }
+        n=$(ls "$reps"/fold*.npz 2>/dev/null | wc -l || true)
+        [ "$n" -eq 10 ] || { echo "skip $reps ($n folds)"; continue; }
+        s=${reps%/folds}; s=${s##*/seed}
         jid=$(REPS="$reps" qsub -terse -N t4-${eid,,}s$s -l h_rt=6:0:0 -l mem=8G \
               -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS=causalpfn,ONLY_ESTIMATORS=1,OUT=$T4_OUT \
               qsub/perfold_score.qsub.sh)
-        echo "t4 $eid seed$s -> job $jid"
+        echo "t4 $(basename "$(dirname "$(dirname "$reps")")") seed$s -> job $jid"
       done
     done
-    echo "leaderboard: $PERFOLD/$T4_OUT/leaderboard.csv (classifier column tells LR/ET vs causalpfn)"
+    echo "leaderboard: $PERFOLD/$T4_OUT/leaderboard.csv (budget column: chain = 200 epochs, published = 32)"
     ;;
 
   ensemble)
@@ -137,7 +144,9 @@ PY
     cd "$PERFOLD"
     plan=$(python -m ncpfold.plan --eids ${*:-E1 E3 E11b} --seeds "$SEEDS" --budget published --emit-qsub --independent \
            --h-rt 3:0:0 --groups "$PF_GROUPS" --out-root "$PUB_ROOT")
-    queued=$(qstat 2>/dev/null | awk 'NR>2 {print $3}')
+    # full job names: the plain qstat table truncates them to 10 characters, so
+    # a fold-10 task (e11br2s2f10) would never match and be resubmitted
+    queued=$(qstat -xml 2>/dev/null | sed -n 's/.*<JB_name>\([^<]*\)<\/JB_name>.*/\1/p')
     for d in "$PUB_ROOT"/E*/*/seed*/folds; do
       [ -d "$d" ] || continue
       rel=${d#$PUB_ROOT/}; eid=${rel%%/*}
