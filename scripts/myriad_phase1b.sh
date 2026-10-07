@@ -12,6 +12,8 @@
 #   bash scripts/myriad_phase1b.sh clinical <cohort.csv> <id-col> <images-dir> "<latents glob>" "<outcome specs>" "<covariates>" <vol-col> [regress cols]
 #   bash scripts/myriad_phase1b.sh status     # queue by state and block, latest leaderboards
 #
+# REPS is always handed to qsub through the environment (-v REPS, no value):
+# variant labels carry commas (E11b[backbone=cnn,w_dice=1.0]) that -v NAME=value would split.
 # Environment knobs: PERFOLD (default ~/Scratch/neuro-causal-pfn-perfold),
 # GROUP_TABLE (default outputs/groups_public.csv here, outputs_perfold/groups_public.csv there),
 # SEEDS (default 3), OUT_ROOT (default outputs_perfold_grp), T4_OUT (default outputs_perfold_t4).
@@ -66,8 +68,8 @@ PY
       for s in $(seq 0 $((SEEDS - 1))); do
         reps="$OUT_ROOT/$eid/$eid/seed$s/folds"
         [ -d "$reps" ] || { echo "skip $reps (no folds)"; continue; }
-        jid=$(qsub -terse -N t4-${eid,,}s$s -l h_rt=6:0:0 -l mem=8G \
-              -v REPS="$reps",GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS=causalpfn,ONLY_ESTIMATORS=1,OUT=$T4_OUT \
+        jid=$(REPS="$reps" qsub -terse -N t4-${eid,,}s$s -l h_rt=6:0:0 -l mem=8G \
+              -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS=causalpfn,ONLY_ESTIMATORS=1,OUT=$T4_OUT \
               qsub/perfold_score.qsub.sh)
         echo "t4 $eid seed$s -> job $jid"
       done
@@ -87,10 +89,10 @@ PY
       reps="$root/$eid/$eid/seed?/folds"
       n=$(ls -d $reps 2>/dev/null | wc -l)
       [ "$n" -ge 2 ] || { echo "skip $eid: $n seed folders under $root"; continue; }
-      j1=$(qsub -terse -N ens-${eid,,} -l h_rt=4:0:0 \
-           -v REPS="$reps",GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ENSEMBLE=1,ENSEMBLE_ONLY=1,OUT=$root qsub/perfold_score.qsub.sh)
-      j2=$(qsub -terse -N ens-${eid,,}-t4 -l h_rt=6:0:0 -l mem=8G \
-           -v REPS="$reps",GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ENSEMBLE=1,ENSEMBLE_ONLY=1,ESTIMATORS=causalpfn,ONLY_ESTIMATORS=1,OUT=$T4_OUT qsub/perfold_score.qsub.sh)
+      j1=$(REPS="$reps" qsub -terse -N ens-${eid,,} -l h_rt=4:0:0 \
+           -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ENSEMBLE=1,ENSEMBLE_ONLY=1,OUT=$root qsub/perfold_score.qsub.sh)
+      j2=$(REPS="$reps" qsub -terse -N ens-${eid,,}-t4 -l h_rt=6:0:0 -l mem=8G \
+           -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ENSEMBLE=1,ENSEMBLE_ONLY=1,ESTIMATORS=causalpfn,ONLY_ESTIMATORS=1,OUT=$T4_OUT qsub/perfold_score.qsub.sh)
       echo "ensemble $eid ($n seeds, $root): LR/ET job $j1 -> $root/leaderboard.csv; CausalPFN job $j2 -> $T4_OUT/leaderboard.csv"
     done
     ;;
@@ -116,8 +118,8 @@ PY
       set -- $key; eid=$1; run=$2; seed=$3
       label=$(python -c "from ncpfold.catalogue import find_run; print(find_run('$eid', $run).label)")
       reps="$PUB_ROOT/$eid/$label/seed$seed/folds"
-      sj=$(qsub -terse -N sc-${eid,,}r${run}s$seed -hold_jid "${HOLD[$key]}" -l h_rt=3:0:0 \
-           -v REPS="$reps",GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,WITH_VOLUME=1,OUT=$PUB_ROOT qsub/perfold_score.qsub.sh)
+      sj=$(REPS="$reps" qsub -terse -N sc-${eid,,}r${run}s$seed -hold_jid "${HOLD[$key]}" -l h_rt=3:0:0 \
+           -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,WITH_VOLUME=1,OUT=$PUB_ROOT qsub/perfold_score.qsub.sh)
       echo "$eid run$run seed$seed: folds ${HOLD[$key]} -> scoring $sj"
     done
     rm -f /tmp/perfold_submit_$$.sh
@@ -150,8 +152,8 @@ PY
         hold="${hold:+$hold,}$jid"
       done
       if [ -n "$hold" ]; then
-        sj=$(qsub -terse -N sc-${eid,,}s$seed-r -hold_jid "$hold" -l h_rt=3:0:0 \
-             -v REPS="$d",GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,WITH_VOLUME=1,OUT=$PUB_ROOT qsub/perfold_score.qsub.sh)
+        sj=$(REPS="$d" qsub -terse -N sc-${eid,,}s$seed-r -hold_jid "$hold" -l h_rt=3:0:0 \
+             -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,WITH_VOLUME=1,OUT=$PUB_ROOT qsub/perfold_score.qsub.sh)
         echo "  scoring $sj held on $hold"
         continue
       fi
@@ -163,8 +165,8 @@ PY
       if [ "$n_npz" -eq 10 ] && [ "$n_head" -eq 0 ]; then
         run_name=$(printf '%s\n' "$plan" | grep -F -- "EID=$eid," | grep -F -- "SEED=$seed," | grep -F -- " -t 1 " | grep -F -- "# $label" | sed -E 's/.*-N ([^ ]+)f1 .*/\1/')
         if printf '%s\n' "$queued" | grep -qx "sc-$run_name" || printf '%s\n' "$queued" | grep -qx "sc-${eid,,}s$seed-r"; then continue; fi
-        sj=$(qsub -terse -N sc-${eid,,}s$seed-r -l h_rt=3:0:0 \
-             -v REPS="$d",GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,WITH_VOLUME=1,OUT=$PUB_ROOT qsub/perfold_score.qsub.sh)
+        sj=$(REPS="$d" qsub -terse -N sc-${eid,,}s$seed-r -l h_rt=3:0:0 \
+             -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,WITH_VOLUME=1,OUT=$PUB_ROOT qsub/perfold_score.qsub.sh)
         echo "$eid $label seed$seed: 10 folds, no headline -> scoring $sj"
       fi
     done
@@ -184,8 +186,8 @@ PY
     tj=$(qsub -terse -N pfn-$tag -hold_jid "$cj" \
          -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="${SEED:-0}",ARCH="${ARCH:-tabicl}" scripts/train_pfn_myriad.qsub.sh)
     cd "$PERFOLD"
-    sj=$(qsub -terse -N sc-pfn-$tag -hold_jid "$tj" -l h_rt=6:0:0 -l mem=8G \
-         -v REPS="$OUT_ROOT/E1/E1/seed0/folds",GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS="$MAIN/$out/pfn.pt",ONLY_ESTIMATORS=1,OUT=outputs_perfold_pfn \
+    sj=$(REPS="$OUT_ROOT/E1/E1/seed0/folds" qsub -terse -N sc-pfn-$tag -hold_jid "$tj" -l h_rt=6:0:0 -l mem=8G \
+         -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS="$MAIN/$out/pfn.pt",ONLY_ESTIMATORS=1,OUT=outputs_perfold_pfn \
          qsub/perfold_score.qsub.sh)
     echo "phase2 $tag: cache $cj -> pfn $tj ($out/pfn.pt, 20-40 h) -> scoring on E1 per-fold $sj -> $PERFOLD/outputs_perfold_pfn/leaderboard.csv"
     ;;
