@@ -124,3 +124,49 @@ def test_curriculum_stage_narrows_gamma_and_beta(atlas, pool):
     coh = NeuroPriorCohort(atlas, pool, seed=0, n_context=64, n_query=8, hyper=h, augment=False)
     for p in coh.sample_batch(6)["processes"]:
         assert 0.0 <= p["gamma"] <= 0.3 and 0.2 <= p["beta"] <= 0.4
+
+
+def test_batch_metadata_is_not_a_tensor_field():
+    """The cohort batch carries ``processes`` (one dict per item); the tensor
+    conversion must skip it. Torch-free check of the predicate."""
+    import importlib.util
+    import sys, types
+
+    if importlib.util.find_spec("torch") is None:
+        # import the predicate without torch: load the module with a stub
+        stub = types.ModuleType("torch"); stub.float32 = None; stub.dtype = object; stub.Tensor = object
+        sys.modules.setdefault("torch", stub)
+    from neurocausalpfn.pfn.tokens import is_tensor_field
+
+    assert not is_tensor_field("processes", [{"family": "theory"}])
+    assert not is_tensor_field("anything", [{"a": 1}]) and not is_tensor_field("x", "str")
+    assert is_tensor_field("Xc", np.zeros((2, 3))) and is_tensor_field("Tc", [0.0, 1.0])
+
+
+@pytest.mark.skipif(__import__("importlib").util.find_spec("torch") is None, reason="needs torch")
+def test_pfn_trains_on_neuro_prior_cache(tmp_path):
+    """End to end as on the cluster: anatomy cache -> neuro_prior kind (family
+    theory) -> a few iterations of the transformer; the batch metadata must
+    not break the tensor conversion."""
+    import math
+
+    from neurocausalpfn.prior.atlas import _centroid
+    from neurocausalpfn.train.train_pfn import prototype_config, run_pfn
+
+    # the training config builds its own synthetic atlas (atlas_dir None,
+    # cfg seed), so the cache must come from that same atlas
+    atlas_t = FunctionalAtlas.from_dir(None, shape=SHAPE, seed=0)
+    pool = _pool(atlas_t, 60, seed=3)
+    ov = np.stack([compute_overlaps(atlas_t, m) for m in pool])
+    cache = tmp_path / "cache.npz"
+    np.savez(cache, overlaps=ov, centroids=np.stack([_centroid(m) for m in pool]),
+             volumes=np.array([float(m.sum()) for m in pool]),
+             Z=np.random.default_rng(0).normal(size=(len(pool), 6)).astype(np.float32),
+             files=np.array([f"l{i}" for i in range(len(pool))]))
+    cfg = prototype_config()
+    cfg["prior"] = {"kind": "neuro_prior", "family": "theory", "cache": str(cache),
+                    "atlas_shape": list(SHAPE), "augment": True}
+    cfg["pfn"].update({"iters": 3, "batch_size": 2, "context_min": 24, "context_max": 48, "n_query": 6})
+    cfg["out_dir"] = str(tmp_path / "pfn")
+    model, history = run_pfn(cfg)
+    assert all(math.isfinite(h["loss"]) for h in history)
