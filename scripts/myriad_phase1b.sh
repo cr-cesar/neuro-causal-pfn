@@ -8,7 +8,8 @@
 #   bash scripts/myriad_phase1b.sh ensemble E1 E5   # seed ensemble (3 seeds concatenated fold by fold) of finished per-fold reps, LR/ET + CausalPFN
 #   bash scripts/myriad_phase1b.sh repair            # resubmit published-budget folds that died (time limit after a slow start) + their scoring
 #   bash scripts/myriad_phase1b.sh perfold E1 E3 E11b    # published-budget (32-epoch) per-fold training into PUB_ROOT, independent jobs, scoring chained
-#   POOL_LESIONS=<dir> POOL_LATENTS=<npz> bash scripts/myriad_phase1b.sh phase2   # cache -> reduced PFN (GPU) -> scored on E1 per-fold
+#   POOL_LESIONS=<dir> POOL_LATENTS=<npz> bash scripts/myriad_phase1b.sh phase2   # cache -> reduced PFN (GPU) -> scored on E1 per-fold (published budget)
+#   bash scripts/myriad_phase1b.sh e12            # curriculum ablation: 3 variants x SEEDS on the pilot's cache; "e12 summary" collects the rows
 #   bash scripts/myriad_phase1b.sh clinical <cohort.csv> <id-col> <images-dir> "<latents glob>" "<outcome specs>" "<covariates>" <vol-col> [regress cols]
 #   bash scripts/myriad_phase1b.sh status     # queue by state and block, latest leaderboards
 #
@@ -206,10 +207,60 @@ PY
     tj=$(qsub -terse -N pfn-$tag -hold_jid "$cj" \
          -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="${SEED:-0}",ARCH="${ARCH:-tabicl}" scripts/train_pfn_myriad.qsub.sh)
     cd "$PERFOLD"
-    sj=$(REPS="$OUT_ROOT/E1/E1/seed0/folds" qsub -terse -N sc-pfn-$tag -hold_jid "$tj" -l h_rt=6:0:0 -l mem=8G \
-         -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS="$MAIN/$out/pfn.pt",ONLY_ESTIMATORS=1,OUT=outputs_perfold_pfn \
+    # the checkpoint is scored on the headline encoder's per-fold latents: E1
+    # with the published budget (SCORE_REPS overrides; compare with the
+    # CausalPFN row of the same reps, outputs_perfold_pub_t4)
+    score_reps="${SCORE_REPS:-$PUB_ROOT/E1/E1/seed0/folds}"
+    sj=$(REPS="$score_reps" qsub -terse -N sc-pfn-$tag -hold_jid "$tj" -l h_rt=6:0:0 -l mem=8G \
+         -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS="$MAIN/$out/pfn.pt",ONLY_ESTIMATORS=1,OUT=outputs_perfold_pfn/$tag \
          qsub/perfold_score.qsub.sh)
-    echo "phase2 $tag: cache $cj -> pfn $tj ($out/pfn.pt, 20-40 h) -> scoring on E1 per-fold $sj -> $PERFOLD/outputs_perfold_pfn/leaderboard.csv"
+    echo "phase2 $tag: cache $cj -> pfn $tj ($out/pfn.pt, ~5 h) -> scoring on $score_reps $sj -> $PERFOLD/outputs_perfold_pfn/$tag/leaderboard.csv"
+    ;;
+
+  e12)
+    # the curriculum ablation of the design: three variants (nocurr, ctx,
+    # ctx+stages) x SEEDS, each one sequential GPU job of ~5 h on the same
+    # prior cache as the pilot (TAG), each checkpoint scored as a fixed
+    # estimator on the headline encoder's per-fold latents. Rows are collected
+    # by "e12 summary" (one leaderboard per checkpoint under outputs_perfold_pfn).
+    tag="${TAG:-kch_e1}"; cache="outputs/prior_cache/${tag}.npz"
+    if [ "${1:-}" = "summary" ]; then
+      activate
+      cd "$PERFOLD"
+      python - <<'PY'
+import glob, os, pandas as pd
+rows = []
+# the pilot (phase2 before tags) wrote at the root of outputs_perfold_pfn; tagged runs under their own folder
+files = [(f, "pilot") for f in glob.glob("outputs_perfold_pfn/replica/**/replica_headline.csv", recursive=True)]
+files += [(f, f.split("/")[1]) for f in glob.glob("outputs_perfold_pfn/*/replica/**/replica_headline.csv", recursive=True)]
+for f, run in sorted(files):
+    r = pd.read_csv(f).iloc[0]
+    rows.append({"run": run, "variant": run.rsplit("_s", 1)[0], "pehe_paper": r["pehe_paper_mean"], "balacc": r["balacc_mean"]})
+if not rows:
+    print("no PFN scorings yet"); raise SystemExit
+d = pd.DataFrame(rows); print(d.round(4).to_string(index=False)); print()
+print(d.groupby("variant").agg(n=("pehe_paper", "size"), pehe_mean=("pehe_paper", "mean"), pehe_std=("pehe_paper", lambda v: v.std(ddof=0)),
+                               balacc_mean=("balacc", "mean")).round(4).to_string())
+PY
+      exit 0
+    fi
+    activate
+    cd "$MAIN"
+    [ -f "$cache" ] || { echo "no prior cache $cache: run phase2 first (it builds it)"; exit 2; }
+    score_reps="${SCORE_REPS:-$PUB_ROOT/E1/E1/seed0/folds}"
+    for v in ${VARIANTS:-nocurr ctx ctx+stages}; do
+      for s in $(seq 0 $((SEEDS - 1))); do
+        run="${v//+/-}_s$s"; out="outputs/pfn_e12_${run}"
+        cd "$MAIN"
+        tj=$(qsub -terse -N pfn-$run -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="$s",ARCH="${ARCH:-tabicl}",VARIANT="$v" scripts/train_pfn_myriad.qsub.sh)
+        cd "$PERFOLD"
+        sj=$(REPS="$score_reps" qsub -terse -N sc-$run -hold_jid "$tj" -l h_rt=6:0:0 -l mem=8G \
+             -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS="$MAIN/$out/pfn.pt",ONLY_ESTIMATORS=1,OUT=outputs_perfold_pfn/$run \
+             qsub/perfold_score.qsub.sh)
+        echo "e12 $v seed$s: pfn $tj -> scoring $sj (outputs_perfold_pfn/$run)"
+      done
+    done
+    echo "when done: bash scripts/myriad_phase1b.sh e12 summary"
     ;;
 
   clinical)

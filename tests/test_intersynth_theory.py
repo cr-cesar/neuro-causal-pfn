@@ -170,3 +170,19 @@ def test_pfn_trains_on_neuro_prior_cache(tmp_path):
     cfg["out_dir"] = str(tmp_path / "pfn")
     model, history = run_pfn(cfg)
     assert all(math.isfinite(h["loss"]) for h in history)
+
+
+@pytest.mark.skipif(__import__("importlib").util.find_spec("torch") is None, reason="needs torch")
+def test_e12_variants_and_curriculum():
+    from neurocausalpfn.train.train_pfn import E12_VARIANTS, _context_length, _stage_index, e12_config
+
+    assert E12_VARIANTS == ("nocurr", "ctx", "ctx+stages")
+    c0, c1, c2 = (e12_config(v) for v in E12_VARIANTS)
+    n = c1["pfn"]["iters"]
+    assert _context_length(c0, 0) == c0["pfn"]["context_max"]                 # no curriculum: full context at once
+    assert _context_length(c1, 0) == c1["pfn"]["context_min"] + (c1["pfn"]["context_max"] - c1["pfn"]["context_min"]) // (n // 2)
+    assert _context_length(c1, n) == c1["pfn"]["context_max"]
+    assert _stage_index(c1, 0) == -1 and _stage_index(c2, 0) == 0 and _stage_index(c2, n - 1) == 1
+    assert c2["prior"]["stages"][0]["hyper"]["gamma"] == [0.0, 0.3]
+    with pytest.raises(ValueError):
+        e12_config("bogus")
