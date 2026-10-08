@@ -106,10 +106,60 @@ def reduced_config() -> Dict:
 
 
 def _context_length(cfg: Dict, it: int) -> int:
-    """Linear context-length curriculum from shorter to longer."""
+    """Context length at iteration ``it``. ``cfg["pfn"]["curriculum"]``:
+    ``"context"`` (default) grows the context linearly from context_min to
+    context_max over the first half of training; ``"none"`` keeps it at
+    context_max from the start (the E12 ablation without curriculum)."""
     p = cfg["pfn"]
+    if p.get("curriculum", "context") == "none":
+        return int(p["context_max"])
     frac = min(1.0, (it + 1) / max(1, int(0.5 * p["iters"])))
     return int(p["context_min"] + frac * (p["context_max"] - p["context_min"]))
+
+
+def _stage_index(cfg: Dict, it: int) -> int:
+    """Index of the hyper-prior stage active at iteration ``it``; -1 without
+    stages. ``cfg["prior"]["stages"]`` is a list of {"until": fraction of
+    iters, "hyper": {ranges}} in order (the design's staged confounding:
+    mild gamma and moderate beta first, the full ranges afterwards)."""
+    stages = cfg.get("prior", {}).get("stages") or []
+    if not stages:
+        return -1
+    frac = (it + 1) / max(1, int(cfg["pfn"]["iters"]))
+    for k, st in enumerate(stages):
+        if frac <= float(st.get("until", 1.0)):
+            return k
+    return len(stages) - 1
+
+
+def _hyper_for(cfg: Dict, ranges: Dict):
+    pr = cfg.get("prior", {})
+    if pr.get("family", "theory") == "theory":
+        from ..prior.intersynth_theory import TheoryHyperPrior as _Hyper
+    else:
+        from ..prior.neuro_prior import HyperPrior as _Hyper
+    return _Hyper(**{k: tuple(v) if isinstance(v, list) else v for k, v in ranges.items()})
+
+
+E12_VARIANTS = ("nocurr", "ctx", "ctx+stages")
+
+
+def e12_config(variant: str) -> Dict:
+    """The curriculum ablation of the design (E12) on the reduced
+    configuration. ``nocurr``: fixed context, full hyper-prior ranges from
+    the start. ``ctx``: the context-length curriculum of the pilot.
+    ``ctx+stages``: context curriculum plus the staged confounding of the
+    design (gamma in [0, 0.3] and beta in [0.2, 0.4] for the first half, full
+    ranges afterwards)."""
+    if variant not in E12_VARIANTS:
+        raise ValueError(f"unknown E12 variant {variant!r}; choose from {E12_VARIANTS}")
+    cfg = reduced_config()
+    cfg["pfn"]["curriculum"] = "none" if variant == "nocurr" else "context"
+    if variant == "ctx+stages":
+        cfg["prior"]["stages"] = [{"until": 0.5, "hyper": {"gamma": [0.0, 0.3], "beta": [0.2, 0.4]}},
+                                  {"until": 1.0, "hyper": {}}]
+    cfg["variant"] = variant
+    return cfg
 
 
 def _build_prior(cfg: Dict, seed_offset: int = 0):
@@ -174,8 +224,15 @@ def run_pfn(cfg: Dict):
 
     history = []
     model.train()
+    stage = -1
     for it in range(p["iters"]):
         n_ctx = _context_length(cfg, it)
+        k = _stage_index(cfg, it)
+        if k != stage and is_intersynth and hasattr(prior_obj, "hyper"):
+            # staged hyper-prior (E12 ctx+stages): swap the ranges in place
+            prior_obj.hyper = _hyper_for(cfg, cfg["prior"]["stages"][k].get("hyper", {}))
+            log.info("hyper-prior stage %d from iter %d: %s", k, it + 1, prior_obj.hyper)
+            stage = k
         if is_intersynth:
             batch_np = prior_obj.sample_batch(p["batch_size"], n_context=n_ctx)
         else:
