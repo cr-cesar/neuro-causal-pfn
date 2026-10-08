@@ -4,7 +4,7 @@
 # submits its jobs with their dependencies and returns at once.
 #
 #   bash scripts/myriad_phase1b.sh setup      # causalpfn + faiss, pretrained weights, pull both repos
-#   bash scripts/myriad_phase1b.sh t4 [eids]  # Tier 4 of the design: off-the-shelf CausalPFN on per-fold latents (CPU); ROOT=outputs_perfold_pub for the 32-epoch variants
+#   bash scripts/myriad_phase1b.sh t4 [eids]  # Tier 4 of the design: off-the-shelf CausalPFN on per-fold latents (CPU); ROOT=outputs_perfold_pub scores the 32-epoch variants into outputs_perfold_pub_t4
 #   bash scripts/myriad_phase1b.sh ensemble E1 E5   # seed ensemble (3 seeds concatenated fold by fold) of finished per-fold reps, LR/ET + CausalPFN
 #   bash scripts/myriad_phase1b.sh repair            # resubmit published-budget folds that died (time limit after a slow start) + their scoring
 #   bash scripts/myriad_phase1b.sh perfold E1 E3 E11b    # published-budget (32-epoch) per-fold training into PUB_ROOT, independent jobs, scoring chained
@@ -67,10 +67,14 @@ PY
     # per-fold representation, same folds and trials as the LR/ET scoring.
     # Every label folder of the given eids under ROOT (default the 200-epoch
     # root; ROOT=outputs_perfold_pub for the published-budget variants) gets
-    # one CPU job; rows land in T4_OUT, where the budget column keeps the
-    # 200-epoch and 32-epoch rows apart.
+    # one CPU job; rows land in the T4 root of that training root (T4_OUT for
+    # the 200-epoch root, <ROOT>_t4 otherwise).
     cd "$PERFOLD"
     root="${ROOT:-$OUT_ROOT}"
+    # one T4 root per training root: the replica layout has no budget in its
+    # path, so 32-epoch and 200-epoch scorings of the same label would
+    # overwrite each other inside a shared root (outputs_perfold_pub -> outputs_perfold_pub_t4)
+    t4out="$T4_OUT"; [ "$root" = "$OUT_ROOT" ] || t4out="${root}_t4"
     for eid in "${@:-E1 E5}"; do
       for reps in "$root/$eid"/*/seed*/folds; do
         [ -d "$reps" ] || { echo "skip $eid: no folds under $root/$eid"; continue; }
@@ -80,15 +84,15 @@ PY
         lbl=$(basename "$(dirname "$(dirname "$reps")")")
         # already scored under the fixed estimator: skip, so a later run only
         # picks up the sets that have completed since
-        n_done=$(ls "$T4_OUT/replica/$eid/${lbl//\//_}/seed$s"/*-singles/replica_headline.csv 2>/dev/null | wc -l || true)
+        n_done=$(ls "$t4out/replica/$eid/${lbl//\//_}/seed$s"/*-singles/replica_headline.csv 2>/dev/null | wc -l || true)
         [ "$n_done" -eq 0 ] || { echo "done  $lbl seed$s"; continue; }
         jid=$(REPS="$reps" qsub -terse -N t4-${eid,,}s$s -l h_rt=6:0:0 -l mem=8G \
-              -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS=causalpfn,ONLY_ESTIMATORS=1,OUT=$T4_OUT \
+              -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS=causalpfn,ONLY_ESTIMATORS=1,OUT=$t4out \
               qsub/perfold_score.qsub.sh)
         echo "t4 $lbl seed$s -> job $jid"
       done
     done
-    echo "leaderboard: $PERFOLD/$T4_OUT/leaderboard.csv (budget column: chain = 200 epochs, published = 32)"
+    echo "leaderboard: $PERFOLD/$t4out/leaderboard.csv"
     ;;
 
   ensemble)
@@ -222,7 +226,7 @@ PY
     echo "== queue (state x block)"
     qstat 2>/dev/null | awk 'NR>2 {split($3,a,"-"); split(a[1],b,"r"); print $5, substr($3,1,4)}' | sort | uniq -c | sort -k2,2 -k3,3
     echo "== running now"; qstat 2>/dev/null | awk 'NR>2 && $5=="r" {print "  "$3, $6, $7}'
-    for lb in "$PERFOLD/$OUT_ROOT/leaderboard.csv" "$PERFOLD/$T4_OUT/leaderboard.csv" "$PERFOLD/$PUB_ROOT/leaderboard.csv"; do
+    for lb in "$PERFOLD/$OUT_ROOT/leaderboard.csv" "$PERFOLD/$T4_OUT/leaderboard.csv" "$PERFOLD/$PUB_ROOT/leaderboard.csv" "$PERFOLD/${PUB_ROOT}_t4/leaderboard.csv"; do
       [ -f "$lb" ] && { echo "== $lb"; column -s, -t < "$lb" | cut -c1-140; }
     done
     ;;
