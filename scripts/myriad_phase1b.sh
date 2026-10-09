@@ -10,7 +10,7 @@
 #   bash scripts/myriad_phase1b.sh perfold E1 E3 E11b    # published-budget (32-epoch) per-fold training into PUB_ROOT, independent jobs, scoring chained
 #   POOL_IMAGES=<disco dir> bash scripts/myriad_phase1b.sh pool   # pool latents with the published-budget E1 (fold-0 encoder), one GPU job
 #   POOL_LESIONS=<dir> POOL_LATENTS=<npz> bash scripts/myriad_phase1b.sh phase2   # cache -> reduced PFN (GPU) -> scored on E1 per-fold (published budget)
-#   bash scripts/myriad_phase1b.sh e12            # curriculum ablation: 3 variants x SEEDS on the pilot's cache; "e12 summary" collects the rows
+#   TAG=<tag> [POOL_LESIONS=<dir> POOL_LATENTS=<npz> HOLD_JID=<job>] bash scripts/myriad_phase1b.sh e12   # curriculum ablation: 3 variants x SEEDS on cache TAG (built first if missing); "e12 summary" collects the rows
 #   bash scripts/myriad_phase1b.sh clinical <cohort.csv> <id-col> <images-dir> "<latents glob>" "<outcome specs>" "<covariates>" <vol-col> [regress cols]
 #   bash scripts/myriad_phase1b.sh status     # queue by state and block, latest leaderboards
 #
@@ -215,7 +215,7 @@ PY
     sj=$(REPS="$score_reps" qsub -terse -N sc-pfn-$tag -hold_jid "$tj" -l h_rt=6:0:0 -l mem=8G \
          -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS="$MAIN/$out/pfn.pt",ONLY_ESTIMATORS=1,OUT=outputs_perfold_pfn/$tag \
          qsub/perfold_score.qsub.sh)
-    echo "phase2 $tag: cache $cj -> pfn $tj ($out/pfn.pt, ~5 h) -> scoring on $score_reps $sj -> $PERFOLD/outputs_perfold_pfn/$tag/leaderboard.csv"
+    echo "phase2 $tag: cache $cj -> pfn $tj ($out/pfn.pt, ~12 h) -> scoring on $score_reps $sj -> $PERFOLD/outputs_perfold_pfn/$tag/leaderboard.csv"
     ;;
 
   pool)
@@ -235,10 +235,16 @@ PY
 
   e12)
     # the curriculum ablation of the design: three variants (nocurr, ctx,
-    # ctx+stages) x SEEDS, each one sequential GPU job of ~5 h on the same
-    # prior cache as the pilot (TAG), each checkpoint scored as a fixed
+    # ctx+stages) x SEEDS, each one sequential GPU job (measured: ~12 h with
+    # the context curriculum, ~18 h for nocurr, which trains at full context
+    # throughout) on the prior cache TAG, each checkpoint scored as a fixed
     # estimator on the headline encoder's per-fold latents. Rows are collected
     # by "e12 summary" (one leaderboard per checkpoint under outputs_perfold_pfn).
+    # A missing cache is built first (CPU job, the PFN jobs wait for it) from
+    # POOL_LESIONS and POOL_LATENTS; HOLD_JID makes that cache job wait for an
+    # earlier job, e.g. the "pool" export that writes POOL_LATENTS. Building
+    # the cache here instead of through phase2 avoids training phase2's PFN,
+    # which is the same model as the ctx variant at seed 0.
     tag="${TAG:-kch_e1}"; cache="outputs/prior_cache/${tag}.npz"
     if [ "${1:-}" = "summary" ]; then
       activate
@@ -262,13 +268,24 @@ PY
     fi
     activate
     cd "$MAIN"
-    [ -f "$cache" ] || { echo "no prior cache $cache: run phase2 first (it builds it)"; exit 2; }
+    hold=()
+    if [ ! -f "$cache" ]; then
+      lesions="${POOL_LESIONS:-}"; latents="${POOL_LATENTS:-}"
+      if [ -z "$lesions" ] || [ -z "$latents" ]; then
+        echo "no prior cache $cache: set POOL_LESIONS and POOL_LATENTS to build it here (HOLD_JID=<job> to wait for the pool export)"; exit 2
+      fi
+      cj=$(qsub -terse -N prior-$tag ${HOLD_JID:+-hold_jid "$HOLD_JID"} \
+           -v LESIONS="$lesions",LATENTS="$latents",OUT="$cache" scripts/build_prior_cache_myriad.qsub.sh)
+      hold=(-hold_jid "$cj")
+      echo "prior cache $cj${HOLD_JID:+ (after $HOLD_JID)} -> $cache"
+    fi
     score_reps="${SCORE_REPS:-$PUB_ROOT/E1/E1/seed0/folds}"
     for v in ${VARIANTS:-nocurr ctx ctx+stages}; do
       for s in $(seq 0 $((SEEDS - 1))); do
-        run="${v//+/-}_s$s"; out="outputs/pfn_e12_${run}"
+        # the cache tag is part of the run name, so ablations on two caches never share a checkpoint
+        run="${tag}-${v//+/-}_s$s"; out="outputs/pfn_e12_${run}"
         cd "$MAIN"
-        tj=$(qsub -terse -N pfn-$run -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="$s",ARCH="${ARCH:-tabicl}",VARIANT="$v" scripts/train_pfn_myriad.qsub.sh)
+        tj=$(qsub -terse -N pfn-$run ${hold[@]+"${hold[@]}"} -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="$s",ARCH="${ARCH:-tabicl}",VARIANT="$v" scripts/train_pfn_myriad.qsub.sh)
         cd "$PERFOLD"
         sj=$(REPS="$score_reps" qsub -terse -N sc-$run -hold_jid "$tj" -l h_rt=6:0:0 -l mem=8G \
              -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS="$MAIN/$out/pfn.pt",ONLY_ESTIMATORS=1,OUT=outputs_perfold_pfn/$run \
