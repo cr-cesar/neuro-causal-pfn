@@ -14,6 +14,9 @@ from .intersynth import MECHANISMS, SyntheticDGP, make_dataset
 from .intersynth_atlas import InterSynthDGP, compute_overlaps, make_intersynth_dataset
 from .verify_identifiability import verify_identifiability
 
+# process families of NeuroPriorCohort (see its docstring)
+FAMILIES = ("theory", "giles", "mixture")
+
 
 class NeuroPrior:
     def __init__(self, d_x: int, n_context: int, n_query: int, seed: int = 0,
@@ -127,20 +130,33 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
       susceptibility-driven allocation go to the verifier with the
       susceptibility as the unobserved variable and are rejected unless their
       strength is negligible.
+    * ``family="mixture"``: every process is drawn from one of the two
+      families with probabilities ``family_weights`` (theory, giles). The
+      theory family alone has a non-negative, continuous and mostly small
+      effect, whereas the virtual trial of the evaluation has binary outcomes
+      and effects of either sign; the mixture keeps the design's family and
+      covers the evaluation's.
 
     ``hyper`` is a ``TheoryHyperPrior`` or a ``HyperPrior`` matching the
-    family (None gives the family's defaults)."""
+    family (None gives the family's defaults); for the mixture it holds the
+    theory ranges (the curriculum stages narrow those) and ``hyper_giles``
+    the virtual-trial ranges."""
 
     def __init__(self, atlas: FunctionalAtlas, lesion_pool: Optional[np.ndarray], seed: int = 0,
                  z_pool=None, n_context: int = 128, n_query: int = 16, hyper=None,
                  max_tries: int = 64, augment: bool = True, cache: Optional[Dict] = None,
-                 family: str = "theory"):
+                 family: str = "theory", hyper_giles=None,
+                 family_weights: Sequence[float] = (0.5, 0.5)):
         from .intersynth_theory import TheoryHyperPrior
         from .neuro_prior import HyperPrior
 
-        if family not in ("theory", "giles"):
-            raise ValueError(f"unknown prior family {family!r}")
+        if family not in FAMILIES:
+            raise ValueError(f"unknown prior family {family!r}; choose from {FAMILIES}")
         self.family = family
+        w = np.asarray(family_weights, dtype=float)
+        if w.shape != (2,) or np.any(w < 0) or w.sum() <= 0:
+            raise ValueError("family_weights must be two non-negative numbers (theory, giles)")
+        self.family_weights = w / w.sum()
 
         if cache is None:
             super().__init__(atlas, lesion_pool, seed=seed, z_pool=z_pool,
@@ -166,7 +182,9 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
             self.d_x = int(self.X.shape[1])
             if len(self.X) != self.m or self.overlaps.shape[1:] != (atlas.n_networks, 2):
                 raise ValueError("prior cache does not match the atlas or the latent pool")
-        self.hyper = hyper or (TheoryHyperPrior() if family == "theory" else HyperPrior())
+        self.hyper = hyper or (HyperPrior() if family == "giles" else TheoryHyperPrior())
+        # the mixture's virtual-trial ranges (the giles family uses ``hyper``)
+        self.hyper_giles = hyper_giles or HyperPrior()
         self.max_tries = int(max_tries)
         self.n_rejected = 0
         # Coordinate-free covariates: the per-fold encoders (and external
@@ -191,8 +209,14 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
         q, r = np.linalg.qr(self.rng.normal(size=(self.d_x, self.d_x)))
         return q * np.sign(np.diag(r))[None, :]
 
-    def sample_process(self):
-        if self.family == "theory":
+    def _draw_family(self) -> str:
+        if self.family != "mixture":
+            return self.family
+        return str(self.rng.choice(("theory", "giles"), p=self.family_weights))
+
+    def sample_process(self, family: Optional[str] = None):
+        family = family or self._draw_family()
+        if family == "theory":
             from .intersynth_theory import InterSynthTheoryDGP
 
             # the D and S scales are fixed on the whole pool, so the ground
@@ -200,7 +224,7 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
             return InterSynthTheoryDGP(self.atlas, self.rng, self.hyper).calibrate(self.overlaps)
         from .neuro_prior import NeuroPriorDGP
 
-        return NeuroPriorDGP(self.atlas, self.rng, self.hyper)
+        return NeuroPriorDGP(self.atlas, self.rng, self.hyper if self.family == "giles" else self.hyper_giles)
 
     def _one(self, n_context: int) -> Dict[str, np.ndarray]:
         from .intersynth_theory import make_theory_dataset
@@ -208,12 +232,13 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
 
         data = None
         for _ in range(self.max_tries):
-            dgp = self.sample_process()
+            fam = self._draw_family()
+            dgp = self.sample_process(fam)
             ci, qi = self._indices(n_context), self._indices(self.n_query)
             Xc, Xq = self.X[ci], self.X[qi]
             if self.augment:
                 R = self._rotation(); Xc, Xq = Xc @ R, Xq @ R
-            if self.family == "theory":
+            if fam == "theory":
                 data = make_theory_dataset(dgp, self.overlaps[ci], self.centroids[ci], Xc,
                                            self.overlaps[qi], self.centroids[qi], Xq, self.rng)
                 U = None
@@ -222,10 +247,10 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
                                           self.overlaps[qi], self.centroids[qi], self.volumes[qi], Xq, self.rng)
                 U = data["u_ctx"][:, None] if dgp.bias_type == "agnostic" else None
             if verify_identifiability(data["Tc"], data["Xc"], None, None, U=U):
-                data["process"] = dgp.describe()
+                data["process"] = {**dgp.describe(), "family": fam}
                 return data
             self.n_rejected += 1
-        data["process"] = dgp.describe()
+        data["process"] = {**dgp.describe(), "family": fam}
         return data
 
     def sample_batch(self, batch_size: int, n_context=None) -> Dict[str, np.ndarray]:
