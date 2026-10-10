@@ -10,6 +10,7 @@ The prior is selected by configuration (cfg["prior"]["kind"]):
   the functional parcellation. In this mode, d_x is derived from the prior (the
   encoder latent if provided, or the observed covariates otherwise).
 """
+import copy
 import os
 from typing import Dict
 
@@ -132,32 +133,61 @@ def _stage_index(cfg: Dict, it: int) -> int:
     return len(stages) - 1
 
 
+def _as_ranges(ranges: Dict) -> Dict:
+    return {k: tuple(v) if isinstance(v, list) else v for k, v in ranges.items()}
+
+
 def _hyper_for(cfg: Dict, ranges: Dict):
+    """Hyper-prior of the configured family with ``ranges`` overriding the
+    defaults; for the mixture these are the theory ranges (the ones the
+    curriculum stages narrow)."""
     pr = cfg.get("prior", {})
-    if pr.get("family", "theory") == "theory":
+    if pr.get("family", "theory") in ("theory", "mixture"):
         from ..prior.intersynth_theory import TheoryHyperPrior as _Hyper
     else:
         from ..prior.neuro_prior import HyperPrior as _Hyper
-    return _Hyper(**{k: tuple(v) if isinstance(v, list) else v for k, v in ranges.items()})
+    return _Hyper(**_as_ranges(ranges))
 
 
 E12_VARIANTS = ("nocurr", "ctx", "ctx+stages")
 
 
-def e12_config(variant: str) -> Dict:
+# the first-half ranges of ctx+stages, per family: mild confounding first.
+# theory: gamma (confounding) and beta (effect scale), as in the design;
+# giles: the allocation strength of the virtual trial (its confounding).
+_STAGE1_THEORY = {"gamma": [0.0, 0.3], "beta": [0.2, 0.4]}
+_STAGE1_GILES = {"bias": [0.0, 0.3]}
+
+
+def with_family(cfg: Dict, family: str, weights=None) -> Dict:
+    """Set the Neuro-Prior family of a reduced / E12 configuration
+    (theory | giles | mixture) and, for the mixture, the family weights."""
+    from ..prior.cohort import FAMILIES
+
+    if family not in FAMILIES:
+        raise ValueError(f"unknown prior family {family!r}; choose from {FAMILIES}")
+    cfg["prior"]["family"] = family
+    if family == "mixture":
+        cfg["prior"]["family_weights"] = list(weights) if weights is not None else [0.5, 0.5]
+    return cfg
+
+
+def e12_config(variant: str, family: str = "theory", weights=None) -> Dict:
     """The curriculum ablation of the design (E12) on the reduced
     configuration. ``nocurr``: fixed context, full hyper-prior ranges from
     the start. ``ctx``: the context-length curriculum of the pilot.
     ``ctx+stages``: context curriculum plus the staged confounding of the
-    design (gamma in [0, 0.3] and beta in [0.2, 0.4] for the first half, full
-    ranges afterwards)."""
+    design for the first half (theory: gamma in [0, 0.3] and beta in
+    [0.2, 0.4]; giles: allocation strength in [0, 0.3]; the mixture narrows
+    both), full ranges afterwards."""
     if variant not in E12_VARIANTS:
         raise ValueError(f"unknown E12 variant {variant!r}; choose from {E12_VARIANTS}")
-    cfg = reduced_config()
+    cfg = with_family(reduced_config(), family, weights)
     cfg["pfn"]["curriculum"] = "none" if variant == "nocurr" else "context"
     if variant == "ctx+stages":
-        cfg["prior"]["stages"] = [{"until": 0.5, "hyper": {"gamma": [0.0, 0.3], "beta": [0.2, 0.4]}},
-                                  {"until": 1.0, "hyper": {}}]
+        first = {"theory": {"hyper": _STAGE1_THEORY}, "giles": {"hyper": _STAGE1_GILES},
+                 "mixture": {"hyper": _STAGE1_THEORY, "hyper_giles": _STAGE1_GILES}}[family]
+        cfg["prior"]["stages"] = [{"until": 0.5, **copy.deepcopy(first)}, {"until": 1.0, "hyper": {}}]
     cfg["variant"] = variant
     return cfg
 
@@ -182,18 +212,22 @@ def _build_prior(cfg: Dict, seed_offset: int = 0):
             # Neuro-Prior: a hyper-prior over processes on the anatomy cache.
             # family "theory" (default) is the design's InterSynth (D, S,
             # alpha, beta, gamma, four mechanisms; prior/intersynth_theory.py);
-            # family "giles" the v1 virtual-trial generators (prior/neuro_prior.py).
+            # family "giles" the v1 virtual-trial generators (prior/neuro_prior.py);
+            # family "mixture" draws each process from one of the two with
+            # pr["family_weights"] = [theory, giles] (default [0.5, 0.5]).
             # Ranges can be narrowed per curriculum stage through
-            # pr["hyper"] = {"gamma": [0, 0.3], "beta": [0.2, 0.4], ...}.
+            # pr["hyper"] = {"gamma": [0, 0.3], "beta": [0.2, 0.4], ...} (the
+            # theory ranges for theory and mixture); pr["hyper_giles"] sets the
+            # virtual-trial ranges of the mixture.
+            from ..prior.neuro_prior import HyperPrior
+
             family = pr.get("family", "theory")
-            if family == "theory":
-                from ..prior.intersynth_theory import TheoryHyperPrior as _Hyper
-            else:
-                from ..prior.neuro_prior import HyperPrior as _Hyper
-            hyper = _Hyper(**{k: tuple(v) if isinstance(v, list) else v
-                              for k, v in pr.get("hyper", {}).items()})
+            hyper = _hyper_for(cfg, pr.get("hyper", {}))
             kw = dict(seed=seed, n_context=p["context_max"], n_query=p["n_query"], hyper=hyper,
                       augment=bool(pr.get("augment", True)), family=family)
+            if family == "mixture":
+                kw["hyper_giles"] = HyperPrior(**_as_ranges(pr.get("hyper_giles", {})))
+                kw["family_weights"] = tuple(pr.get("family_weights", (0.5, 0.5)))
             if pr.get("cache"):
                 # real anatomy and latents, precomputed by scripts/build_prior_cache.py
                 prior = NeuroPriorCohort.from_cache(atlas, pr["cache"], **kw)
@@ -230,8 +264,14 @@ def run_pfn(cfg: Dict):
         k = _stage_index(cfg, it)
         if k != stage and is_intersynth and hasattr(prior_obj, "hyper"):
             # staged hyper-prior (E12 ctx+stages): swap the ranges in place
-            prior_obj.hyper = _hyper_for(cfg, cfg["prior"]["stages"][k].get("hyper", {}))
-            log.info("hyper-prior stage %d from iter %d: %s", k, it + 1, prior_obj.hyper)
+            st = cfg["prior"]["stages"][k]
+            prior_obj.hyper = _hyper_for(cfg, st.get("hyper", {}))
+            if getattr(prior_obj, "family", None) == "mixture":
+                from ..prior.neuro_prior import HyperPrior
+
+                prior_obj.hyper_giles = HyperPrior(**_as_ranges(st.get("hyper_giles", {})))
+            log.info("hyper-prior stage %d from iter %d: %s%s", k, it + 1, prior_obj.hyper,
+                     f" + {prior_obj.hyper_giles}" if getattr(prior_obj, "family", None) == "mixture" else "")
             stage = k
         if is_intersynth:
             batch_np = prior_obj.sample_batch(p["batch_size"], n_context=n_ctx)

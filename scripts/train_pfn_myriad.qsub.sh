@@ -2,6 +2,8 @@
 # First real Neuro-Causal-PFN training (reduced configuration, one GPU).
 #
 #   VARIANT=nocurr|ctx|ctx+stages selects an E12 curriculum variant (scripts/myriad_phase1b.sh e12).
+#   FAMILY=theory|giles|mixture selects the Neuro-Prior family (empty = theory, the pilot's);
+#   FAMILY_WEIGHTS="0.5 0.5" sets the mixture's theory / giles weights (space-separated).
 #   qsub -v CACHE=outputs/prior_cache/kch_E1_seed0.npz,OUT=outputs/pfn_reduced_kch_E1 \
 #        scripts/train_pfn_myriad.qsub.sh
 #   ITERS=20000 (default), SEED=0, ARCH=tabicl|linear
@@ -29,11 +31,15 @@ ITERS="${ITERS:-20000}"
 SEED="${SEED:-0}"
 ARCH="${ARCH:-tabicl}"
 VARIANT="${VARIANT:-}"      # E12: nocurr | ctx | ctx+stages (empty = the pilot's reduced config)
+FAMILY="${FAMILY:-}"        # theory | giles | mixture (empty = theory)
+FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}"
 
 python - <<PY
 import json
-from neurocausalpfn.train.train_pfn import e12_config, reduced_config, run_pfn
-cfg = e12_config("$VARIANT") if "$VARIANT" else reduced_config()
+from neurocausalpfn.train.train_pfn import e12_config, reduced_config, run_pfn, with_family
+fam = "$FAMILY" or "theory"
+w = [float(x) for x in "$FAMILY_WEIGHTS".split()] or None
+cfg = e12_config("$VARIANT", fam, w) if "$VARIANT" else with_family(reduced_config(), fam, w)
 cfg["out_dir"] = "$OUT"; cfg["seed"] = int("$SEED")
 cfg["pfn"]["iters"] = int("$ITERS"); cfg["pfn"]["arch"] = "$ARCH"
 cfg["prior"]["cache"] = "$CACHE"; cfg["prior"]["atlas_dir"] = "data/atlases"

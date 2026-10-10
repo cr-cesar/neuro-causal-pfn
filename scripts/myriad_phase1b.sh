@@ -9,8 +9,9 @@
 #   bash scripts/myriad_phase1b.sh repair            # resubmit published-budget folds that died (time limit after a slow start) + their scoring
 #   bash scripts/myriad_phase1b.sh perfold E1 E3 E11b    # published-budget (32-epoch) per-fold training into PUB_ROOT, independent jobs, scoring chained
 #   POOL_IMAGES=<disco dir> bash scripts/myriad_phase1b.sh pool   # pool latents with the published-budget E1 (fold-0 encoder), one GPU job
-#   POOL_LESIONS=<dir> POOL_LATENTS=<npz> bash scripts/myriad_phase1b.sh phase2   # cache -> reduced PFN (GPU) -> scored on E1 per-fold (published budget)
-#   TAG=<tag> [POOL_LESIONS=<dir> POOL_LATENTS=<npz> HOLD_JID=<job>] bash scripts/myriad_phase1b.sh e12   # curriculum ablation: 3 variants x SEEDS on cache TAG (built first if missing); "e12 summary" collects the rows
+#   PRIOR_FAMILY=<theory|giles|mixture> TAG=<tag> [POOL_LESIONS=<dir> POOL_LATENTS=<npz> HOLD_JID=<job>] bash scripts/myriad_phase1b.sh phase2   # [cache ->] reduced PFN (GPU) -> scored on E1 per-fold (published budget)
+#   bash scripts/myriad_phase1b.sh probe [pfn.pt ...]   # CPU probe: does a checkpoint read the treatment, and on which prior family is it accurate
+#   PRIOR_FAMILY=<family> TAG=<tag> [POOL_LESIONS=<dir> POOL_LATENTS=<npz> HOLD_JID=<job>] bash scripts/myriad_phase1b.sh e12   # curriculum ablation: 3 variants x SEEDS on cache TAG (built first if missing); "e12 summary" collects the rows
 #   bash scripts/myriad_phase1b.sh clinical <cohort.csv> <id-col> <images-dir> "<latents glob>" "<outcome specs>" "<covariates>" <vol-col> [regress cols]
 #   bash scripts/myriad_phase1b.sh status     # queue by state and block, latest leaderboards
 #
@@ -41,6 +42,36 @@ activate() {
   type module >/dev/null 2>&1 || source /etc/profile.d/modules.sh 2>/dev/null || true
   module load python3/3.11 2>/dev/null || true
   source ~/venvs/neuro/bin/activate
+}
+
+# Phase 2: the Neuro-Prior family is always chosen explicitly. The theory
+# family alone (the pilot's) has non-negative, continuous, mostly small effects
+# and scored at chance on the virtual trial (PEHE paper 0.608, balanced
+# accuracy 0.50); giles covers the virtual trial; mixture draws from both.
+need_family() {
+  fam="${PRIOR_FAMILY:-}"
+  case "$fam" in
+    theory|giles|mixture) ;;
+    *) echo "set PRIOR_FAMILY=theory|giles|mixture (FAMILY_WEIGHTS=\"<theory> <giles>\" for the mixture, default \"0.5 0.5\");"
+       echo "the theory family alone scored at chance on the virtual trial; check a checkpoint with: bash scripts/myriad_phase1b.sh probe <pfn.pt>"
+       exit 2 ;;
+  esac
+}
+
+# the prior cache of tag $1: sets cache and hold (the -hold_jid option for the
+# jobs that read it). A missing cache is built from POOL_LESIONS and
+# POOL_LATENTS by a CPU job, after HOLD_JID when given (e.g. the pool export).
+ensure_cache() {
+  cache="outputs/prior_cache/$1.npz"; hold=()
+  [ -f "$cache" ] && return 0
+  local lesions="${POOL_LESIONS:-}" latents="${POOL_LATENTS:-}" cj
+  if [ -z "$lesions" ] || [ -z "$latents" ]; then
+    echo "no prior cache $cache: set POOL_LESIONS and POOL_LATENTS to build it (HOLD_JID=<job> to wait for the pool export)"; exit 2
+  fi
+  cj=$(qsub -terse -N prior-$1 ${HOLD_JID:+-hold_jid "$HOLD_JID"} \
+       -v LESIONS="$lesions",LATENTS="$latents",OUT="$cache" scripts/build_prior_cache_myriad.qsub.sh)
+  hold=(-hold_jid "$cj")
+  echo "prior cache $cj${HOLD_JID:+ (after $HOLD_JID)} -> $cache"
 }
 
 case "$cmd" in
@@ -198,24 +229,36 @@ PY
     # Phase 2 pilot as one chain: anatomy cache of the covariate pool (CPU)
     # -> reduced Neuro-Causal-PFN, one sequential GPU job -> the checkpoint
     # scored as a fixed in-context estimator on the E1 per-fold folds (CPU),
-    # next to the CausalPFN rows of T4_OUT. The pool is given on the command
-    # line: POOL_LESIONS (lesion dir) and POOL_LATENTS (matching latents npz).
+    # next to the CausalPFN rows of T4_OUT. PRIOR_FAMILY is required; the
+    # cache of TAG is reused, or built from POOL_LESIONS (lesion dir) and
+    # POOL_LATENTS (matching latents npz), after HOLD_JID when given.
+    need_family
     cd "$MAIN"
-    lesions="${POOL_LESIONS:?set POOL_LESIONS to the lesion directory of the pool}"
-    latents="${POOL_LATENTS:?set POOL_LATENTS to the latents npz of the pool}"
-    tag="${TAG:-pilot}"; cache="outputs/prior_cache/${tag}.npz"; out="outputs/pfn_reduced_${tag}"
-    cj=$(qsub -terse -N prior-$tag -v LESIONS="$lesions",LATENTS="$latents",OUT="$cache" scripts/build_prior_cache_myriad.qsub.sh)
-    tj=$(qsub -terse -N pfn-$tag -hold_jid "$cj" \
-         -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="${SEED:-0}",ARCH="${ARCH:-tabicl}" scripts/train_pfn_myriad.qsub.sh)
+    tag="${TAG:-pilot}"; run="${tag}-${fam}"; out="outputs/pfn_reduced_${run}"
+    ensure_cache "$tag"
+    tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" qsub -terse -N pfn-$run ${hold[@]+"${hold[@]}"} \
+         -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="${SEED:-0}",ARCH="${ARCH:-tabicl}",FAMILY="$fam",FAMILY_WEIGHTS \
+         scripts/train_pfn_myriad.qsub.sh)
     cd "$PERFOLD"
     # the checkpoint is scored on the headline encoder's per-fold latents: E1
     # with the published budget (SCORE_REPS overrides; compare with the
     # CausalPFN row of the same reps, outputs_perfold_pub_t4)
     score_reps="${SCORE_REPS:-$PUB_ROOT/E1/E1/seed0/folds}"
-    sj=$(REPS="$score_reps" qsub -terse -N sc-pfn-$tag -hold_jid "$tj" -l h_rt=6:0:0 -l mem=8G \
-         -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS="$MAIN/$out/pfn.pt",ONLY_ESTIMATORS=1,OUT=outputs_perfold_pfn/$tag \
+    sj=$(REPS="$score_reps" qsub -terse -N sc-pfn-$run -hold_jid "$tj" -l h_rt=6:0:0 -l mem=8G \
+         -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS="$MAIN/$out/pfn.pt",ONLY_ESTIMATORS=1,OUT=outputs_perfold_pfn/$run \
          qsub/perfold_score.qsub.sh)
-    echo "phase2 $tag: cache $cj -> pfn $tj ($out/pfn.pt, ~12 h) -> scoring on $score_reps $sj -> $PERFOLD/outputs_perfold_pfn/$tag/leaderboard.csv"
+    echo "phase2 $run: pfn $tj ($out/pfn.pt, ~12 h at 20,000 iterations) -> scoring on $score_reps $sj -> $PERFOLD/outputs_perfold_pfn/$run/leaderboard.csv"
+    ;;
+
+  probe)
+    # treatment sensitivity and accuracy per prior family of PFN checkpoints
+    # (scripts/probe_pfn.py), one CPU job; default: the pilot's checkpoint.
+    cd "$MAIN"
+    ckpts="${*:-outputs/pfn_reduced_kch_e1/pfn.pt}"
+    for c in $ckpts; do [ -f "$c" ] || { echo "no checkpoint $c"; exit 2; }; done
+    out="${PROBE_OUT:-outputs/probe_pfn_$(date +%m%d_%H%M).csv}"
+    jid=$(CKPTS="$ckpts" qsub -terse -N probe-pfn -v CKPTS,OUT="$out" scripts/probe_pfn_myriad.qsub.sh)
+    echo "probe $jid -> $out (log probe-pfn.o$jid)"
     ;;
 
   pool)
@@ -245,7 +288,7 @@ PY
     # earlier job, e.g. the "pool" export that writes POOL_LATENTS. Building
     # the cache here instead of through phase2 avoids training phase2's PFN,
     # which is the same model as the ctx variant at seed 0.
-    tag="${TAG:-kch_e1}"; cache="outputs/prior_cache/${tag}.npz"
+    tag="${TAG:-kch_e1}"
     if [ "${1:-}" = "summary" ]; then
       activate
       cd "$PERFOLD"
@@ -266,26 +309,20 @@ print(d.groupby("variant").agg(n=("pehe_paper", "size"), pehe_mean=("pehe_paper"
 PY
       exit 0
     fi
+    need_family
     activate
     cd "$MAIN"
-    hold=()
-    if [ ! -f "$cache" ]; then
-      lesions="${POOL_LESIONS:-}"; latents="${POOL_LATENTS:-}"
-      if [ -z "$lesions" ] || [ -z "$latents" ]; then
-        echo "no prior cache $cache: set POOL_LESIONS and POOL_LATENTS to build it here (HOLD_JID=<job> to wait for the pool export)"; exit 2
-      fi
-      cj=$(qsub -terse -N prior-$tag ${HOLD_JID:+-hold_jid "$HOLD_JID"} \
-           -v LESIONS="$lesions",LATENTS="$latents",OUT="$cache" scripts/build_prior_cache_myriad.qsub.sh)
-      hold=(-hold_jid "$cj")
-      echo "prior cache $cj${HOLD_JID:+ (after $HOLD_JID)} -> $cache"
-    fi
+    ensure_cache "$tag"
     score_reps="${SCORE_REPS:-$PUB_ROOT/E1/E1/seed0/folds}"
     for v in ${VARIANTS:-nocurr ctx ctx+stages}; do
       for s in $(seq 0 $((SEEDS - 1))); do
-        # the cache tag is part of the run name, so ablations on two caches never share a checkpoint
-        run="${tag}-${v//+/-}_s$s"; out="outputs/pfn_e12_${run}"
+        # cache tag and prior family are part of the run name, so ablations
+        # on two caches or two families never share a checkpoint
+        run="${tag}-${fam}-${v//+/-}_s$s"; out="outputs/pfn_e12_${run}"
         cd "$MAIN"
-        tj=$(qsub -terse -N pfn-$run ${hold[@]+"${hold[@]}"} -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="$s",ARCH="${ARCH:-tabicl}",VARIANT="$v" scripts/train_pfn_myriad.qsub.sh)
+        tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" qsub -terse -N pfn-$run ${hold[@]+"${hold[@]}"} \
+             -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="$s",ARCH="${ARCH:-tabicl}",VARIANT="$v",FAMILY="$fam",FAMILY_WEIGHTS \
+             scripts/train_pfn_myriad.qsub.sh)
         cd "$PERFOLD"
         sj=$(REPS="$score_reps" qsub -terse -N sc-$run -hold_jid "$tj" -l h_rt=6:0:0 -l mem=8G \
              -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS="$MAIN/$out/pfn.pt",ONLY_ESTIMATORS=1,OUT=outputs_perfold_pfn/$run \
