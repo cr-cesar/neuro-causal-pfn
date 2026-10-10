@@ -63,16 +63,29 @@ need_family() {
 # POOL_LATENTS by a CPU job, after HOLD_JID when given (e.g. the pool export).
 ensure_cache() {
   cache="outputs/prior_cache/$1.npz"; hold=()
-  [ -f "$cache" ] && return 0
+  if [ -s "$cache" ]; then echo "using the existing prior cache $cache"; return 0; fi
   local lesions="${POOL_LESIONS:-}" latents="${POOL_LATENTS:-}" cj
+  # a cache job for this tag already queued or running (a second call before
+  # it finishes): hold on it instead of submitting a second writer
+  cj=$(qstat -xml 2>/dev/null | tr -d '\n' | sed 's/<job_list/\n<job_list/g' \
+       | grep "<JB_name>prior-$1</JB_name>" | sed -n 's/.*<JB_job_number>\([0-9]*\)<.*/\1/p' | head -1 || true)
+  if [ -n "$cj" ]; then hold=(-hold_jid "$cj"); echo "prior cache job $cj already queued -> $cache"; return 0; fi
   if [ -z "$lesions" ] || [ -z "$latents" ]; then
     echo "no prior cache $cache: set POOL_LESIONS and POOL_LATENTS to build it (HOLD_JID=<job> to wait for the pool export)"; exit 2
+  fi
+  [ -d "$lesions" ] || { echo "no lesion dir $lesions"; exit 2; }
+  if [ -z "${HOLD_JID:-}" ] && [ ! -s "$latents" ]; then
+    echo "no latents $latents: wait for the pool export or pass HOLD_JID=<its job id>"; exit 2
   fi
   cj=$(qsub -terse -N prior-$1 ${HOLD_JID:+-hold_jid "$HOLD_JID"} \
        -v LESIONS="$lesions",LATENTS="$latents",OUT="$cache" scripts/build_prior_cache_myriad.qsub.sh)
   hold=(-hold_jid "$cj")
-  echo "prior cache $cj${HOLD_JID:+ (after $HOLD_JID)} -> $cache"
+  echo "prior cache $cj${HOLD_JID:+ (after $HOLD_JID)} -> $cache (log prior-$1.o$cj)"
 }
+
+# short job-name prefix: plain qstat shows 10 characters, so the variant and
+# seed go first and the tag last (full names: qstat -xml)
+short_variant() { case "$1" in nocurr) echo nc ;; ctx) echo ctx ;; ctx+stages) echo cs ;; *) echo "${1//+/-}" ;; esac; }
 
 case "$cmd" in
   setup)
@@ -273,7 +286,8 @@ PY
     [ -f "$ckpt" ] || { echo "no checkpoint $ckpt"; exit 2; }
     out="${POOL_OUT:-outputs/latents_pool32}"
     jid=$(CKPTS="$ckpt" qsub -terse -N pool-export -v CKPTS,IMAGES="$images",OUT="$out" scripts/export_latents_myriad.qsub.sh)
-    echo "pool export $jid -> $out/*.npz; then: POOL_LESIONS=<lesion dir> POOL_LATENTS=$out/<file>.npz TAG=<tag> bash scripts/myriad_phase1b.sh phase2"
+    echo "pool export $jid -> $out/E1_seed0_disco.npz (log pool-export.o$jid); then:"
+    echo "  PRIOR_FAMILY=<family> TAG=<tag> POOL_LESIONS=<lesion dir> POOL_LATENTS=$out/E1_seed0_disco.npz HOLD_JID=$jid bash scripts/myriad_phase1b.sh e12"
     ;;
 
   e12)
@@ -319,15 +333,16 @@ PY
         # cache tag and prior family are part of the run name, so ablations
         # on two caches or two families never share a checkpoint
         run="${tag}-${fam}-${v//+/-}_s$s"; out="outputs/pfn_e12_${run}"
+        jn="$(short_variant "$v")-s$s-${fam:0:3}-$tag"
         cd "$MAIN"
-        tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" qsub -terse -N pfn-$run ${hold[@]+"${hold[@]}"} \
+        tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" qsub -terse -N pfn-$jn ${hold[@]+"${hold[@]}"} \
              -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="$s",ARCH="${ARCH:-tabicl}",VARIANT="$v",FAMILY="$fam",FAMILY_WEIGHTS \
              scripts/train_pfn_myriad.qsub.sh)
         cd "$PERFOLD"
-        sj=$(REPS="$score_reps" qsub -terse -N sc-$run -hold_jid "$tj" -l h_rt=6:0:0 -l mem=8G \
+        sj=$(REPS="$score_reps" qsub -terse -N sc-$jn -hold_jid "$tj" -l h_rt=6:0:0 -l mem=8G \
              -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS="$MAIN/$out/pfn.pt",ONLY_ESTIMATORS=1,OUT=outputs_perfold_pfn/$run \
              qsub/perfold_score.qsub.sh)
-        echo "e12 $v seed$s: pfn $tj -> scoring $sj (outputs_perfold_pfn/$run)"
+        echo "e12 $v seed$s: pfn $tj (log pfn-$jn.o$tj) -> scoring $sj (outputs_perfold_pfn/$run)"
       done
     done
     echo "when done: bash scripts/myriad_phase1b.sh e12 summary"

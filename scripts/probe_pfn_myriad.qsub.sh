@@ -12,6 +12,9 @@
 #$ -cwd
 #$ -j y
 set -euo pipefail
+# a failed step exits 100: SGE then keeps this job in error state and the jobs
+# holding on it (-hold_jid) stay queued instead of starting on missing inputs
+trap 'exit 100' ERR
 
 module load python3/3.11
 source ~/venvs/neuro/bin/activate
