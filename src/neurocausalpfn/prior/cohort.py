@@ -149,11 +149,12 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
     deficit on the patients susceptible to it: for the giles family the
     lesions hitting one of the process's causal networks above its threshold,
     for the theory family the lesions with a non-zero disruption score.
-    Context and queries are then drawn without replacement from that slice,
-    so the context of a batch is at most the smallest slice in it minus the
-    queries (``n_context`` is a cap): the evaluation's contexts are the
-    susceptible patients of one deficit, a few dozen to a few hundred, not
-    the whole cohort. On a real pool most lesions hit no network, so
+    The queries are drawn without replacement from that slice and the
+    context, of the requested length, from the rest of the slice with
+    replacement: a lesion that appears twice is two patients with the same
+    anatomy and their own treatment and outcome draws. Processes whose slice
+    is smaller than ``min_slice`` are redrawn. On a real pool most lesions
+    hit no network, so
     ``"all"`` (the pilot) yields processes whose effect is zero for almost
     every patient, and a model trained on them predicts no effect anywhere."""
 
@@ -162,7 +163,7 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
                  max_tries: int = 64, augment: bool = True, cache: Optional[Dict] = None,
                  family: str = "theory", hyper_giles=None,
                  family_weights: Sequence[float] = (0.5, 0.5), context_pool: str = "susceptible",
-                 min_slice: int = 16):
+                 min_slice: int = 32):
         from .intersynth_theory import TheoryHyperPrior
         from .neuro_prior import HyperPrior
 
@@ -200,8 +201,8 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
             self.d_x = int(self.X.shape[1])
             if len(self.X) != self.m or self.overlaps.shape[1:] != (atlas.n_networks, 2):
                 raise ValueError("prior cache does not match the atlas or the latent pool")
-        # a slice must hold the queries plus at least one context row
-        self.context_pool, self.min_slice = context_pool, max(int(min_slice), self.n_query + 1)
+        # a slice must hold the queries plus a context worth inferring from
+        self.context_pool, self.min_slice = context_pool, max(int(min_slice), self.n_query + 8)
         self.hyper = hyper or (HyperPrior() if family == "giles" else TheoryHyperPrior())
         # the mixture's virtual-trial ranges (the giles family uses ``hyper``)
         self.hyper_giles = hyper_giles or HyperPrior()
@@ -285,12 +286,11 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
             if sl is None:
                 ci, qi = self._indices(n_context), self._indices(self.n_query)
             else:
-                # disjoint context and queries from the slice, as train and test of one deficit
+                # queries without replacement; the context of the requested
+                # length from the rest of the slice, with replacement
                 perm = sl[self.rng.permutation(len(sl))]
-                qi, ci = perm[: self.n_query], perm[self.n_query: self.n_query + n_context]
-                if len(ci) < n_context:          # a slice smaller than the cap: fill by resampling it
-                    ci = np.concatenate([ci, ci[self.rng.integers(0, len(ci), size=n_context - len(ci))]])
-                    # (len(ci) >= 1: min_slice > n_query)
+                qi, rest = perm[: self.n_query], perm[self.n_query:]
+                ci = rest[self.rng.integers(0, len(rest), size=n_context)]
             Xc, Xq = self.X[ci], self.X[qi]
             if self.augment:
                 R = self._rotation(); Xc, Xq = Xc @ R, Xq @ R
@@ -310,20 +310,9 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
         data["process"] = {**dgp.describe(), "family": fam, "n_slice": n_slice}
         return data
 
-    def context_cap(self, n_context: int, slices) -> int:
-        """Context length of a batch: the cap, or the smallest slice minus the
-        queries when processes are restricted to their susceptible lesions."""
-        sizes = [len(s) - self.n_query for s in slices if s is not None]
-        return max(self.n_query, min([n_context] + sizes)) if sizes else int(n_context)
-
     def sample_batch(self, batch_size: int, n_context=None) -> Dict[str, np.ndarray]:
         n_ctx = self.n_context if n_context is None else int(n_context)
-        drawn = [self._draw_process() for _ in range(batch_size)]
-        if self.context_pool != "all":
-            # every item of a batch shares one context length (the arrays are
-            # stacked): the cap, or the smallest slice of the batch
-            n_ctx = self.context_cap(n_ctx, [d[2] for d in drawn])
-        items = [self._one(n_ctx, d) for d in drawn]
+        items = [self._one(n_ctx) for _ in range(batch_size)]
         keys = ("Xc", "Tc", "Yc", "Xq", "Tq", "mu_q", "mu0", "mu1")
         out = {k: np.stack([it[k] for it in items], axis=0) for k in keys}
         out["processes"] = [it["process"] for it in items]

@@ -174,6 +174,11 @@ def with_family(cfg: Dict, family: str, weights=None, context_pool: Optional[str
         if context_pool not in CONTEXT_POOLS:
             raise ValueError(f"unknown context_pool {context_pool!r}; choose from {CONTEXT_POOLS}")
         cfg["prior"]["context_pool"] = context_pool
+    if cfg["prior"].get("context_pool", "susceptible") == "susceptible":
+        # the evaluation's contexts are the susceptible patients of one deficit
+        # (tens to a few hundred); a 4,119-row context of a slice would be
+        # dozens of copies of each lesion, at quadratic cost in attention
+        cfg["pfn"]["context_max"] = min(int(cfg["pfn"]["context_max"]), 1024)
     return cfg
 
 

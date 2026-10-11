@@ -96,22 +96,19 @@ def test_susceptible_context_pool_restores_treatment_effects_on_a_sparse_pool(at
     eff_whole = np.abs(bw["mu1"] - bw["mu0"]).mean()
     eff_slice = np.abs(bs["mu1"] - bs["mu0"]).mean()
     assert eff_whole < 0.15 < eff_slice, (eff_whole, eff_slice)
-    # the batch's context is capped by its smallest slice, and every item's
-    # context rows are distinct pool rows when the slice is large enough
-    n_ctx = bs["Xc"].shape[1]
-    assert n_ctx < 300 and n_ctx <= max(p["n_slice"] for p in bs["processes"]) - 8   # capped by the slices, not by n_context
-    assert all(p["n_slice"] >= 40 for p in bs["processes"])
-    for i, p in enumerate(bs["processes"]):
-        if p["n_slice"] - 8 >= n_ctx:           # distinct pool rows (two lesions can share an overlap vector)
-            assert len(np.unique(bs["Xc"][i], axis=0)) >= 0.8 * n_ctx
+    # the context keeps the requested length (drawn from the slice with
+    # replacement) and every process has at least min_slice susceptible lesions
+    assert bs["Xc"].shape[1] == 300 and all(p["n_slice"] >= 40 for p in bs["processes"])
+    for i, p in enumerate(bs["processes"]):     # at most as many distinct rows as the slice minus the queries
+        assert len(np.unique(bs["Xc"][i], axis=0)) <= p["n_slice"] - 8
     with pytest.raises(ValueError):
         NeuroPriorCohort(atlas, pool, context_pool="other", **kw)
     # more queries than the default min_slice: the slice floor rises with the
     # queries, so a small slice never leaves an empty context (probe settings)
     many = NeuroPriorCohort(atlas, pool, seed=3, n_context=200, n_query=32, family="giles", augment=False)
-    assert many.min_slice == 33
+    assert many.min_slice == 40
     bm = many.sample_batch(4, n_context=200)
-    assert bm["Xq"].shape[1] == 32 and bm["Xc"].shape[1] >= 1
+    assert bm["Xq"].shape[1] == 32 and bm["Xc"].shape[1] == 200
     # the theory family is restricted the same way (lesions with a non-zero disruption score)
     th = NeuroPriorCohort(atlas, pool, seed=1, n_context=64, n_query=4, family="theory", augment=False)
     bt = th.sample_batch(3)
@@ -172,6 +169,8 @@ def test_e12_config_per_family():
     m["prior"]["stages"][0]["hyper"]["gamma"][1] = 9.0                # configs do not share the stage ranges
     assert e12_config("ctx+stages", "mixture")["prior"]["stages"][0]["hyper"]["gamma"] == [0.0, 0.3]
     assert e12_config("ctx", "mixture", [0.2, 0.8])["prior"]["family_weights"] == [0.2, 0.8]
+    assert e12_config("ctx", "giles")["pfn"]["context_max"] == 1024                    # slices bound the useful context
+    assert e12_config("ctx", "giles", context_pool="all")["pfn"]["context_max"] == 4119
     with pytest.raises(ValueError):
         with_family(reduced_config(), "other")
 
