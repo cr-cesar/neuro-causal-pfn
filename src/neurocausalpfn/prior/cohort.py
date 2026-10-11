@@ -175,7 +175,6 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
         self.family_weights = w / w.sum()
         if context_pool not in CONTEXT_POOLS:
             raise ValueError(f"unknown context_pool {context_pool!r}; choose from {CONTEXT_POOLS}")
-        self.context_pool, self.min_slice = context_pool, int(min_slice)
 
         if cache is None:
             super().__init__(atlas, lesion_pool, seed=seed, z_pool=z_pool,
@@ -201,6 +200,8 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
             self.d_x = int(self.X.shape[1])
             if len(self.X) != self.m or self.overlaps.shape[1:] != (atlas.n_networks, 2):
                 raise ValueError("prior cache does not match the atlas or the latent pool")
+        # a slice must hold the queries plus at least one context row
+        self.context_pool, self.min_slice = context_pool, max(int(min_slice), self.n_query + 1)
         self.hyper = hyper or (HyperPrior() if family == "giles" else TheoryHyperPrior())
         # the mixture's virtual-trial ranges (the giles family uses ``hyper``)
         self.hyper_giles = hyper_giles or HyperPrior()
@@ -289,6 +290,7 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
                 qi, ci = perm[: self.n_query], perm[self.n_query: self.n_query + n_context]
                 if len(ci) < n_context:          # a slice smaller than the cap: fill by resampling it
                     ci = np.concatenate([ci, ci[self.rng.integers(0, len(ci), size=n_context - len(ci))]])
+                    # (len(ci) >= 1: min_slice > n_query)
             Xc, Xq = self.X[ci], self.X[qi]
             if self.augment:
                 R = self._rotation(); Xc, Xq = Xc @ R, Xq @ R

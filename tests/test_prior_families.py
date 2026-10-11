@@ -106,6 +106,12 @@ def test_susceptible_context_pool_restores_treatment_effects_on_a_sparse_pool(at
             assert len(np.unique(bs["Xc"][i], axis=0)) >= 0.8 * n_ctx
     with pytest.raises(ValueError):
         NeuroPriorCohort(atlas, pool, context_pool="other", **kw)
+    # more queries than the default min_slice: the slice floor rises with the
+    # queries, so a small slice never leaves an empty context (probe settings)
+    many = NeuroPriorCohort(atlas, pool, seed=3, n_context=200, n_query=32, family="giles", augment=False)
+    assert many.min_slice == 33
+    bm = many.sample_batch(4, n_context=200)
+    assert bm["Xq"].shape[1] == 32 and bm["Xc"].shape[1] >= 1
     # the theory family is restricted the same way (lesions with a non-zero disruption score)
     th = NeuroPriorCohort(atlas, pool, seed=1, n_context=64, n_query=4, family="theory", augment=False)
     bt = th.sample_batch(3)
