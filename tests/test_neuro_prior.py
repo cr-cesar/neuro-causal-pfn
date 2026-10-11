@@ -130,7 +130,7 @@ def test_outcomes_follow_te_and_re_in_expectation(atlas, pool):
 
 
 def test_cohort_batches_are_identifiable_and_agnostic_bias_is_rejected(atlas, pool):
-    prior = NeuroPriorCohort(atlas, pool, family="giles", seed=5, n_context=96, n_query=8)
+    prior = NeuroPriorCohort(atlas, pool, family="giles", seed=5, n_context=96, n_query=8, context_pool="all")   # fixed-length contexts over the whole pool
     batch = prior.sample_batch(4, n_context=96)
     assert batch["Xc"].shape == (4, 96, prior.d_x) and batch["mu_q"].shape == (4, 8)
     assert ((batch["Yc"] == 0) | (batch["Yc"] == 1)).all()

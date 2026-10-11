@@ -14,8 +14,9 @@ from .intersynth import MECHANISMS, SyntheticDGP, make_dataset
 from .intersynth_atlas import InterSynthDGP, compute_overlaps, make_intersynth_dataset
 from .verify_identifiability import verify_identifiability
 
-# process families of NeuroPriorCohort (see its docstring)
+# process families of NeuroPriorCohort and where a process draws its context (see its docstring)
 FAMILIES = ("theory", "giles", "mixture")
+CONTEXT_POOLS = ("susceptible", "all")
 
 
 class NeuroPrior:
@@ -140,13 +141,28 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
     ``hyper`` is a ``TheoryHyperPrior`` or a ``HyperPrior`` matching the
     family (None gives the family's defaults); for the mixture it holds the
     theory ranges (the curriculum stages narrow those) and ``hyper_giles``
-    the virtual-trial ranges."""
+    the virtual-trial ranges.
+
+    ``context_pool`` says which lesions a process draws its context and
+    queries from. ``"susceptible"`` (default) restricts both to the lesions the
+    process can affect, as the virtual trial does when it evaluates one
+    deficit on the patients susceptible to it: for the giles family the
+    lesions hitting one of the process's causal networks above its threshold,
+    for the theory family the lesions with a non-zero disruption score.
+    Context and queries are then drawn without replacement from that slice,
+    so the context of a batch is at most the smallest slice in it minus the
+    queries (``n_context`` is a cap): the evaluation's contexts are the
+    susceptible patients of one deficit, a few dozen to a few hundred, not
+    the whole cohort. On a real pool most lesions hit no network, so
+    ``"all"`` (the pilot) yields processes whose effect is zero for almost
+    every patient, and a model trained on them predicts no effect anywhere."""
 
     def __init__(self, atlas: FunctionalAtlas, lesion_pool: Optional[np.ndarray], seed: int = 0,
                  z_pool=None, n_context: int = 128, n_query: int = 16, hyper=None,
                  max_tries: int = 64, augment: bool = True, cache: Optional[Dict] = None,
                  family: str = "theory", hyper_giles=None,
-                 family_weights: Sequence[float] = (0.5, 0.5)):
+                 family_weights: Sequence[float] = (0.5, 0.5), context_pool: str = "susceptible",
+                 min_slice: int = 16):
         from .intersynth_theory import TheoryHyperPrior
         from .neuro_prior import HyperPrior
 
@@ -157,6 +173,9 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
         if w.shape != (2,) or np.any(w < 0) or w.sum() <= 0:
             raise ValueError("family_weights must be two non-negative numbers (theory, giles)")
         self.family_weights = w / w.sum()
+        if context_pool not in CONTEXT_POOLS:
+            raise ValueError(f"unknown context_pool {context_pool!r}; choose from {CONTEXT_POOLS}")
+        self.context_pool, self.min_slice = context_pool, int(min_slice)
 
         if cache is None:
             super().__init__(atlas, lesion_pool, seed=seed, z_pool=z_pool,
@@ -209,6 +228,35 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
         q, r = np.linalg.qr(self.rng.normal(size=(self.d_x, self.d_x)))
         return q * np.sign(np.diag(r))[None, :]
 
+    def _slice(self, dgp, family: str) -> Optional[np.ndarray]:
+        """Indices of the pool lesions the process can affect (None = the
+        whole pool, when context_pool is "all")."""
+        if self.context_pool == "all":
+            return None
+        if family == "giles":
+            idx = [self.atlas.networks.index(n) for n in dgp.networks]
+            hit = (self.overlaps[:, idx, :] > dgp.threshold).any(axis=(1, 2))
+        else:
+            hit = dgp.raw_scores(self.overlaps)[0] > 0.0
+        return np.flatnonzero(hit)
+
+    def _indices_from(self, pool: Optional[np.ndarray], n: int) -> np.ndarray:
+        if pool is None:
+            return self._indices(n)
+        return pool[self.rng.permutation(len(pool))[:n]]
+
+    def _draw_process(self):
+        """(family, dgp, slice) of one process whose slice holds at least
+        min_slice lesions (None slice = whole pool)."""
+        fam = self._draw_family()            # the family is drawn once: rejections must not shift the mixture weights
+        for _ in range(self.max_tries):
+            dgp = self.sample_process(fam)
+            sl = self._slice(dgp, fam)
+            if sl is None or len(sl) >= self.min_slice:
+                return fam, dgp, sl
+            self.n_rejected += 1
+        raise RuntimeError(f"no process with at least {self.min_slice} susceptible lesions in {self.max_tries} draws")
+
     def _draw_family(self) -> str:
         if self.family != "mixture":
             return self.family
@@ -226,15 +274,21 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
 
         return NeuroPriorDGP(self.atlas, self.rng, self.hyper if self.family == "giles" else self.hyper_giles)
 
-    def _one(self, n_context: int) -> Dict[str, np.ndarray]:
+    def _one(self, n_context: int, drawn=None) -> Dict[str, np.ndarray]:
         from .intersynth_theory import make_theory_dataset
         from .neuro_prior import make_prior_dataset
 
         data = None
-        for _ in range(self.max_tries):
-            fam = self._draw_family()
-            dgp = self.sample_process(fam)
-            ci, qi = self._indices(n_context), self._indices(self.n_query)
+        for attempt in range(self.max_tries):
+            fam, dgp, sl = drawn if (drawn is not None and attempt == 0) else self._draw_process()
+            if sl is None:
+                ci, qi = self._indices(n_context), self._indices(self.n_query)
+            else:
+                # disjoint context and queries from the slice, as train and test of one deficit
+                perm = sl[self.rng.permutation(len(sl))]
+                qi, ci = perm[: self.n_query], perm[self.n_query: self.n_query + n_context]
+                if len(ci) < n_context:          # a slice smaller than the cap: fill by resampling it
+                    ci = np.concatenate([ci, ci[self.rng.integers(0, len(ci), size=n_context - len(ci))]])
             Xc, Xq = self.X[ci], self.X[qi]
             if self.augment:
                 R = self._rotation(); Xc, Xq = Xc @ R, Xq @ R
@@ -246,16 +300,28 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
                 data = make_prior_dataset(dgp, self.overlaps[ci], self.centroids[ci], self.volumes[ci], Xc,
                                           self.overlaps[qi], self.centroids[qi], self.volumes[qi], Xq, self.rng)
                 U = data["u_ctx"][:, None] if dgp.bias_type == "agnostic" else None
+            n_slice = int(self.m if sl is None else len(sl))
             if verify_identifiability(data["Tc"], data["Xc"], None, None, U=U):
-                data["process"] = {**dgp.describe(), "family": fam}
+                data["process"] = {**dgp.describe(), "family": fam, "n_slice": n_slice}
                 return data
             self.n_rejected += 1
-        data["process"] = {**dgp.describe(), "family": fam}
+        data["process"] = {**dgp.describe(), "family": fam, "n_slice": n_slice}
         return data
+
+    def context_cap(self, n_context: int, slices) -> int:
+        """Context length of a batch: the cap, or the smallest slice minus the
+        queries when processes are restricted to their susceptible lesions."""
+        sizes = [len(s) - self.n_query for s in slices if s is not None]
+        return max(self.n_query, min([n_context] + sizes)) if sizes else int(n_context)
 
     def sample_batch(self, batch_size: int, n_context=None) -> Dict[str, np.ndarray]:
         n_ctx = self.n_context if n_context is None else int(n_context)
-        items = [self._one(n_ctx) for _ in range(batch_size)]
+        drawn = [self._draw_process() for _ in range(batch_size)]
+        if self.context_pool != "all":
+            # every item of a batch shares one context length (the arrays are
+            # stacked): the cap, or the smallest slice of the batch
+            n_ctx = self.context_cap(n_ctx, [d[2] for d in drawn])
+        items = [self._one(n_ctx, d) for d in drawn]
         keys = ("Xc", "Tc", "Yc", "Xq", "Tq", "mu_q", "mu0", "mu1")
         out = {k: np.stack([it[k] for it in items], axis=0) for k in keys}
         out["processes"] = [it["process"] for it in items]

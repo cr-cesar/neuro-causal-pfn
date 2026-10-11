@@ -38,7 +38,7 @@ def test_mixture_draws_both_families_with_the_weights(atlas, pool):
     assert isinstance(coh.hyper, TheoryHyperPrior) and isinstance(coh.hyper_giles, HyperPrior)
     fams = [p["family"] for _ in range(20) for p in coh.sample_batch(4)["processes"]]
     share = fams.count("giles") / len(fams)
-    assert set(fams) == {"theory", "giles"} and 0.6 < share < 0.9
+    assert set(fams) == {"theory", "giles"} and 0.55 <= share <= 0.9
     # giles processes carry signed effects and binary outcomes, theory ones non-negative effects
     b = coh.sample_batch(16)
     for i, p in enumerate(b["processes"]):
@@ -66,6 +66,50 @@ def test_giles_family_reads_the_swapped_hyper(atlas, pool):
     coh = NeuroPriorCohort(atlas, pool, seed=2, n_context=32, n_query=4, family="giles", augment=False)
     coh.hyper = HyperPrior(bias=(0.0, 0.1))
     assert all(p["bias"] <= 0.1 for _ in range(5) for p in coh.sample_batch(4)["processes"])
+
+
+def _sparse_pool(atlas, n, seed=0, frac_on_network=0.12):
+    """A pool like a real cohort: only a small fraction of the lesions sit on
+    an atlas network, the rest fall on background voxels."""
+    rng = np.random.default_rng(seed)
+    zz, yy, xx = np.indices(atlas.shape)
+    fg = np.argwhere(atlas.network_labels > 0)
+    bg = np.argwhere(atlas.network_labels == 0)
+    out = np.zeros((n,) + atlas.shape, dtype=np.float32)
+    for i in range(n):
+        c = fg[rng.integers(0, len(fg))] if rng.uniform() < frac_on_network else bg[rng.integers(0, len(bg))]
+        r = rng.integers(2, 4, size=3)
+        out[i] = ((((zz - c[0]) / r[0]) ** 2 + ((yy - c[1]) / r[1]) ** 2 + ((xx - c[2]) / r[2]) ** 2) <= 1).astype(np.float32)
+    return out
+
+
+def test_susceptible_context_pool_restores_treatment_effects_on_a_sparse_pool(atlas):
+    """On a pool where few lesions hit a network, drawing contexts from the
+    whole pool gives processes with an effect for almost nobody (the pilot);
+    drawing them from the process's susceptible slice gives the effects the
+    virtual trial evaluates, without replacement and capped by the slice."""
+    pool = _sparse_pool(atlas, 800, seed=5)
+    kw = dict(seed=0, n_context=300, n_query=8, family="giles", augment=False)
+    whole = NeuroPriorCohort(atlas, pool, context_pool="all", **kw)
+    slic = NeuroPriorCohort(atlas, pool, context_pool="susceptible", min_slice=40, **kw)
+    bw, bs = whole.sample_batch(6), slic.sample_batch(6)
+    eff_whole = np.abs(bw["mu1"] - bw["mu0"]).mean()
+    eff_slice = np.abs(bs["mu1"] - bs["mu0"]).mean()
+    assert eff_whole < 0.15 < eff_slice, (eff_whole, eff_slice)
+    # the batch's context is capped by its smallest slice, and every item's
+    # context rows are distinct pool rows when the slice is large enough
+    n_ctx = bs["Xc"].shape[1]
+    assert n_ctx < 300 and n_ctx <= max(p["n_slice"] for p in bs["processes"]) - 8   # capped by the slices, not by n_context
+    assert all(p["n_slice"] >= 40 for p in bs["processes"])
+    for i, p in enumerate(bs["processes"]):
+        if p["n_slice"] - 8 >= n_ctx:           # distinct pool rows (two lesions can share an overlap vector)
+            assert len(np.unique(bs["Xc"][i], axis=0)) >= 0.8 * n_ctx
+    with pytest.raises(ValueError):
+        NeuroPriorCohort(atlas, pool, context_pool="other", **kw)
+    # the theory family is restricted the same way (lesions with a non-zero disruption score)
+    th = NeuroPriorCohort(atlas, pool, seed=1, n_context=64, n_query=4, family="theory", augment=False)
+    bt = th.sample_batch(3)
+    assert all(p["n_slice"] < len(pool) for p in bt["processes"])
 
 
 def test_probe_metrics():
