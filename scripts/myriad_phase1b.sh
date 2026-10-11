@@ -49,6 +49,10 @@ activate() {
 # and scored at chance on the virtual trial (PEHE paper 0.608, balanced
 # accuracy 0.50); giles covers the virtual trial; mixture draws from both.
 need_family() {
+  # context pool of the prior (where a process draws its context): susceptible
+  # (default) or all (the pilot's sampling); "-all" marks the latter in run names
+  ctx="${CONTEXT_POOL:-susceptible}"; ctxsuf=""
+  case "$ctx" in susceptible) ;; all) ctxsuf="-all" ;; *) echo "CONTEXT_POOL must be susceptible or all"; exit 2 ;; esac
   fam="${PRIOR_FAMILY:-}"
   case "$fam" in
     theory|giles|mixture) ;;
@@ -247,10 +251,10 @@ PY
     # POOL_LATENTS (matching latents npz), after HOLD_JID when given.
     need_family
     cd "$MAIN"
-    tag="${TAG:-pilot}"; run="${tag}-${fam}"; out="outputs/pfn_reduced_${run}"
+    tag="${TAG:-pilot}"; run="${tag}-${fam}${ctxsuf}"; out="outputs/pfn_reduced_${run}"
     ensure_cache "$tag"
     tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" qsub -terse -N pfn-$run ${hold[@]+"${hold[@]}"} \
-         -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="${SEED:-0}",ARCH="${ARCH:-tabicl}",FAMILY="$fam",FAMILY_WEIGHTS \
+         -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="${SEED:-0}",ARCH="${ARCH:-tabicl}",FAMILY="$fam",FAMILY_WEIGHTS,CONTEXT_POOL="$ctx" \
          scripts/train_pfn_myriad.qsub.sh)
     cd "$PERFOLD"
     # the checkpoint is scored on the headline encoder's per-fold latents: E1
@@ -332,11 +336,11 @@ PY
       for s in $(seq 0 $((SEEDS - 1))); do
         # cache tag and prior family are part of the run name, so ablations
         # on two caches or two families never share a checkpoint
-        run="${tag}-${fam}-${v//+/-}_s$s"; out="outputs/pfn_e12_${run}"
+        run="${tag}-${fam}${ctxsuf}-${v//+/-}_s$s"; out="outputs/pfn_e12_${run}"
         jn="$(short_variant "$v")-s$s-${fam:0:3}-$tag"
         cd "$MAIN"
         tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" qsub -terse -N pfn-$jn ${hold[@]+"${hold[@]}"} \
-             -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="$s",ARCH="${ARCH:-tabicl}",VARIANT="$v",FAMILY="$fam",FAMILY_WEIGHTS \
+             -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="$s",ARCH="${ARCH:-tabicl}",VARIANT="$v",FAMILY="$fam",FAMILY_WEIGHTS,CONTEXT_POOL="$ctx" \
              scripts/train_pfn_myriad.qsub.sh)
         cd "$PERFOLD"
         sj=$(REPS="$score_reps" qsub -terse -N sc-$jn -hold_jid "$tj" -l h_rt=6:0:0 -l mem=8G \

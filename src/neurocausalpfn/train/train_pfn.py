@@ -12,7 +12,7 @@ The prior is selected by configuration (cfg["prior"]["kind"]):
 """
 import copy
 import os
-from typing import Dict
+from typing import Dict, Optional
 
 import numpy as np
 import torch
@@ -159,20 +159,30 @@ _STAGE1_THEORY = {"gamma": [0.0, 0.3], "beta": [0.2, 0.4]}
 _STAGE1_GILES = {"bias": [0.0, 0.3]}
 
 
-def with_family(cfg: Dict, family: str, weights=None) -> Dict:
+def with_family(cfg: Dict, family: str, weights=None, context_pool: Optional[str] = None) -> Dict:
     """Set the Neuro-Prior family of a reduced / E12 configuration
-    (theory | giles | mixture) and, for the mixture, the family weights."""
-    from ..prior.cohort import FAMILIES
+    (theory | giles | mixture), for the mixture the family weights, and
+    optionally the context pool (susceptible | all)."""
+    from ..prior.cohort import CONTEXT_POOLS, FAMILIES
 
     if family not in FAMILIES:
         raise ValueError(f"unknown prior family {family!r}; choose from {FAMILIES}")
     cfg["prior"]["family"] = family
     if family == "mixture":
         cfg["prior"]["family_weights"] = list(weights) if weights is not None else [0.5, 0.5]
+    if context_pool is not None:
+        if context_pool not in CONTEXT_POOLS:
+            raise ValueError(f"unknown context_pool {context_pool!r}; choose from {CONTEXT_POOLS}")
+        cfg["prior"]["context_pool"] = context_pool
+    if cfg["prior"].get("context_pool", "susceptible") == "susceptible":
+        # the evaluation's contexts are the susceptible patients of one deficit
+        # (tens to a few hundred); a 4,119-row context of a slice would be
+        # dozens of copies of each lesion, at quadratic cost in attention
+        cfg["pfn"]["context_max"] = min(int(cfg["pfn"]["context_max"]), 1024)
     return cfg
 
 
-def e12_config(variant: str, family: str = "theory", weights=None) -> Dict:
+def e12_config(variant: str, family: str = "theory", weights=None, context_pool: Optional[str] = None) -> Dict:
     """The curriculum ablation of the design (E12) on the reduced
     configuration. ``nocurr``: fixed context, full hyper-prior ranges from
     the start. ``ctx``: the context-length curriculum of the pilot.
@@ -182,7 +192,7 @@ def e12_config(variant: str, family: str = "theory", weights=None) -> Dict:
     both), full ranges afterwards."""
     if variant not in E12_VARIANTS:
         raise ValueError(f"unknown E12 variant {variant!r}; choose from {E12_VARIANTS}")
-    cfg = with_family(reduced_config(), family, weights)
+    cfg = with_family(reduced_config(), family, weights, context_pool)
     cfg["pfn"]["curriculum"] = "none" if variant == "nocurr" else "context"
     if variant == "ctx+stages":
         first = {"theory": {"hyper": _STAGE1_THEORY}, "giles": {"hyper": _STAGE1_GILES},
@@ -223,8 +233,13 @@ def _build_prior(cfg: Dict, seed_offset: int = 0):
 
             family = pr.get("family", "theory")
             hyper = _hyper_for(cfg, pr.get("hyper", {}))
+            # context_pool "susceptible" (default): a process draws its context
+            # from the lesions it can affect, as the virtual trial evaluates
+            # each deficit on its susceptible patients; "all" is the pilot's
+            # sampling over the whole pool
             kw = dict(seed=seed, n_context=p["context_max"], n_query=p["n_query"], hyper=hyper,
-                      augment=bool(pr.get("augment", True)), family=family)
+                      augment=bool(pr.get("augment", True)), family=family,
+                      context_pool=pr.get("context_pool", "susceptible"))
             if family == "mixture":
                 kw["hyper_giles"] = HyperPrior(**_as_ranges(pr.get("hyper_giles", {})))
                 kw["family_weights"] = tuple(pr.get("family_weights", (0.5, 0.5)))
