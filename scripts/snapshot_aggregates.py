@@ -31,8 +31,13 @@ def main(out: str) -> None:
     sizes = []
     for f in sorted(glob.glob(f"{perfold}/outputs_perfold_pub/replica/E1/E1/seed0/**/replica_results.csv", recursive=True)
                     + glob.glob("outputs/giles_replica_*/replica_results.csv")):
-        d = pd.read_csv(f, usecols=lambda c: c in ("deficit", "fold", "n_train", "n_test"))
-        d = d.drop_duplicates(["deficit", "fold"])[["deficit", "fold", "n_train", "n_test"]]
+        cols = ["deficit", "fold", "n_train", "n_test"]
+        d = pd.read_csv(f, usecols=lambda c: c in cols)
+        if d.empty or any(c not in d.columns for c in cols):
+            # header-only or legacy results file (e.g. an aborted replica): nothing to aggregate
+            print(f"skip {rel(f)}: no slice-size columns")
+            continue
+        d = d.drop_duplicates(["deficit", "fold"])[cols]
         d.insert(0, "source", rel(f))
         sizes.append(d)
     if sizes:

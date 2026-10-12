@@ -387,7 +387,9 @@ PY
       echo "== $f"; grep -E "parameters|iter [0-9]+/|checkpoint saved" "$f" | awk 'NR<=3 || /iter (100|1000|5000|10000|15000|20000)\//'
     done > "$out/pfn_timing.txt" 2>/dev/null || true
     ls "$out"
-    echo "snapshot $out; publish it with: git add status && git commit -m 'status snapshot $day' && git push origin HEAD:results-snapshot"
+    # The clone stays on the local results-snapshot branch (main + status commits);
+    # before launching anything, bring the code level with main: git fetch origin main && git merge origin/main
+    echo "snapshot $out; publish it with: git add status && git commit -m 'status snapshot $day' && git push -u origin HEAD:results-snapshot"
     ;;
 
   scenario)
