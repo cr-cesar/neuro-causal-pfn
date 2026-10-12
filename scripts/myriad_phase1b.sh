@@ -14,6 +14,8 @@
 #   PRIOR_FAMILY=<family> TAG=<tag> [POOL_LESIONS=<dir> POOL_LATENTS=<npz> HOLD_JID=<job>] bash scripts/myriad_phase1b.sh e12   # curriculum ablation: 3 variants x SEEDS on cache TAG (built first if missing); "e12 summary" collects the rows
 #   bash scripts/myriad_phase1b.sh clinical <cohort.csv> <id-col> <images-dir> "<latents glob>" "<outcome specs>" "<covariates>" <vol-col> [regress cols]
 #   bash scripts/myriad_phase1b.sh status     # queue by state and block, latest leaderboards
+#   bash scripts/myriad_phase1b.sh snapshot   # aggregate snapshot for the audit log into status/<date>/ (then commit to results-snapshot)
+#   SCENARIO=location_bias ROOT=outputs_perfold_pub bash scripts/myriad_phase1b.sh scenario E1   # confounded cell under LR/ET and CausalPFN (audit F01)
 #
 # Counting with ls | wc -l always carries "|| true": under set -o pipefail an
 # ls with no match would abort the script inside $(...).
@@ -360,6 +362,53 @@ PY
     jid=$(qsub -terse -N clin-$name -v COHORT="$cohort",IDCOL="$idcol",IMAGES="$images",LATENTS="$latents",OUTCOMES="$outcomes",COVARS="$covars",VOLCOL="$volcol",REGRESS="$*",OUT=outputs/clinical_$name.csv \
           scripts/clinical_validation_myriad.qsub.sh)
     echo "clinical $name -> job $jid (outputs/clinical_$name.csv)"
+    ;;
+
+  snapshot)
+    # aggregate status snapshot for the audit log (no filenames, ids or
+    # latents): queue, every leaderboard, the headline rows, per-deficit
+    # slice sizes (n_train / n_test per deficit and fold) and the PFN timing
+    # lines. Written to status/<date>/ in the main clone; commit and push that
+    # folder to the results-snapshot branch so that it is readable from GitHub.
+    activate
+    day="${SNAPSHOT:-$(date +%Y%m%d_%H%M)}"; out="$MAIN/status/$day"; mkdir -p "$out"
+    cd "$MAIN"
+    bash scripts/myriad_phase1b.sh status > "$out/status.txt" 2>&1 || true
+    { git -C "$MAIN" log --oneline -1; git -C "$PERFOLD" log --oneline -1; } > "$out/commits.txt"
+    for lb in "$PERFOLD/$OUT_ROOT" "$PERFOLD/$T4_OUT" "$PERFOLD/$PUB_ROOT" "$PERFOLD/${PUB_ROOT}_t4" "$PERFOLD/outputs_perfold_pfn" "$PERFOLD/outputs_perfold_pfn"/*; do
+      [ -f "$lb/leaderboard.csv" ] || continue
+      cp "$lb/leaderboard.csv" "$out/leaderboard_$(basename "$lb").csv"
+      [ -f "$lb/leaderboard.md" ] && cp "$lb/leaderboard.md" "$out/leaderboard_$(basename "$lb").md"
+    done
+    PERFOLD="$PERFOLD" python scripts/snapshot_aggregates.py "$out"
+    # PFN timing lines (iteration, context length, loss, wall-clock) of every PFN log
+    for f in pfn-*.o*; do
+      [ -f "$f" ] || continue
+      echo "== $f"; grep -E "parameters|iter [0-9]+/|checkpoint saved" "$f" | awk 'NR<=3 || /iter (100|1000|5000|10000|15000|20000)\//'
+    done > "$out/pfn_timing.txt" 2>/dev/null || true
+    ls "$out"
+    echo "snapshot $out; publish it with: git add status && git commit -m 'status snapshot $day' && git push origin HEAD:results-snapshot"
+    ;;
+
+  scenario)
+    # F01 of the audit log: score finished per-fold representations under a
+    # confounded cell of the virtual trial (SCENARIO=location_bias, the paper's
+    # 0.305 anchor) with LR/ET and with CausalPFN, into <root>_<scenario> and
+    # <root>_<scenario>_t4, same folds and test set as the ideal cell.
+    cd "$PERFOLD"
+    sc="${SCENARIO:-location_bias}"; root="${ROOT:-$PUB_ROOT}"
+    for eid in "${@:-E1}"; do
+      for reps in "$root/$eid"/*/seed*/folds; do
+        [ -d "$reps" ] || { echo "skip $eid: no folds under $root/$eid"; continue; }
+        n=$(ls "$reps"/fold*.npz 2>/dev/null | wc -l || true); [ "$n" -eq 10 ] || { echo "skip $reps ($n folds)"; continue; }
+        s=${reps%/folds}; s=${s##*/seed}
+        j1=$(REPS="$reps" qsub -terse -N sc-${sc:0:3}-${eid,,}s$s -l h_rt=6:0:0 -l mem=8G \
+             -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,WITH_VOLUME=1,SCENARIO="$sc",OUT="${root}_${sc}" qsub/perfold_score.qsub.sh)
+        j2=$(REPS="$reps" qsub -terse -N t4-${sc:0:3}-${eid,,}s$s -l h_rt=6:0:0 -l mem=8G \
+             -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS=causalpfn,ONLY_ESTIMATORS=1,SCENARIO="$sc",OUT="${root}_${sc}_t4" qsub/perfold_score.qsub.sh)
+        echo "$sc $eid seed$s: LR/ET $j1 -> ${root}_${sc}; CausalPFN $j2 -> ${root}_${sc}_t4"
+      done
+    done
     ;;
 
   status)

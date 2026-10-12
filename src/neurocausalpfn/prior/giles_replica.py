@@ -26,13 +26,22 @@ The mechanism, exactly as in their code:
   on the train fold and predicts both counterfactuals on the test fold;
   pred_ITE = sigmoid(p1 - p0); PEHE = RMSE(pred_ITE, y_true_test).
 
-Known deviation (documented): our frozen encoders are trained unsupervised on
-the full lesion set, whereas Giles refits each representation inside every
-train fold. Outcomes are simulated after the fact, so no outcome leakage is
-possible; the residual anatomical leakage is stated, not hidden. Estimator
-fitting remains strictly train-fold-only. Patient-level fold separation
-requires the lesion->patient mapping (requested; not yet available), so folds
-are per-lesion.
+Folds. ``image_folds`` splits by image (the original evaluation; two images of
+one patient can straddle the split). ``group_folds`` splits by patient with
+the lesion->patient table received from Giles (``load_group_table``): only
+the earliest image of each patient is tested, and the ``paper`` table marks
+his single-acquisition patients, which gives his test set (2,828 patients).
+
+Encoders. A frozen encoder trained on the full lesion set has seen the test
+images (anatomical leakage; outcomes are simulated after the fact, so there is
+no outcome leakage). The per-fold study (neuro-causal-pfn-perfold) retrains
+the encoder inside each fold and removes it. Estimator fitting is always
+train-fold-only.
+
+Headline selection. ``headline_aggregate`` picks the classifier x learner cell
+by the released-code PEHE (sigmoid scale, column ``pehe``) and reports that
+cell on every scale; the paper-scale value of the cell chosen on the paper
+scale is reported alongside as ``pehe_paper_selected``.
 """
 from __future__ import annotations
 
@@ -593,6 +602,19 @@ def headline_row(results) -> Dict[str, float]:
                          ("pehe_paper", "pehe_paper_mean")):
             if col in cfg.columns:
                 agg[key] = float(cfg.groupby("deficit")[col].mean().mean())
+        if "pehe_paper" in cfg.columns:
+            # 95% CI over deficits of the paper-scale PEHE of the selected cell
+            # (Giles's own interval), and the cell the paper scale itself would
+            # select: both are reported so that the selection scale is explicit
+            ci = _deficit_ci(cfg.groupby("deficit")["pehe_paper"].mean())
+            agg["pehe_paper_ci_low"], agg["pehe_paper_ci_high"] = ci["ci_low"], ci["ci_high"]
+            per_p = results.groupby(["deficit", "classifier", "learner"])["pehe_paper"].mean().reset_index()
+            cb, lb = per_p.groupby(["classifier", "learner"])["pehe_paper"].mean().idxmin()
+            sel = per_p[(per_p["classifier"] == cb) & (per_p["learner"] == lb)].set_index("deficit")["pehe_paper"]
+            ci2 = _deficit_ci(sel)
+            agg["pehe_paper_selected"] = ci2["pehe_mean"]
+            agg["pehe_paper_selected_ci_low"], agg["pehe_paper_selected_ci_high"] = ci2["ci_low"], ci2["ci_high"]
+            agg["classifier_paper"], agg["learner_paper"] = cb, lb
         # equity by lesion-volume quartile on the paper scale (same estimand,
         # same configuration; folds where a quartile is empty are skipped by
         # the nan-aware means). volume_ratio = worst / best quartile.
