@@ -1,0 +1,2 @@
+fbc0e71 Merge pull request #75 from cr-cesar/claude/phase-1-vae-encoder-f02ugc
+39c1f06 perfold_score: exit 100 on failure and when an estimator checkpoint is missing (SGE keeps dependents queued)
