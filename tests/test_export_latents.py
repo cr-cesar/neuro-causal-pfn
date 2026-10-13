@@ -93,6 +93,41 @@ def test_bracketed_concrete_path_is_not_globbed(tmp_path):
     assert "no niftis" in (r.stdout + r.stderr)
 
 
+def test_export_records_where_the_latents_came_from(tmp_path):
+    # besides Z and files the npz names the encoder representation, the
+    # checkpoint, the images directory and the channel detected from the
+    # images, which build_prior_cache.py checks the prior cache against
+    ck = _save_ckpt(tmp_path)
+    img_dir, files = _save_images(tmp_path)          # continuous volumes
+    import subprocess
+    r = subprocess.run(
+        [sys.executable, os.path.join(os.path.dirname(__file__), "..", "scripts", "export_latents.py"),
+         "--checkpoints", ck, "--images-dir", img_dir, "--out", str(tmp_path / "lat"), "--device", "cpu"],
+        capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    out = tmp_path / "lat" / ex.default_name(ck)
+    with np.load(out) as z:
+        assert z["Z"].shape == (5, 4) and list(z["files"]) == [os.path.basename(f) for f in files]
+        assert str(z["representation"]) == "disconnectome"
+        assert str(z["images_channel"]) == "disconnectome"
+        assert str(z["images_dir"]) == os.path.abspath(img_dir)
+        assert str(z["checkpoint"]) == os.path.abspath(ck) and str(z["disco_dir"]) == ""
+    assert "5 images (disconnectome)" in r.stdout
+    # binary masks through the same encoder: the images' channel is recorded, with a note
+    masks = os.path.join(tmp_path, "masks"); os.makedirs(masks)
+    for f in files:
+        nib.save(nib.Nifti1Image((nib.load(f).get_fdata() > 0.5).astype(np.float32), np.eye(4)),
+                 os.path.join(masks, os.path.basename(f)))
+    r = subprocess.run(
+        [sys.executable, os.path.join(os.path.dirname(__file__), "..", "scripts", "export_latents.py"),
+         "--checkpoints", ck, "--images-dir", masks, "--out", str(tmp_path / "lat2"), "--device", "cpu"],
+        capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    with np.load(tmp_path / "lat2" / ex.default_name(ck)) as z:
+        assert str(z["images_channel"]) == "lesion" and str(z["representation"]) == "disconnectome"
+    assert "disconnectome encoder applied to lesion images" in r.stdout
+
+
 def test_default_name_from_runner_layout():
     name = ex.default_name(
         "outputs/experiments/E2/E2[w_dice=0.5]/seed0/disco/vae_disconnectome.pt")
