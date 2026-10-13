@@ -96,7 +96,9 @@ def main(argv=None):
     ap.add_argument("--atlas-dir", default=None, help="default: the one in the checkpoint cfg")
     ap.add_argument("--families", nargs="+", default=["theory", "giles"])
     ap.add_argument("--n-context", type=int, default=1000)
-    ap.add_argument("--n-query", type=int, default=256)
+    ap.add_argument("--n-query", type=int, default=None,
+                    help="default: the checkpoint's own n_query. A susceptible-slice prior needs processes with "
+                         "at least n_query + 8 susceptible lesions, so a large value finds none on a sparse pool")
     ap.add_argument("--batches", type=int, default=8)
     ap.add_argument("--device", default="cpu")
     ap.add_argument("--out", default=None, help="csv with one row per checkpoint and probe")
@@ -114,9 +116,11 @@ def main(argv=None):
             cfg["prior"]["cache"] = args.cache
         if args.atlas_dir:
             cfg["prior"]["atlas_dir"] = args.atlas_dir
-        print(f"{ck}: prior {cfg['prior'].get('family', 'theory')}, cache {cfg['prior'].get('cache')}, d_x {est.d_x}", flush=True)
-        for r in (probe_treatment(est, cfg, args.n_context, args.n_query, args.batches)
-                  + probe_families(est, cfg, args.families, args.n_context, args.n_query, args.batches)):
+        n_query = args.n_query or int(cfg["pfn"].get("n_query", 64))
+        print(f"{ck}: prior {cfg['prior'].get('family', 'theory')}, cache {cfg['prior'].get('cache')}, d_x {est.d_x}, "
+              f"n_context {args.n_context}, n_query {n_query}", flush=True)
+        for r in (probe_treatment(est, cfg, args.n_context, n_query, args.batches)
+                  + probe_families(est, cfg, args.families, args.n_context, n_query, args.batches)):
             rows.append({"ckpt": ck, "trained_on": cfg["prior"].get("family", "theory"), **r})
     df = pd.DataFrame(rows)
     cols = ["ckpt", "trained_on", "probe", "n", "rmse", "corr", "mean_abs_pred", "mean_abs_true",

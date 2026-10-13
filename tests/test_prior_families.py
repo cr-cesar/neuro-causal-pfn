@@ -198,5 +198,9 @@ def test_probe_runs_on_a_checkpoint(tmp_path):
     run_pfn(cfg)
     df = main(["--ckpt", str(tmp_path / "pfn" / "pfn.pt"), "--n-context", "30", "--n-query", "10",
                "--batches", "2", "--out", str(tmp_path / "probe.csv")])
+    # without --n-query the probe uses the checkpoint's own query size, so the
+    # susceptible-slice prior finds processes on the same sparse pool as training
+    df2 = main(["--ckpt", str(tmp_path / "pfn" / "pfn.pt"), "--n-context", "30", "--batches", "1"])
+    assert set(df2["probe"]) == set(df["probe"]) and (df2["n"] == cfg["pfn"]["n_query"]).all()
     assert list(df["probe"]) == ["treatment:Y=T", "treatment:Y=1-T", "family:theory", "family:giles"]
     assert df["n"].tolist() == [20, 20, 20, 20] and (tmp_path / "probe.csv").exists()
