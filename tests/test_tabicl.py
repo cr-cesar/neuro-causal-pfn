@@ -19,8 +19,8 @@ def _toy_batch(B=2, nc=12, nq=4, d_x=5, seed=0):
 
 def test_tabicl_forward_and_train():
     d_x = 5
-    model = NeuroCausalPFNTabICL(d_x=d_x, d_model=32, n_row_layers=1, n_col_layers=1,
-                                 n_heads=4, n_bins=64, sigma=0.05)
+    model = NeuroCausalPFNTabICL(d_x=d_x, embed_dim=16, n_col_layers=1, n_row_layers=1, n_icl_layers=1,
+                                 n_heads=4, n_cls=2, n_inds=8, n_bins=64, sigma=0.05)
     Xc, Tc, Yc, Xq, Tq = _toy_batch(d_x=d_x)
     logits = model(Xc, Tc, Yc, Xq, Tq)
     assert logits.shape == (2, 4, 64)
@@ -40,8 +40,9 @@ def test_tabicl_query_independence():
     # while changing the context does change the predictions.
     torch.manual_seed(0)
     d_x = 4
-    model = NeuroCausalPFNTabICL(d_x=d_x, d_model=24, n_row_layers=1, n_col_layers=1,
-                                 n_heads=4, n_bins=32, sigma=0.05).eval()
+    model = NeuroCausalPFNTabICL(d_x=d_x, embed_dim=16, n_col_layers=1, n_row_layers=1, n_icl_layers=1,
+                                 n_heads=4, n_cls=2, n_inds=8, n_bins=32, sigma=0.05,
+                                 zero_init=False).eval()   # zero_init makes the untrained model constant
     Xc, Tc, Yc, Xq, Tq = _toy_batch(B=1, nc=8, nq=3, d_x=d_x, seed=1)
     with torch.no_grad():
         base = model(Xc, Tc, Yc, Xq, Tq)
@@ -59,14 +60,20 @@ def test_tabicl_query_independence():
 def test_build_model_selects_arch():
     cfg = prototype_config()
     cfg["pfn"]["arch"] = "tabicl"
+    cfg["pfn"]["tabicl_version"] = 2
     assert isinstance(build_model(cfg, d_x=6), NeuroCausalPFNTabICL)
+    # a checkpoint config written before the re-implementation builds the former skeleton
+    from neurocausalpfn.pfn.tabicl_v0 import NeuroCausalPFNTabICLv0
+    cfg["pfn"].pop("tabicl_version")
+    assert isinstance(build_model(cfg, d_x=6), NeuroCausalPFNTabICLv0)
     cfg["pfn"]["arch"] = "linear"
     assert not isinstance(build_model(cfg, d_x=6), NeuroCausalPFNTabICL)
 
 
 def test_run_pfn_smoke_tabicl():
     cfg = prototype_config()
-    cfg["pfn"].update({"arch": "tabicl", "d_model": 32, "n_layers": 1, "n_col_layers": 1,
+    cfg["pfn"].update({"arch": "tabicl", "tabicl_version": 2, "embed_dim": 16, "n_inds": 8, "n_cls": 2,
+                       "d_model": 32, "n_layers": 1, "n_col_layers": 1, "n_row_layers": 1,
                        "n_heads": 4, "n_bins": 64, "context_min": 16, "context_max": 24,
                        "n_query": 4, "batch_size": 2, "iters": 3})
     cfg["log_every"] = 50
