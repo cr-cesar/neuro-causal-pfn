@@ -418,7 +418,7 @@ PY
     cd "$MAIN"
     bash scripts/myriad_phase1b.sh status > "$out/status.txt" 2>&1 || true
     { git -C "$MAIN" log --oneline -1; git -C "$PERFOLD" log --oneline -1; } > "$out/commits.txt"
-    for lb in "$PERFOLD/$OUT_ROOT" "$PERFOLD/$T4_OUT" "$PERFOLD/$PUB_ROOT" "$PERFOLD/${PUB_ROOT}_t4" "$PERFOLD/outputs_perfold_pfn" "$PERFOLD/outputs_perfold_pfn"/*; do
+    for lb in "$PERFOLD/$OUT_ROOT" "$PERFOLD/$T4_OUT" "$PERFOLD/$PUB_ROOT" "$PERFOLD/${PUB_ROOT}_"* "$PERFOLD/outputs_perfold_pfn" "$PERFOLD/outputs_perfold_pfn"/*; do
       [ -f "$lb/leaderboard.csv" ] || continue
       cp "$lb/leaderboard.csv" "$out/leaderboard_$(basename "$lb").csv"
       [ -f "$lb/leaderboard.md" ] && cp "$lb/leaderboard.md" "$out/leaderboard_$(basename "$lb").md"
