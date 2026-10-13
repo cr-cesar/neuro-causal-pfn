@@ -268,7 +268,11 @@ PY
     # after HOLD_JID when given.
     need_family
     cd "$MAIN"
-    tag="${TAG:-pilot}"; run="${tag}-${fam}${ctxsuf}"; out="outputs/pfn_reduced_${run}"
+    # the architecture enters the run name when it is not the default, so that
+    # ARCH=linear and the tabicl run of the same TAG and family do not share a
+    # checkpoint, a job name or a leaderboard (the prior cache is still shared)
+    archsuf=""; [ "${ARCH:-tabicl}" = tabicl ] || archsuf="-${ARCH}"
+    tag="${TAG:-pilot}"; run="${tag}-${fam}${ctxsuf}${archsuf}"; out="outputs/pfn_reduced_${run}"
     ensure_cache "$tag"
     tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" qsub -terse -N pfn-$run ${hold[@]+"${hold[@]}"} \
          -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="${SEED:-0}",ARCH="${ARCH:-tabicl}",FAMILY="$fam",FAMILY_WEIGHTS,CONTEXT_POOL="$ctx" \
@@ -368,6 +372,7 @@ PY
       exit 0
     fi
     need_family
+    archsuf=""; [ "${ARCH:-tabicl}" = tabicl ] || archsuf="-${ARCH}"
     activate
     cd "$MAIN"
     ensure_cache "$tag"
@@ -376,7 +381,7 @@ PY
       for s in $(seq 0 $((SEEDS - 1))); do
         # cache tag and prior family are part of the run name, so ablations
         # on two caches or two families never share a checkpoint
-        run="${tag}-${fam}${ctxsuf}-${v//+/-}_s$s"; out="outputs/pfn_e12_${run}"
+        run="${tag}-${fam}${ctxsuf}${archsuf}-${v//+/-}_s$s"; out="outputs/pfn_e12_${run}"
         jn="$(short_variant "$v")-s$s-${fam:0:3}-$tag"
         cd "$MAIN"
         tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" qsub -terse -N pfn-$jn ${hold[@]+"${hold[@]}"} \
