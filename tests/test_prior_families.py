@@ -204,3 +204,16 @@ def test_probe_runs_on_a_checkpoint(tmp_path):
     assert set(df2["probe"]) == set(df["probe"]) and (df2["n"] == cfg["pfn"]["n_query"]).all()
     assert list(df["probe"]) == ["treatment:Y=T", "treatment:Y=1-T", "family:theory", "family:giles"]
     assert df["n"].tolist() == [20, 20, 20, 20] and (tmp_path / "probe.csv").exists()
+
+
+def test_probe_cohort_drops_the_hyper_fields_the_other_family_lacks(tmp_path):
+    # a theory checkpoint with the prior extensions is probed on giles processes
+    from probe_pfn import _cohort
+
+    cfg = _tiny_cfg(_cache(tmp_path), tmp_path / "pfn", "theory")
+    cfg["prior"]["hyper"] = {"two_arms": 1.0, "effect_scale": [0.2, 1.0], "binary_outcome": 0.5}
+    giles = _cohort(cfg, "giles", 30, 10, 1)        # must not raise TypeError
+    assert giles.family == "giles"
+    theory = _cohort(cfg, "theory", 30, 10, 1)
+    assert theory.hyper.two_arms == 1.0 and theory.hyper.effect_scale == (0.2, 1.0)
+
