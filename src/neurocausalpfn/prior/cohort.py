@@ -9,10 +9,14 @@ from typing import Dict, Optional, Sequence
 
 import numpy as np
 
+from ..utils.logging_utils import get_logger
 from .atlas import FunctionalAtlas, _centroid
+from .channel import cache_channel, describe_cache
 from .intersynth import MECHANISMS, SyntheticDGP, make_dataset
 from .intersynth_atlas import InterSynthDGP, compute_overlaps, make_intersynth_dataset
 from .verify_identifiability import verify_identifiability
+
+log = get_logger()
 
 # process families of NeuroPriorCohort and where a process draws its context (see its docstring)
 FAMILIES = ("theory", "giles", "mixture")
@@ -143,6 +147,14 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
     theory ranges (the curriculum stages narrow those) and ``hyper_giles``
     the virtual-trial ranges.
 
+    A cohort built from a cache exposes ``channel`` ("lesion" for binary
+    masks, "disconnectome" for binarised continuous maps, None when the cache
+    predates the record) and ``cache_meta`` (images_dir, threshold, modality
+    when recorded), and logs the channel with the per-network responsive
+    fractions at load time: the overlaps, and with them which lesions a
+    process can affect, are a function of the channel the cache was built
+    from, which must be the one the latents were exported from.
+
     ``context_pool`` says which lesions a process draws its context and
     queries from. ``"susceptible"`` (default) restricts both to the lesions the
     process can affect, as the virtual trial does when it evaluates one
@@ -177,6 +189,7 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
         if context_pool not in CONTEXT_POOLS:
             raise ValueError(f"unknown context_pool {context_pool!r}; choose from {CONTEXT_POOLS}")
 
+        self.channel, self.cache_meta = None, {}
         if cache is None:
             super().__init__(atlas, lesion_pool, seed=seed, z_pool=z_pool,
                              n_context=n_context, n_query=n_query)
@@ -201,6 +214,10 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
             self.d_x = int(self.X.shape[1])
             if len(self.X) != self.m or self.overlaps.shape[1:] != (atlas.n_networks, 2):
                 raise ValueError("prior cache does not match the atlas or the latent pool")
+            self.channel = cache_channel(cache)
+            self.cache_meta = {k: np.asarray(cache[k]).item() for k in ("images_dir", "threshold", "modality")
+                               if k in cache and np.asarray(cache[k]).ndim == 0}
+            log.info(describe_cache(cache))
         # a slice must hold the queries plus a context worth inferring from
         self.context_pool, self.min_slice = context_pool, max(int(min_slice), self.n_query + 8)
         self.hyper = hyper or (HyperPrior() if family == "giles" else TheoryHyperPrior())
@@ -221,7 +238,8 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
     @classmethod
     def from_cache(cls, atlas: FunctionalAtlas, cache_path: str, **kw):
         """Cohort from an npz written by scripts/build_prior_cache.py (keys
-        overlaps, centroids, volumes, optional Z and files)."""
+        overlaps, centroids, volumes, optional Z and files; channel,
+        images_dir, threshold and modality when the builder recorded them)."""
         with np.load(cache_path, allow_pickle=True) as z:
             cache = {k: z[k] for k in z.files}
         return cls(atlas, None, cache=cache, **kw)
