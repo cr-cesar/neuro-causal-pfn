@@ -11,6 +11,7 @@
 #   POOL_IMAGES=<disco dir> bash scripts/myriad_phase1b.sh pool   # pool latents with the published-budget E1 (fold-0 encoder), one GPU job
 #   PRIOR_FAMILY=<theory|giles|mixture> TAG=<tag> [POOL_LESIONS=<dir> POOL_LATENTS=<npz> HOLD_JID=<job>] bash scripts/myriad_phase1b.sh phase2   # [cache ->] reduced PFN (GPU) -> scored on E1 per-fold (published budget)
 #   bash scripts/myriad_phase1b.sh probe [pfn.pt ...]   # CPU probe: does a checkpoint read the treatment, and on which prior family is it accurate
+#   bash scripts/myriad_phase1b.sh pfnscore <run> ...   # score finished PFN checkpoints again (context capped at the checkpoint's context_max)
 #   PRIOR_FAMILY=<family> TAG=<tag> [POOL_LESIONS=<dir> POOL_LATENTS=<npz> HOLD_JID=<job>] bash scripts/myriad_phase1b.sh e12   # curriculum ablation: 3 variants x SEEDS on cache TAG (built first if missing); "e12 summary" collects the rows
 #   bash scripts/myriad_phase1b.sh clinical <cohort.csv> <id-col> <images-dir> "<latents glob>" "<outcome specs>" "<covariates>" <vol-col> [regress cols]
 #   bash scripts/myriad_phase1b.sh status     # queue by state and block, latest leaderboards
@@ -263,10 +264,29 @@ PY
     # with the published budget (SCORE_REPS overrides; compare with the
     # CausalPFN row of the same reps, outputs_perfold_pub_t4)
     score_reps="${SCORE_REPS:-$PUB_ROOT/E1/E1/seed0/folds}"
-    sj=$(REPS="$score_reps" qsub -terse -N sc-pfn-$run -hold_jid "$tj" -l h_rt=6:0:0 -l mem=8G \
-         -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS="$MAIN/$out/pfn.pt",ONLY_ESTIMATORS=1,OUT=outputs_perfold_pfn/$run \
+    sj=$(REPS="$score_reps" PFN_CONTEXT_CAP="${PFN_CONTEXT_CAP:-}" qsub -terse -N sc-pfn-$run -hold_jid "$tj" -l h_rt=6:0:0 -l mem=8G \
+         -v REPS,PFN_CONTEXT_CAP,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS="$MAIN/$out/pfn.pt",ONLY_ESTIMATORS=1,OUT=outputs_perfold_pfn/$run \
          qsub/perfold_score.qsub.sh)
-    echo "phase2 $run: pfn $tj ($out/pfn.pt, ~12 h at 20,000 iterations) -> scoring on $score_reps $sj -> $PERFOLD/outputs_perfold_pfn/$run/leaderboard.csv"
+    echo "phase2 $run: pfn $tj ($out/pfn.pt, ~1-2 h at 20,000 iterations with context_max 1024) -> scoring on $score_reps $sj -> $PERFOLD/outputs_perfold_pfn/$run/leaderboard.csv"
+    ;;
+
+  pfnscore)
+    # score finished PFN checkpoints again (a scoring job that died, or a new
+    # context cap): bash scripts/myriad_phase1b.sh pfnscore <run> [<run> ...],
+    # <run> = the suffix of outputs/pfn_reduced_<run>/pfn.pt, scored into
+    # outputs_perfold_pfn/<run>. The context is capped at the checkpoint's
+    # context_max (PFN_CONTEXT_CAP overrides; 0 = whole train slice).
+    cd "$PERFOLD"
+    [ $# -gt 0 ] || { echo "usage: pfnscore <run> [<run> ...]"; exit 2; }
+    score_reps="${SCORE_REPS:-$PUB_ROOT/E1/E1/seed0/folds}"
+    for run in "$@"; do
+      ck="$MAIN/outputs/pfn_reduced_${run}/pfn.pt"
+      [ -s "$ck" ] || { echo "no checkpoint $ck"; continue; }
+      sj=$(REPS="$score_reps" PFN_CONTEXT_CAP="${PFN_CONTEXT_CAP:-}" qsub -terse -N sc-pfn-$run -l h_rt=6:0:0 -l mem=8G \
+           -v REPS,PFN_CONTEXT_CAP,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS="$ck",ONLY_ESTIMATORS=1,OUT=outputs_perfold_pfn/$run \
+           qsub/perfold_score.qsub.sh)
+      echo "pfnscore $run: $sj (log sc-pfn-$run.o$sj) -> $PERFOLD/outputs_perfold_pfn/$run/leaderboard.csv"
+    done
     ;;
 
   probe)
@@ -345,8 +365,8 @@ PY
              -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="$s",ARCH="${ARCH:-tabicl}",VARIANT="$v",FAMILY="$fam",FAMILY_WEIGHTS,CONTEXT_POOL="$ctx" \
              scripts/train_pfn_myriad.qsub.sh)
         cd "$PERFOLD"
-        sj=$(REPS="$score_reps" qsub -terse -N sc-$jn -hold_jid "$tj" -l h_rt=6:0:0 -l mem=8G \
-             -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS="$MAIN/$out/pfn.pt",ONLY_ESTIMATORS=1,OUT=outputs_perfold_pfn/$run \
+        sj=$(REPS="$score_reps" PFN_CONTEXT_CAP="${PFN_CONTEXT_CAP:-}" qsub -terse -N sc-$jn -hold_jid "$tj" -l h_rt=6:0:0 -l mem=8G \
+             -v REPS,PFN_CONTEXT_CAP,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS="$MAIN/$out/pfn.pt",ONLY_ESTIMATORS=1,OUT=outputs_perfold_pfn/$run \
              qsub/perfold_score.qsub.sh)
         echo "e12 $v seed$s: pfn $tj (log pfn-$jn.o$tj) -> scoring $sj (outputs_perfold_pfn/$run)"
       done

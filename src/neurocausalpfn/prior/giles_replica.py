@@ -46,6 +46,7 @@ scale is reported alongside as ``pehe_paper_selected``.
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -507,7 +508,14 @@ def evaluate_representation(Z: np.ndarray, labels_df, pairs: Dict[int, RoiPair],
     # equity on the paper scale: cohort-level volume quartile of every image
     strata_all = (volume_strata(labels_df["vol"], labels_df["vol"])
                   if "vol" in labels_df.columns else None)
+    # in-context estimators are the slow part of a scoring job (one forward
+    # pass per deficit, fold and arm): report each finished fold so that a
+    # job killed at its time limit shows how far it got
+    progress = any(c in ESTIMATORS for c in classifiers)
+    t_start = time.time()
     for k, (tr_idx, te_idx) in enumerate(folds):
+        if progress and k:
+            print(f"  fold {k}/{len(folds)} done, {time.time() - t_start:.0f} s elapsed", flush=True)
         df_tr, df_te = labels_df.iloc[tr_idx], labels_df.iloc[te_idx]
         if callable(Z):
             Z_tr_all, Z_te_all = Z(tr_idx, te_idx)

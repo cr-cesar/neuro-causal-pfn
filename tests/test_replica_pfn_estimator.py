@@ -79,6 +79,40 @@ def test_pfn_estimator_on_prototype_checkpoint(tmp_path):
     assert len(res) > 0 and set(res["learner"]) == {"in_context"} and np.isfinite(res["pehe"]).all()
 
 
+def test_pfn_estimator_caps_the_context_at_the_training_length(tmp_path, monkeypatch):
+    pytest.importorskip("torch")
+    from neurocausalpfn.pfn.estimator import PFNEstimator
+    from neurocausalpfn.train.train_pfn import prototype_config, run_pfn
+
+    cfg = prototype_config()
+    cfg["out_dir"] = str(tmp_path); cfg["pfn"]["iters"] = 2; cfg["pfn"]["batch_size"] = 2
+    cfg["pfn"]["d_x"] = 4; cfg["pfn"]["context_max"] = 32; cfg["pfn"]["n_query"] = 4
+    cfg["device"] = "cpu"
+    run_pfn(cfg)
+    ck = os.path.join(str(tmp_path), "pfn.pt")
+    rng = np.random.default_rng(1)
+    Xtr, Xte = rng.normal(size=(100, 4)).astype(np.float32), rng.normal(size=(9, 4)).astype(np.float32)
+    W = (np.arange(100) < 30).astype(float); Y = rng.integers(0, 2, 100).astype(float)
+
+    est = PFNEstimator(ck, device="cpu")                    # default: the checkpoint's context_max
+    assert est.context_cap == 32
+    Xc, Wc, Yc = est._cap_context(Xtr, W, Y)
+    assert len(Xc) == len(Wc) == len(Yc) == 32
+    assert int(Wc.sum()) == round(32 * 0.3)                 # treated share preserved
+    Xc2, _, _ = est._cap_context(Xtr, W, Y)
+    assert np.array_equal(Xc, Xc2)                          # deterministic for the same slice
+    before = est.n_capped
+    p1, p0 = est(Xtr, W, Y, Xte)
+    assert p1.shape == p0.shape == (9,) and est.n_capped == before + 1
+    # a slice within the cap is untouched
+    assert est._cap_context(Xtr[:20], W[:20], Y[:20])[0].shape == (20, 4)
+
+    monkeypatch.setenv("PFN_CONTEXT_CAP", "0")              # 0 disables the cap
+    est0 = PFNEstimator(ck, device="cpu")
+    assert est0.context_cap == 0 and est0._cap_context(Xtr, W, Y)[0].shape == (100, 4)
+    assert PFNEstimator(ck, device="cpu", context_cap=10)._cap_context(Xtr, W, Y)[0].shape == (10, 4)
+
+
 def test_off_the_shelf_causalpfn_wrapper_returns_potential_outcomes():
     pytest.importorskip("causalpfn")
     from neurocausalpfn.pfn.estimator import CausalPFNEstimator

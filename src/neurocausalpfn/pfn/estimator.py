@@ -13,7 +13,17 @@ Covariates are passed as the checkpoint saw them during prior training. With
 ``standardize=True`` both context and queries are standardised with the
 context statistics (useful when the latents of the scored cohort are not the
 pool the prior was built on).
+
+The context is capped at the length the checkpoint was trained with
+(``cfg["pfn"]["context_max"]``): a longer train slice is subsampled at random
+(fixed seed, treatment proportion preserved), so every checkpoint is scored in
+the context regime it saw, and the cost of a forward pass on CPU, which grows
+faster than the context length, stays bounded (a 3,252-row slice costs about
+six times a 1,024-row one). ``context_cap`` or the environment variable
+``PFN_CONTEXT_CAP`` override it; 0 disables the cap (the extrapolation
+reading of the E12 ``ctx`` variant).
 """
+import os
 from typing import Dict, Optional, Tuple
 
 import numpy as np
@@ -21,7 +31,8 @@ import numpy as np
 
 class PFNEstimator:
     def __init__(self, ckpt_path: str, device: Optional[str] = None,
-                 standardize: Optional[bool] = None, max_queries: int = 512):
+                 standardize: Optional[bool] = None, max_queries: int = 512,
+                 context_cap: Optional[int] = None):
         import torch
 
         from ..train.train_pfn import build_model
@@ -45,7 +56,29 @@ class PFNEstimator:
             standardize = bool(self.cfg.get("prior", {}).get("augment", False))
         self.standardize = bool(standardize)
         self.max_queries = int(max_queries)
+        if context_cap is None:
+            env = os.environ.get("PFN_CONTEXT_CAP", "").strip()
+            context_cap = int(env) if env else int(self.cfg.get("pfn", {}).get("context_max", 0) or 0)
+        self.context_cap = int(context_cap)          # 0: the whole train slice is the context
+        self.n_capped = 0                            # calls whose context was subsampled
         self.name = "pfn"
+
+    def _cap_context(self, Xtr: np.ndarray, W: np.ndarray, Y: np.ndarray):
+        """Subsample a context longer than the cap, keeping the treated share;
+        deterministic for a given slice (seeded by its size and label counts)."""
+        n = len(Xtr)
+        if self.context_cap <= 0 or n <= self.context_cap:
+            return Xtr, W, Y
+        W = np.asarray(W); Y = np.asarray(Y)
+        rng = np.random.default_rng([n, int(W.sum()), int(Y.sum()), self.context_cap])
+        treated = np.flatnonzero(W == 1); control = np.flatnonzero(W != 1)
+        k1 = int(round(self.context_cap * len(treated) / n))
+        k1 = min(max(k1, 1 if len(treated) else 0), len(treated), self.context_cap)
+        k0 = min(self.context_cap - k1, len(control))
+        keep = np.sort(np.concatenate([rng.choice(treated, k1, replace=False),
+                                       rng.choice(control, k0, replace=False)]))
+        self.n_capped += 1
+        return Xtr[keep], W[keep], Y[keep]
 
     def __call__(self, Xtr: np.ndarray, W: np.ndarray, Y: np.ndarray,
                  Xte: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -56,6 +89,7 @@ class PFNEstimator:
         Xtr = np.asarray(Xtr, dtype=np.float32); Xte = np.asarray(Xte, dtype=np.float32)
         if Xtr.shape[1] != self.d_x:
             raise ValueError(f"checkpoint expects d_x={self.d_x}, got {Xtr.shape[1]}")
+        Xtr, W, Y = self._cap_context(Xtr, W, Y)
         if self.standardize:
             mu, sd = Xtr.mean(0, keepdims=True), Xtr.std(0, keepdims=True) + 1e-6
             Xtr, Xte = (Xtr - mu) / sd, (Xte - mu) / sd
