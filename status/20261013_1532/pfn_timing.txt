@@ -1,0 +1,81 @@
+== pfn-kch_e1_32d-lin-mixture.o117864
+10:10:24  INFO  PFN: 4.83M parameters, d_x=50, arch=linear, prior=intersynth
+10:10:26  INFO  iter 1/20000  n_ctx=256  loss=6.0753
+10:10:29  INFO  iter 100/20000  n_ctx=263  loss=5.4992
+10:10:58  INFO  iter 1000/20000  n_ctx=332  loss=5.4217
+10:13:28  INFO  iter 5000/20000  n_ctx=640  loss=4.4678
+10:17:13  INFO  iter 10000/20000  n_ctx=1024  loss=4.0789
+10:21:01  INFO  iter 15000/20000  n_ctx=1024  loss=4.7167
+10:24:49  INFO  iter 20000/20000  n_ctx=1024  loss=4.2270
+== pfn-kch_e1_32d-mixture.o117861
+08:03:30  INFO  PFN: 6.40M parameters, d_x=50, arch=tabicl, prior=intersynth
+08:03:32  INFO  iter 1/20000  n_ctx=256  loss=6.6880
+08:03:39  INFO  iter 100/20000  n_ctx=263  loss=5.4326
+08:04:41  INFO  iter 1000/20000  n_ctx=332  loss=5.2271
+08:11:47  INFO  iter 5000/20000  n_ctx=640  loss=4.6813
+08:25:02  INFO  iter 10000/20000  n_ctx=1024  loss=4.2153
+08:40:20  INFO  iter 15000/20000  n_ctx=1024  loss=4.5176
+08:55:43  INFO  iter 20000/20000  n_ctx=1024  loss=4.4261
+== pfn-kch_e1_32-giles.o106737
+06:41:43  INFO  PFN: 6.40M parameters, d_x=50, arch=tabicl, prior=intersynth
+06:41:45  INFO  iter 1/20000  n_ctx=256  loss=6.8816
+06:41:54  INFO  iter 100/20000  n_ctx=263  loss=5.6017
+06:43:22  INFO  iter 1000/20000  n_ctx=332  loss=5.6202
+06:55:29  INFO  iter 5000/20000  n_ctx=640  loss=4.8281
+07:21:11  INFO  iter 10000/20000  n_ctx=1024  loss=5.0506
+07:51:06  INFO  iter 15000/20000  n_ctx=1024  loss=5.3460
+08:21:31  INFO  iter 20000/20000  n_ctx=1024  loss=5.0675
+== pfn-kch_e1_32-giles.o98443
+00:21:05  INFO  PFN: 6.40M parameters, d_x=50, arch=tabicl, prior=intersynth
+00:21:05  INFO  iter 1/20000  n_ctx=256  loss=6.7288
+00:21:16  INFO  iter 100/20000  n_ctx=294  loss=5.1297
+00:23:27  INFO  iter 1000/20000  n_ctx=642  loss=4.6155
+01:02:21  INFO  iter 5000/20000  n_ctx=2187  loss=4.1837
+03:51:15  INFO  iter 10000/20000  n_ctx=4119  loss=4.0036
+08:18:53  INFO  iter 15000/20000  n_ctx=4119  loss=3.5554
+12:46:38  INFO  iter 20000/20000  n_ctx=4119  loss=3.8284
+== pfn-kch_e1_32-giles.o99790
+20:48:44  INFO  PFN: 6.40M parameters, d_x=50, arch=tabicl, prior=intersynth
+20:48:45  INFO  iter 1/20000  n_ctx=256  loss=6.7288
+20:48:54  INFO  iter 100/20000  n_ctx=294  loss=5.1298
+20:50:03  INFO  iter 1000/20000  n_ctx=642  loss=4.7765
+21:08:09  INFO  iter 5000/20000  n_ctx=2187  loss=4.5548
+22:20:08  INFO  iter 10000/20000  n_ctx=4119  loss=4.0184
+00:09:57  INFO  iter 15000/20000  n_ctx=4119  loss=3.6450
+01:59:54  INFO  iter 20000/20000  n_ctx=4119  loss=3.8220
+== pfn-kch_e1_32-mixture.o106739
+08:39:53  INFO  PFN: 6.40M parameters, d_x=50, arch=tabicl, prior=intersynth
+08:39:53  INFO  iter 1/20000  n_ctx=256  loss=7.0123
+08:40:01  INFO  iter 100/20000  n_ctx=263  loss=5.4623
+08:40:54  INFO  iter 1000/20000  n_ctx=332  loss=5.1771
+08:46:17  INFO  iter 5000/20000  n_ctx=640  loss=4.6690
+08:58:13  INFO  iter 10000/20000  n_ctx=1024  loss=4.7188
+09:13:28  INFO  iter 15000/20000  n_ctx=1024  loss=4.9045
+09:29:01  INFO  iter 20000/20000  n_ctx=1024  loss=5.3410
+== pfn-kch_e1_32-mixture.o98441
+23:48:16  INFO  PFN: 6.40M parameters, d_x=50, arch=tabicl, prior=intersynth
+23:48:16  INFO  iter 1/20000  n_ctx=256  loss=6.8626
+23:48:26  INFO  iter 100/20000  n_ctx=294  loss=5.2820
+23:50:36  INFO  iter 1000/20000  n_ctx=642  loss=4.4088
+00:29:07  INFO  iter 5000/20000  n_ctx=2187  loss=4.2035
+03:17:57  INFO  iter 10000/20000  n_ctx=4119  loss=4.2366
+07:44:06  INFO  iter 15000/20000  n_ctx=4119  loss=3.8322
+12:10:46  INFO  iter 20000/20000  n_ctx=4119  loss=4.8906
+== pfn-kch_e1_32-mixture.o99792
+23:42:03  INFO  PFN: 6.40M parameters, d_x=50, arch=tabicl, prior=intersynth
+23:42:04  INFO  iter 1/20000  n_ctx=256  loss=6.8626
+23:42:16  INFO  iter 100/20000  n_ctx=294  loss=5.2820
+23:44:50  INFO  iter 1000/20000  n_ctx=642  loss=4.5334
+00:26:18  INFO  iter 5000/20000  n_ctx=2187  loss=4.3364
+03:22:26  INFO  iter 10000/20000  n_ctx=4119  loss=4.4798
+== pfn-kch_e1.o62950
+15:03:49  INFO  PFN: 6.40M parameters, d_x=50, arch=tabicl, prior=intersynth
+== pfn-kch_e1.o83668
+05:46:38  INFO  PFN: 6.40M parameters, d_x=50, arch=tabicl, prior=intersynth
+05:46:38  INFO  iter 1/20000  n_ctx=256  loss=6.9768
+05:46:46  INFO  iter 100/20000  n_ctx=294  loss=4.1733
+05:48:48  INFO  iter 1000/20000  n_ctx=642  loss=4.4934
+06:25:47  INFO  iter 5000/20000  n_ctx=2187  loss=4.3657
+09:10:59  INFO  iter 10000/20000  n_ctx=4119  loss=3.5510
+13:33:34  INFO  iter 15000/20000  n_ctx=4119  loss=3.3570
+17:56:10  INFO  iter 20000/20000  n_ctx=4119  loss=3.4066
