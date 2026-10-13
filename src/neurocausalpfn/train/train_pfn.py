@@ -37,12 +37,20 @@ def build_model(cfg: Dict, d_x: int):
     row-wise)."""
     p = cfg["pfn"]
     if p.get("arch", "linear") == "tabicl":
+        if int(p.get("tabicl_version", 0)) < 2:
+            # checkpoints written before the TabICL re-implementation
+            from ..pfn.tabicl_v0 import NeuroCausalPFNTabICLv0
+
+            return NeuroCausalPFNTabICLv0(
+                d_x=d_x, d_model=p["d_model"], n_row_layers=p["n_layers"],
+                n_col_layers=p.get("n_col_layers", 2), n_heads=p["n_heads"],
+                n_bins=p["n_bins"], sigma=p["sigma"])
         from ..pfn.tabicl_model import NeuroCausalPFNTabICL
 
         return NeuroCausalPFNTabICL(
-            d_x=d_x, d_model=p["d_model"], n_row_layers=p["n_layers"],
-            n_col_layers=p.get("n_col_layers", 2), n_heads=p["n_heads"],
-            n_bins=p["n_bins"], sigma=p["sigma"])
+            d_x=d_x, embed_dim=p.get("embed_dim", 128), n_col_layers=p.get("n_col_layers", 3),
+            n_row_layers=p.get("n_row_layers", 3), n_icl_layers=p["n_layers"], n_heads=p["n_heads"],
+            n_cls=p.get("n_cls", 4), n_inds=p.get("n_inds", 128), n_bins=p["n_bins"], sigma=p["sigma"])
     return NeuroCausalPFN(
         d_x=d_x, d_model=p["d_model"], n_layers=p["n_layers"], n_heads=p["n_heads"],
         n_bins=p["n_bins"], sigma=p["sigma"])
@@ -75,7 +83,8 @@ def full_config() -> Dict:
                   "modality": "receptor",
                   "pool_size": 4000, "unobserved_strength": 0.0},
         "pfn": {"d_x": 104, "d_model": 512, "n_layers": 12, "n_heads": 8,
-                "n_bins": 1024, "sigma": 0.02, "arch": "tabicl", "n_col_layers": 3,
+                "n_bins": 1024, "sigma": 0.02, "arch": "tabicl", "tabicl_version": 2, "embed_dim": 128,
+                "n_col_layers": 3, "n_row_layers": 3, "n_cls": 4, "n_inds": 128,
                 "context_min": 1000, "context_max": 20000, "n_query": 64,
                 "batch_size": 8, "iters": 162000,
                 "lr": 3e-4, "weight_decay": 0.01, "grad_clip": 1.0},
@@ -95,7 +104,8 @@ def reduced_config() -> Dict:
         "seed": 0,
         "out_dir": "outputs/pfn_reduced",
         "pfn": {"d_x": 50, "d_model": 256, "n_layers": 6, "n_heads": 8,
-                "n_bins": 256, "sigma": 0.02, "arch": "tabicl", "n_col_layers": 2,
+                "n_bins": 256, "sigma": 0.02, "arch": "tabicl", "tabicl_version": 2, "embed_dim": 96,
+                "n_col_layers": 2, "n_row_layers": 2, "n_cls": 4, "n_inds": 64,
                 "n_query": 64, "batch_size": 4, "lr": 2e-4, "weight_decay": 0.01,
                 "grad_clip": 1.0, "iters": 20000, "context_min": 256, "context_max": 4119},
         "prior": {"kind": "neuro_prior", "family": "theory", "cache": None, "atlas_dir": str(ATLAS_DIR),
