@@ -147,6 +147,20 @@ def _as_ranges(ranges: Dict) -> Dict:
     return {k: tuple(v) if isinstance(v, list) else v for k, v in ranges.items()}
 
 
+def parse_hyper_opts(text: str) -> Dict:
+    """Hyper-prior overrides given as a string, e.g. the PRIOR_HYPER variable of
+    the Myriad jobs (qsub -v cannot carry commas): space-separated key=value
+    items, a range as lo:hi, a flag as a number ("two_arms=1 effect_scale=0.2:1
+    binary_outcome=0.5"). Returns a dict for cfg["prior"]["hyper"]."""
+    out: Dict = {}
+    for item in (text or "").split():
+        key, _, val = item.partition("=")
+        if not key or not val:
+            raise ValueError(f"bad hyper option {item!r}: expected key=value")
+        out[key] = [float(x) for x in val.split(":")] if ":" in val else float(val)
+    return out
+
+
 def _hyper_for(cfg: Dict, ranges: Dict):
     """Hyper-prior of the configured family with ``ranges`` overriding the
     defaults; for the mixture these are the theory ranges (the ones the
@@ -290,7 +304,9 @@ def run_pfn(cfg: Dict):
         if k != stage and is_intersynth and hasattr(prior_obj, "hyper"):
             # staged hyper-prior (E12 ctx+stages): swap the ranges in place
             st = cfg["prior"]["stages"][k]
-            prior_obj.hyper = _hyper_for(cfg, st.get("hyper", {}))
+            # the stage narrows ranges on top of the configured hyper-prior, so
+            # its other fields (the theory extensions) persist across stages
+            prior_obj.hyper = _hyper_for(cfg, {**cfg["prior"].get("hyper", {}), **st.get("hyper", {})})
             if getattr(prior_obj, "family", None) == "mixture":
                 from ..prior.neuro_prior import HyperPrior
 

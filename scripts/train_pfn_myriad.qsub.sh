@@ -39,10 +39,11 @@ VARIANT="${VARIANT:-}"      # E12: nocurr | ctx | ctx+stages (empty = the pilot'
 FAMILY="${FAMILY:-}"        # theory | giles | mixture (empty = theory)
 FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}"
 CONTEXT_POOL="${CONTEXT_POOL:-susceptible}"
+PRIOR_HYPER="${PRIOR_HYPER:-}"    # theory prior extensions, e.g. "two_arms=1 effect_scale=0.2:1 binary_outcome=0.5"
 
 python - <<PY
 import json
-from neurocausalpfn.train.train_pfn import e12_config, reduced_config, run_pfn, with_family
+from neurocausalpfn.train.train_pfn import e12_config, parse_hyper_opts, reduced_config, run_pfn, with_family
 fam = "$FAMILY" or "theory"
 w = [float(x) for x in "$FAMILY_WEIGHTS".split()] or None
 cp = "$CONTEXT_POOL"
@@ -50,6 +51,7 @@ cfg = e12_config("$VARIANT", fam, w, cp) if "$VARIANT" else with_family(reduced_
 cfg["out_dir"] = "$OUT"; cfg["seed"] = int("$SEED")
 cfg["pfn"]["iters"] = int("$ITERS"); cfg["pfn"]["arch"] = "$ARCH"
 cfg["prior"]["cache"] = "$CACHE"; cfg["prior"]["atlas_dir"] = "data/atlases"
+cfg["prior"]["hyper"] = {**cfg["prior"].get("hyper", {}), **parse_hyper_opts("$PRIOR_HYPER")}
 print(json.dumps(cfg, indent=1, default=str))
 model, history = run_pfn(cfg)
 json.dump(history, open("$OUT/history.json", "w"))
