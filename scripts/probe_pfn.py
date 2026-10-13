@@ -50,6 +50,17 @@ def _cohort(cfg: Dict, family: str, n_context: int, n_query: int, seed_offset: i
     c = copy.deepcopy(cfg)
     with_family(c, family)
     c["prior"].pop("stages", None)
+    # a checkpoint trained on the theory family may carry hyper-prior fields the
+    # other family's HyperPrior does not have (two_arms, effect_scale, ...): keep
+    # only the fields the destination family accepts
+    import dataclasses
+
+    if family in ("theory", "mixture"):
+        from neurocausalpfn.prior.intersynth_theory import TheoryHyperPrior as _H
+    else:
+        from neurocausalpfn.prior.neuro_prior import HyperPrior as _H
+    allowed = {f.name for f in dataclasses.fields(_H)}
+    c["prior"]["hyper"] = {k: v for k, v in c["prior"].get("hyper", {}).items() if k in allowed}
     c["pfn"]["context_max"], c["pfn"]["n_query"] = int(n_context), int(n_query)
     prior, _, _ = _build_prior(c, seed_offset=seed_offset)
     return prior

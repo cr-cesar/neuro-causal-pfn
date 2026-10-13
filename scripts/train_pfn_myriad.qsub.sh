@@ -39,7 +39,9 @@ VARIANT="${VARIANT:-}"      # E12: nocurr | ctx | ctx+stages (empty = the pilot'
 FAMILY="${FAMILY:-}"        # theory | giles | mixture (empty = theory)
 FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}"
 CONTEXT_POOL="${CONTEXT_POOL:-susceptible}"
-PRIOR_HYPER="${PRIOR_HYPER:-}"    # theory prior extensions, e.g. "two_arms=1 effect_scale=0.2:1 binary_outcome=0.5"
+PRIOR_HYPER="${PRIOR_HYPER:-}"
+LR_SCHEDULE="${LR_SCHEDULE:-constant}"   # constant | cosine (warmup 2 % then cosine decay to 0.1 lr)
+BATCH="${BATCH:-}"                        # batch size override (default: the config's)    # theory prior extensions, e.g. "two_arms=1 effect_scale=0.2:1 binary_outcome=0.5"
 
 python - <<PY
 import json
@@ -50,6 +52,8 @@ cp = "$CONTEXT_POOL"
 cfg = e12_config("$VARIANT", fam, w, cp) if "$VARIANT" else with_family(reduced_config(), fam, w, cp)
 cfg["out_dir"] = "$OUT"; cfg["seed"] = int("$SEED")
 cfg["pfn"]["iters"] = int("$ITERS"); cfg["pfn"]["arch"] = "$ARCH"
+cfg["pfn"]["lr_schedule"] = "$LR_SCHEDULE"
+if "$BATCH": cfg["pfn"]["batch_size"] = int("$BATCH")
 cfg["prior"]["cache"] = "$CACHE"; cfg["prior"]["atlas_dir"] = "data/atlases"
 cfg["prior"]["hyper"] = {**cfg["prior"].get("hyper", {}), **parse_hyper_opts("$PRIOR_HYPER")}
 print(json.dumps(cfg, indent=1, default=str))
