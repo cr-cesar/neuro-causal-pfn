@@ -11,6 +11,7 @@
 #   POOL_IMAGES=<disco dir> bash scripts/myriad_phase1b.sh pool   # pool latents with the published-budget E1 (fold-0 encoder), one GPU job
 #   PRIOR_FAMILY=<theory|giles|mixture> TAG=<tag> [POOL_IMAGES=<dir> POOL_LATENTS=<npz> HOLD_JID=<job>] bash scripts/myriad_phase1b.sh phase2   # [cache ->] reduced PFN (GPU) -> scored on E1 per-fold (published budget)
 #   bash scripts/myriad_phase1b.sh probe [pfn.pt ...]   # CPU probe: does a checkpoint read the treatment, and on which prior family is it accurate
+#   PRIOR_HYPER="two_arms=1 effect_scale=0.2:1 binary_outcome=0.5" VARIANT_TAG=<name> ... phase2   # theory prior extensions (see intersynth_theory.py); the tag enters the run name
 #   bash scripts/myriad_phase1b.sh pfnscore <run> ...   # score finished PFN checkpoints again (context capped at the checkpoint's context_max)
 #   PRIOR_FAMILY=<family> TAG=<tag> [POOL_IMAGES=<dir> POOL_LATENTS=<npz> HOLD_JID=<job>] bash scripts/myriad_phase1b.sh e12   # curriculum ablation: 3 variants x SEEDS on cache TAG (built first if missing); "e12 summary" collects the rows
 #
@@ -272,10 +273,12 @@ PY
     # ARCH=linear and the tabicl run of the same TAG and family do not share a
     # checkpoint, a job name or a leaderboard (the prior cache is still shared)
     archsuf=""; [ "${ARCH:-tabicl}" = tabicl ] || archsuf="-${ARCH}"
-    tag="${TAG:-pilot}"; run="${tag}-${fam}${ctxsuf}${archsuf}"; out="outputs/pfn_reduced_${run}"
+    # VARIANT_TAG names a prior variant (e.g. 2arms) so that runs of the same
+    # TAG, family and architecture do not share a checkpoint
+    tag="${TAG:-pilot}"; run="${tag}-${fam}${ctxsuf}${archsuf}${VARIANT_TAG:+-$VARIANT_TAG}"; out="outputs/pfn_reduced_${run}"
     ensure_cache "$tag"
-    tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" qsub -terse -N pfn-$run ${hold[@]+"${hold[@]}"} \
-         -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="${SEED:-0}",ARCH="${ARCH:-tabicl}",FAMILY="$fam",FAMILY_WEIGHTS,CONTEXT_POOL="$ctx" \
+    tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" PRIOR_HYPER="${PRIOR_HYPER:-}" qsub -terse -N pfn-$run ${hold[@]+"${hold[@]}"} \
+         -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="${SEED:-0}",ARCH="${ARCH:-tabicl}",FAMILY="$fam",FAMILY_WEIGHTS,PRIOR_HYPER,CONTEXT_POOL="$ctx" \
          scripts/train_pfn_myriad.qsub.sh)
     cd "$PERFOLD"
     # the checkpoint is scored on the headline encoder's per-fold latents: E1
@@ -384,8 +387,8 @@ PY
         run="${tag}-${fam}${ctxsuf}${archsuf}-${v//+/-}_s$s"; out="outputs/pfn_e12_${run}"
         jn="$(short_variant "$v")-s$s-${fam:0:3}-$tag"
         cd "$MAIN"
-        tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" qsub -terse -N pfn-$jn ${hold[@]+"${hold[@]}"} \
-             -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="$s",ARCH="${ARCH:-tabicl}",VARIANT="$v",FAMILY="$fam",FAMILY_WEIGHTS,CONTEXT_POOL="$ctx" \
+        tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" PRIOR_HYPER="${PRIOR_HYPER:-}" qsub -terse -N pfn-$jn ${hold[@]+"${hold[@]}"} \
+             -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="$s",ARCH="${ARCH:-tabicl}",VARIANT="$v",FAMILY="$fam",FAMILY_WEIGHTS,PRIOR_HYPER,CONTEXT_POOL="$ctx" \
              scripts/train_pfn_myriad.qsub.sh)
         cd "$PERFOLD"
         sj=$(REPS="$score_reps" PFN_CONTEXT_CAP="${PFN_CONTEXT_CAP:-}" qsub -terse -N sc-$jn -hold_jid "$tj" -l h_rt=6:0:0 -l mem=8G \
