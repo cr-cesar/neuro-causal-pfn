@@ -15,6 +15,14 @@ resolution, binarized input for the lesion representation, continuous for the
 disconnectome. Early-fusion checkpoints take the lesion from --images-dir and
 the matching disconnectome (same basename) from --disco-dir.
 
+Besides Z and files, every npz records where the latents came from: the
+encoder's representation (lesion | disconnectome | early_fusion), the
+checkpoint path, the absolute images directory (and disco directory, when
+given) and the channel detected from the images' voxel values (images_channel:
+"lesion" when the checked volumes are binary, "disconnectome" otherwise;
+neurocausalpfn/prior/channel.py). scripts/build_prior_cache.py reads these
+keys to refuse a prior cache built from the other channel.
+
 Examples:
     python scripts/export_latents.py \\
         --checkpoints "outputs/experiments/E2/E2[w_dice=0.5]/seed0/disco/vae_disconnectome.pt" \\
@@ -39,6 +47,7 @@ import numpy as np                                       # noqa: E402
 import torch                                             # noqa: E402
 
 from neurocausalpfn.data.transforms import binarize, pad_or_crop   # noqa: E402
+from neurocausalpfn.prior.channel import REPRESENTATION_CHANNEL, detect_channel   # noqa: E402
 from neurocausalpfn.vae.conv3d_vae import ConvVAE3D      # noqa: E402
 
 
@@ -138,19 +147,28 @@ def main():
         ckpts.extend(hits)
 
     os.makedirs(args.out, exist_ok=True)
-    print(f"{len(files)} images | {len(ckpts)} checkpoint(s) | device {device}")
+    # the channel of the images, from their voxel values: recorded in the npz
+    # so that the prior cache can be checked against it
+    images_dir = os.path.abspath(args.images_dir)
+    images_channel = detect_channel(files)
+    print(f"{len(files)} images ({images_channel}) | {len(ckpts)} checkpoint(s) | device {device}")
     for ckpt_path in ckpts:
         model, rep, resolution = load_frozen_vae(ckpt_path, device)
         if rep == "early_fusion" and not args.disco_dir:
             sys.exit(f"{ckpt_path}: early_fusion checkpoint needs --disco-dir")
+        if REPRESENTATION_CHANNEL.get(rep, images_channel) != images_channel:
+            print(f"  note: {rep} encoder applied to {images_channel} images ({images_dir})")
         Z = export_latents(model, rep, resolution, files,
                            disco_dir=args.disco_dir,
                            batch_size=args.batch_size, device=device)
         path = os.path.join(args.out, default_name(ckpt_path))
         np.savez(path, Z=Z,
                  files=np.array([os.path.basename(f) for f in files]),
-                 checkpoint=np.array(ckpt_path),
-                 representation=np.array(rep))
+                 checkpoint=np.array(os.path.abspath(ckpt_path)),
+                 representation=np.array(rep),
+                 images_dir=np.array(images_dir),
+                 images_channel=np.array(images_channel),
+                 disco_dir=np.array(os.path.abspath(args.disco_dir) if args.disco_dir else ""))
         print(f"  {ckpt_path} ({rep}) -> {path}  Z{Z.shape}")
 
 

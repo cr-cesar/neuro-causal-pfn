@@ -9,10 +9,16 @@
 #   bash scripts/myriad_phase1b.sh repair            # resubmit published-budget folds that died (time limit after a slow start) + their scoring
 #   bash scripts/myriad_phase1b.sh perfold E1 E3 E11b    # published-budget (32-epoch) per-fold training into PUB_ROOT, independent jobs, scoring chained
 #   POOL_IMAGES=<disco dir> bash scripts/myriad_phase1b.sh pool   # pool latents with the published-budget E1 (fold-0 encoder), one GPU job
-#   PRIOR_FAMILY=<theory|giles|mixture> TAG=<tag> [POOL_LESIONS=<dir> POOL_LATENTS=<npz> HOLD_JID=<job>] bash scripts/myriad_phase1b.sh phase2   # [cache ->] reduced PFN (GPU) -> scored on E1 per-fold (published budget)
+#   PRIOR_FAMILY=<theory|giles|mixture> TAG=<tag> [POOL_IMAGES=<dir> POOL_LATENTS=<npz> HOLD_JID=<job>] bash scripts/myriad_phase1b.sh phase2   # [cache ->] reduced PFN (GPU) -> scored on E1 per-fold (published budget)
 #   bash scripts/myriad_phase1b.sh probe [pfn.pt ...]   # CPU probe: does a checkpoint read the treatment, and on which prior family is it accurate
 #   bash scripts/myriad_phase1b.sh pfnscore <run> ...   # score finished PFN checkpoints again (context capped at the checkpoint's context_max)
-#   PRIOR_FAMILY=<family> TAG=<tag> [POOL_LESIONS=<dir> POOL_LATENTS=<npz> HOLD_JID=<job>] bash scripts/myriad_phase1b.sh e12   # curriculum ablation: 3 variants x SEEDS on cache TAG (built first if missing); "e12 summary" collects the rows
+#   PRIOR_FAMILY=<family> TAG=<tag> [POOL_IMAGES=<dir> POOL_LATENTS=<npz> HOLD_JID=<job>] bash scripts/myriad_phase1b.sh e12   # curriculum ablation: 3 variants x SEEDS on cache TAG (built first if missing); "e12 summary" collects the rows
+#
+# POOL_IMAGES is one directory for the whole Phase 2 chain: the pool block
+# encodes it into POOL_LATENTS and phase2 / e12 build the prior cache from it,
+# so the prior's responsiveness and the covariates come from the same images
+# (the disconnectomes, which the scoring labels as well). POOL_LESIONS is the
+# former name of the cache's directory and is accepted with a warning.
 #   bash scripts/myriad_phase1b.sh clinical <cohort.csv> <id-col> <images-dir> "<latents glob>" "<outcome specs>" "<covariates>" <vol-col> [regress cols]
 #   bash scripts/myriad_phase1b.sh status     # queue by state and block, latest leaderboards
 #   bash scripts/myriad_phase1b.sh snapshot   # aggregate snapshot for the audit log into status/<date>/ (then commit to results-snapshot)
@@ -66,28 +72,35 @@ need_family() {
 }
 
 # the prior cache of tag $1: sets cache and hold (the -hold_jid option for the
-# jobs that read it). A missing cache is built from POOL_LESIONS and
-# POOL_LATENTS by a CPU job, after HOLD_JID when given (e.g. the pool export).
+# jobs that read it). A missing cache is built from POOL_IMAGES (the directory
+# the pool latents were exported from) and POOL_LATENTS by a CPU job, after
+# HOLD_JID when given (e.g. the pool export). The cache job checks that the
+# channel of the images (lesion masks or disconnectomes) matches the latents'
+# and fails otherwise (ALLOW_CHANNEL_MISMATCH=1 overrides).
 ensure_cache() {
   cache="outputs/prior_cache/$1.npz"; hold=()
   if [ -s "$cache" ]; then echo "using the existing prior cache $cache"; return 0; fi
-  local lesions="${POOL_LESIONS:-}" latents="${POOL_LATENTS:-}" cj
+  local images="${POOL_IMAGES:-}" latents="${POOL_LATENTS:-}" cj
+  if [ -z "$images" ] && [ -n "${POOL_LESIONS:-}" ]; then
+    echo "warning: POOL_LESIONS is the former name of POOL_IMAGES; the cache must be built from the directory the pool latents were exported from" >&2
+    images="$POOL_LESIONS"
+  fi
   # a cache job for this tag already queued or running (a second call before
   # it finishes): hold on it instead of submitting a second writer
   cj=$(qstat -xml 2>/dev/null | tr -d '\n' | sed 's/<job_list/\n<job_list/g' \
        | grep "<JB_name>prior-$1</JB_name>" | sed -n 's/.*<JB_job_number>\([0-9]*\)<.*/\1/p' | head -1 || true)
   if [ -n "$cj" ]; then hold=(-hold_jid "$cj"); echo "prior cache job $cj already queued -> $cache"; return 0; fi
-  if [ -z "$lesions" ] || [ -z "$latents" ]; then
-    echo "no prior cache $cache: set POOL_LESIONS and POOL_LATENTS to build it (HOLD_JID=<job> to wait for the pool export)"; exit 2
+  if [ -z "$images" ] || [ -z "$latents" ]; then
+    echo "no prior cache $cache: set POOL_IMAGES (the directory the pool latents were exported from) and POOL_LATENTS to build it (HOLD_JID=<job> to wait for the pool export)"; exit 2
   fi
-  [ -d "$lesions" ] || { echo "no lesion dir $lesions"; exit 2; }
+  [ -d "$images" ] || { echo "no image dir $images"; exit 2; }
   if [ -z "${HOLD_JID:-}" ] && [ ! -s "$latents" ]; then
     echo "no latents $latents: wait for the pool export or pass HOLD_JID=<its job id>"; exit 2
   fi
-  cj=$(qsub -terse -N prior-$1 ${HOLD_JID:+-hold_jid "$HOLD_JID"} \
-       -v LESIONS="$lesions",LATENTS="$latents",OUT="$cache" scripts/build_prior_cache_myriad.qsub.sh)
+  cj=$(ALLOW_CHANNEL_MISMATCH="${ALLOW_CHANNEL_MISMATCH:-}" qsub -terse -N prior-$1 ${HOLD_JID:+-hold_jid "$HOLD_JID"} \
+       -v IMAGES="$images",LATENTS="$latents",OUT="$cache",ALLOW_CHANNEL_MISMATCH scripts/build_prior_cache_myriad.qsub.sh)
   hold=(-hold_jid "$cj")
-  echo "prior cache $cj${HOLD_JID:+ (after $HOLD_JID)} -> $cache (log prior-$1.o$cj)"
+  echo "prior cache $cj${HOLD_JID:+ (after $HOLD_JID)} -> $cache from $images (log prior-$1.o$cj)"
 }
 
 # short job-name prefix: plain qstat shows 10 characters, so the variant and
@@ -250,8 +263,9 @@ PY
     # -> reduced Neuro-Causal-PFN, one sequential GPU job -> the checkpoint
     # scored as a fixed in-context estimator on the E1 per-fold folds (CPU),
     # next to the CausalPFN rows of T4_OUT. PRIOR_FAMILY is required; the
-    # cache of TAG is reused, or built from POOL_LESIONS (lesion dir) and
-    # POOL_LATENTS (matching latents npz), after HOLD_JID when given.
+    # cache of TAG is reused, or built from POOL_IMAGES (the directory the
+    # pool latents were exported from) and POOL_LATENTS (the latents npz),
+    # after HOLD_JID when given.
     need_family
     cd "$MAIN"
     tag="${TAG:-pilot}"; run="${tag}-${fam}${ctxsuf}"; out="outputs/pfn_reduced_${run}"
@@ -303,17 +317,20 @@ PY
   pool)
     # latents of the external covariate pool for Phase 2, encoded with a
     # published-budget E1 fold encoder (the headline encoder family): one short
-    # GPU job. POOL_IMAGES = the pool's disconnectome dir (same basenames as
-    # its lesion dir, which phase2 takes as POOL_LESIONS); POOL_CKPT defaults
+    # GPU job. POOL_IMAGES = the pool's disconnectome dir, the same directory
+    # phase2 / e12 build the prior cache from (the export records it in the
+    # npz and the cache job checks the channel against it); POOL_CKPT defaults
     # to seed 0 / fold 0 of the published-budget E1.
     cd "$MAIN"
     images="${POOL_IMAGES:?set POOL_IMAGES to the disconnectome dir of the pool}"
+    [ -d "$images" ] || { echo "no image dir $images"; exit 2; }
     ckpt="${POOL_CKPT:-$PERFOLD/$PUB_ROOT/E1/E1/seed0/fold0/disco/vae_disconnectome.pt}"
     [ -f "$ckpt" ] || { echo "no checkpoint $ckpt"; exit 2; }
     out="${POOL_OUT:-outputs/latents_pool32}"
     jid=$(CKPTS="$ckpt" qsub -terse -N pool-export -v CKPTS,IMAGES="$images",OUT="$out" scripts/export_latents_myriad.qsub.sh)
-    echo "pool export $jid -> $out/E1_seed0_disco.npz (log pool-export.o$jid); then:"
-    echo "  PRIOR_FAMILY=<family> TAG=<tag> POOL_LESIONS=<lesion dir> POOL_LATENTS=$out/E1_seed0_disco.npz HOLD_JID=$jid bash scripts/myriad_phase1b.sh e12"
+    echo "pool export $jid -> $out/E1_seed0_disco.npz (log pool-export.o$jid); then, with the cache built from the same directory:"
+    echo "  PRIOR_FAMILY=<family> TAG=<tag> POOL_IMAGES=\"$images\" POOL_LATENTS=$out/E1_seed0_disco.npz HOLD_JID=$jid bash scripts/myriad_phase1b.sh phase2"
+    echo "  PRIOR_FAMILY=<family> TAG=<tag> POOL_IMAGES=\"$images\" POOL_LATENTS=$out/E1_seed0_disco.npz HOLD_JID=$jid bash scripts/myriad_phase1b.sh e12"
     ;;
 
   e12)
@@ -324,7 +341,8 @@ PY
     # estimator on the headline encoder's per-fold latents. Rows are collected
     # by "e12 summary" (one leaderboard per checkpoint under outputs_perfold_pfn).
     # A missing cache is built first (CPU job, the PFN jobs wait for it) from
-    # POOL_LESIONS and POOL_LATENTS; HOLD_JID makes that cache job wait for an
+    # POOL_IMAGES (the directory the pool latents were exported from) and
+    # POOL_LATENTS; HOLD_JID makes that cache job wait for an
     # earlier job, e.g. the "pool" export that writes POOL_LATENTS. Building
     # the cache here instead of through phase2 avoids training phase2's PFN,
     # which is the same model as the ctx variant at seed 0.
