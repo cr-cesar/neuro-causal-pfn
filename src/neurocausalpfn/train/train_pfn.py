@@ -161,6 +161,33 @@ def parse_hyper_opts(text: str) -> Dict:
     return out
 
 
+def _lr_schedule(p: Dict):
+    """Learning rate per iteration. ``p["lr_schedule"]`` is "constant" (the
+    default, the pilots' behaviour) or "cosine": linear warmup over
+    ``p["warmup"]`` iterations (default 2 % of the run) from zero to ``lr``,
+    then cosine decay to ``lr * p["min_lr_frac"]`` (default 0.1) at the last
+    iteration. The TabICL blocks start as the identity (zero-initialised
+    residual branches), which is what the warmup is for."""
+    import math
+
+    lr, iters = float(p["lr"]), int(p["iters"])
+    kind = str(p.get("lr_schedule", "constant"))
+    if kind == "constant":
+        return lambda it: lr
+    if kind != "cosine":
+        raise ValueError(f"unknown lr_schedule {kind!r}: constant | cosine")
+    warmup = int(p.get("warmup", max(1, round(0.02 * iters))))
+    floor = float(p.get("min_lr_frac", 0.1)) * lr
+
+    def lr_at(it: int) -> float:
+        if it < warmup:
+            return lr * (it + 1) / warmup
+        frac = (it - warmup) / max(1, iters - warmup)
+        return floor + 0.5 * (lr - floor) * (1.0 + math.cos(math.pi * min(1.0, frac)))
+
+    return lr_at
+
+
 def _hyper_for(cfg: Dict, ranges: Dict):
     """Hyper-prior of the configured family with ``ranges`` overriding the
     defaults; for the mixture these are the theory ranges (the ones the
@@ -290,6 +317,7 @@ def run_pfn(cfg: Dict):
     prior_obj, d_x, is_intersynth = _build_prior(cfg)
     model = build_model(cfg, d_x).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=p["lr"], weight_decay=p["weight_decay"])
+    lr_at = _lr_schedule(p)
     log_runtime("PFN", device, amp)
     n_params = sum(t.numel() for t in model.parameters())
     log.info("PFN: %.2fM parameters, d_x=%d, arch=%s, prior=%s",
@@ -323,9 +351,12 @@ def run_pfn(cfg: Dict):
         with autocast_ctx(device, amp):
             logits = model(batch["Xc"], batch["Tc"], batch["Yc"], batch["Xq"], batch["Tq"])
             loss = model.head.loss(logits, batch["mu_q"])
+        lr_now = lr_at(it)
+        for group in opt.param_groups:
+            group["lr"] = lr_now
         optim_step(loss, opt, scaler, params=model.parameters(), grad_clip=p["grad_clip"])
 
-        history.append({"iter": it, "loss": float(loss.detach()), "n_ctx": n_ctx})
+        history.append({"iter": it, "loss": float(loss.detach()), "n_ctx": n_ctx, "lr": lr_now})
         if (it + 1) % cfg["log_every"] == 0 or it == 0:
             log.info("iter %d/%d  n_ctx=%d  loss=%.4f", it + 1, p["iters"], n_ctx, float(loss.detach()))
 
