@@ -1,0 +1,10 @@
+eid,label,budget,task,channel,protocol,n_seeds,pehe_paper_mean,pehe_paper_seed_sd,pehe_paper_ci_low,pehe_paper_ci_high,pehe_paper_selected,balacc_mean,pehe_code_mean
+E1,E1,published,disconnectome,disconnectome,grp-giles-singles,3,0.27923334313179526,0.0010910352900969109,,,,0.8394169539373183,0.20322121326221074
+E3,E3[backbone=resnet18],published,disconnectome,disconnectome,grp-giles-singles,3,0.2781475172593463,0.0004941038781372964,,,,0.8421145469802801,0.20302188065851465
+E3,E3[backbone=resnet50],published,disconnectome,disconnectome,grp-giles-singles,3,0.27900986018967106,0.0013197215746548648,,,,0.8428693585791058,0.2032307474708228
+E3,E3[backbone=cnn],published,disconnectome,disconnectome,grp-giles-singles,3,0.2798647066109173,0.00019598482990653622,,,,0.8376771064339641,0.2033809358812406
+E3,E3[backbone=wide],published,disconnectome,disconnectome,grp-giles-singles,3,0.28076759920005195,0.0012754080420383244,,,,0.8442213862497306,0.20363026783600593
+E11b,"E11b[backbone=resnet18,w_dice=1.0]",published,disconnectome,disconnectome,grp-giles-singles,3,0.2925260307304562,0.0014405643073041102,,,,0.8439046633335741,0.20697337939081248
+E11b,"E11b[backbone=resnet18,w_dice=0.1]",published,disconnectome,disconnectome,grp-giles-singles,3,0.29272489021711645,0.0011866365604795948,,,,0.8428626290043786,0.20711057389685572
+E11b,"E11b[backbone=cnn,w_dice=1.0]",published,disconnectome,disconnectome,grp-giles-singles,3,0.2928972919537472,0.0014577130423804676,,,,0.8411084832746144,0.2071079112858841
+E11b,"E11b[backbone=cnn,w_dice=0.1]",published,disconnectome,disconnectome,grp-giles-singles,3,0.2930386556470297,0.0008335857761746033,,,,0.8403745983172232,0.20719774620751572

@@ -1,0 +1,5 @@
+eid,label,budget,task,channel,protocol,n_seeds,pehe_paper_mean,pehe_paper_seed_sd,pehe_paper_ci_low,pehe_paper_ci_high,pehe_paper_selected,balacc_mean,pehe_code_mean
+E1,E1,chain,disconnectome,disconnectome,grp-giles-singles,3,0.2861308504461651,0.00011160241917283538,,,,0.8406482209552489,0.2054185407590056
+E1,E1+x3,chain,disconnectome,disconnectome,grp-giles-singles,1,0.2946620253484993,0.0,,,,0.8348550339867482,0.207886242023002
+E5,E5+x3,chain,disconnectome,disconnectome,grp-giles-singles,1,0.29247021037104,0.0,,,,0.8416437307437048,0.2074620270174013
+E5,E5,chain,disconnectome,disconnectome,grp-giles-singles,3,0.3005952509673953,0.0006045186869417207,,,,0.8285433081847513,0.2096458859202522

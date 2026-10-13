@@ -1,0 +1,2 @@
+3de2f38 Merge branch 'main' of https://github.com/cr-cesar/neuro-causal-pfn into results-snapshot
+2030cb6 leaderboard: seed SD labelled as such, 95% CI over deficits and paper-scale selection surfaced (audit F03, F15)
