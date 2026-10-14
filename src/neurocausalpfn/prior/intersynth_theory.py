@@ -75,6 +75,10 @@ class TheoryHyperPrior:
     # binary_outcome: probability that a process draws Y ~ Bernoulli(mu)
     #   instead of mu + Gaussian noise (the evaluation's outcomes are binary)
     binary_outcome: float = 0.0
+    # s_b_column: which subnetwork column the B-arm susceptibility reads: 0 the
+    #   receptomic column (the one D reads; the pilots' setting) or 1 the
+    #   transcriptomic column (the one S_A reads, with a second weighting)
+    s_b_column: int = 0
 
     def contains(self, alpha: float, beta: float, gamma: float) -> bool:
         return bool(self.alpha[0] <= alpha <= self.alpha[1] and self.beta[0] <= beta <= self.beta[1]
@@ -129,6 +133,7 @@ class InterSynthTheoryDGP:
         # weights, a per-process effect scale fixed by calibrate(), binary outcomes
         self.two_arms = bool(rng.uniform() < float(h.two_arms))
         self.w_s2 = np.asarray(rng.dirichlet(conc), dtype=np.float64) if self.two_arms else None
+        self._col_b = int(getattr(h, "s_b_column", 0))
         self.effect_target = (float(np.exp(rng.uniform(np.log(h.effect_scale[0]), np.log(h.effect_scale[1]))))
                               if h.effect_scale else None)
         self.effect_factor = 1.0
@@ -151,7 +156,7 @@ class InterSynthTheoryDGP:
         self.scale_s = max(float(np.quantile(s, q)), 1e-6)
         if self.two_arms:
             ov = np.asarray(overlaps_pool, dtype=np.float64)
-            self.scale_b = max(float(np.quantile(ov[:, :, 0] @ self.w_s2, q)), 1e-6)
+            self.scale_b = max(float(np.quantile(ov[:, :, self._col_b] @ self.w_s2, q)), 1e-6)
         if self.effect_target is not None:
             # the upper quantile of |CATE| over the pool maps to the drawn target
             self.effect_factor = 1.0
@@ -165,13 +170,14 @@ class InterSynthTheoryDGP:
         return np.clip(d / self.scale_d, 0.0, 1.0), np.clip(s / self.scale_s, 0.0, 1.0)
 
     def scores_b(self, overlaps: np.ndarray) -> np.ndarray:
-        """Susceptibility to treatment B of a two-arm process: the second
-        weighting of the first subnetwork column (B helps where other networks
-        of the disrupted tissue are hit); zero for a single-arm process."""
+        """Susceptibility to treatment B of a two-arm process: a second Dirichlet
+        weighting of the subnetwork column ``s_b_column`` of the hyper-prior
+        (0, the receptomic column D reads, or 1, the transcriptomic column S_A
+        reads); zero for a single-arm process."""
         if not self.two_arms:
             return np.zeros(len(overlaps))
         ov = np.asarray(overlaps, dtype=np.float64)
-        return np.clip((ov[:, :, 0] @ self.w_s2) / self.scale_b, 0.0, 1.0)
+        return np.clip((ov[:, :, self._col_b] @ self.w_s2) / self.scale_b, 0.0, 1.0)
 
     # -------------------------------------------------------- ground truth
     def mu0(self, D: np.ndarray) -> np.ndarray:

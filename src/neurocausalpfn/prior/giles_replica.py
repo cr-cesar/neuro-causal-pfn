@@ -5,8 +5,12 @@ Ports the ground-truth simulation and the PEHE scale of
 Communications 16:8968; code CC BY-NC-SA 4.0, adapted here with citation) so
 that any lesion representation — theirs or ours — can be scored on the SAME
 scale as the published headline (disconnectome VAE-50: PEHE 0.349, 95% CI
-[0.33, 0.37], random allocation, averaged over the 16 functional networks;
-0.305 under location bias).
+[0.33, 0.37], random allocation, averaged over the 16 functional networks,
+classifier not stated in the main text; Supplementary Table 8g, "ideal
+experimental conditions", gives 0.305 for VAE-50 with logistic regression
+two-model, i.e. the ideal cell, not the confounded one. Under location bias
+the paper publishes no single cell: Supplementary Table 5 gives grid means
+over TE x RE x bias, and Supplementary Figs. 77-78 the heatmaps).
 
 The mechanism, exactly as in their code:
 
@@ -67,6 +71,12 @@ HEADLINE_SCENARIOS = {
     "ideal": {"TE": 1.0, "RE": 0.0, "BIAS": 0.0, "BIASTYPE": "observed"},
     "location_bias": {"TE": 1.0, "RE": 0.0, "BIAS": 1.0, "BIASTYPE": "observed"},
 }
+# the location-bias sweep (F30): BIAS = 1 is deterministic allocation with
+# positivity violated, the worst case; the intermediate cells give the curve
+for _b in (0.25, 0.5, 0.75, 0.95):
+    HEADLINE_SCENARIOS[f"location_bias_{int(round(_b * 100)):03d}"] = {
+        "TE": 1.0, "RE": 0.0, "BIAS": float(_b), "BIASTYPE": "observed"}
+del _b
 
 
 # --------------------------------------------------------------------------- #
