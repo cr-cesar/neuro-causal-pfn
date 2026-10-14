@@ -1,10 +1,12 @@
 """InterSynth Neuro-Prior as written in the design document (Section 4.1).
 
 Two anatomical scores drive the outcomes of every process: a functional
-disruption score D in [0, 1] (weighted mean over the atlas networks of the
-fraction of each network's receptomic subnetwork the lesion covers) and a
-treatment-susceptibility score S in [0, 1] (the same over the transcriptomic
-subnetworks). The potential outcomes are
+disruption score D in [0, 1] and a treatment-susceptibility score S in [0, 1],
+each a weighted mean over the atlas networks of the fraction of one subnetwork
+covered by the lesion. NOTE: both subnetworks come from the SAME atlas split
+(the receptomic one by default), so D reads half 1 and S reads half 2 of that
+split; the design document instead asks for whole-network disruption for D and
+Allen gene expression for S (see raw_scores). The potential outcomes are
 
     mu0 = (1 - D) + alpha * D,      Y0 = clip(mu0 + eps0, 0, 1)
     mu1 = mu0 + beta * S * D,       Y1 = clip(mu1 + eps1, 0, 1)
@@ -142,8 +144,16 @@ class InterSynthTheoryDGP:
 
     # ------------------------------------------------------------- anatomy
     def raw_scores(self, overlaps: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-        """overlaps [n, K, 2] -> unscaled (D, S): receptomic subnetwork for D,
-        transcriptomic for S."""
+        """overlaps [n, K, 2] -> unscaled (D, S).
+
+        WARNING (audit F34 / issue of 15 Oct): the two columns of the cache are
+        the two halves (labels 1 and 2) of ONE atlas split, the receptomic one
+        by default, not a receptomic and a transcriptomic subdivision. So as
+        implemented D is the overlap with half 1 and S the overlap with half 2
+        of the same split; the transcriptomic (genetics) parcellation is never
+        read unless the cache is built with modality=genetics. The design
+        document asks for whole-network disruption for D and gene expression
+        for S: that discrepancy is open and decided by the PI, not here."""
         ov = np.asarray(overlaps, dtype=np.float64)
         return ov[:, :, 0] @ self.w_d, ov[:, :, 1] @ self.w_s
 
