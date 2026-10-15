@@ -1,2 +1,2 @@
-label_a,label_b,n_deficits,mean_a,mean_b,diff_mean,diff_ci_low,diff_ci_high,diff_sd,n_a_lower,n_b_lower,paired_t,paired_t_p,wilcoxon_w,wilcoxon_p
-CausalPFN,LR two,16,0.775336048990551,0.7576328231461635,,,,,3,11,,,,
+label_a,label_b,n_deficits,n_excluded_nan,mean_a,mean_b,diff_mean,diff_ci_low,diff_ci_high,diff_sd,n_a_lower,n_b_lower,paired_t,paired_t_p,wilcoxon_w,wilcoxon_p
+CausalPFN,LR two,15,1,0.7753360489905512,0.7576328231461635,0.017703225844387542,-0.03507767642829197,0.07048412811706706,0.09530997028819989,3,11,0.7193822289749521,0.48374181277674067,27.0,0.1094211588192293
