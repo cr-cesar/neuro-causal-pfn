@@ -77,3 +77,47 @@ def test_prior_diagnostics_counts_clipping_and_effect_loss():
     assert out["pool_frac_clip_any"] > 0                      # some lesions clip
     assert out["pool_mean_abs_cate"] <= out["pool_mean_abs_cate_raw"] + 1e-9
     assert 0.0 <= out["pool_effect_lost_rel"] <= 1.0
+
+
+def test_score_continuous_prior_scores_a_fold_on_drawn_processes(tmp_path):
+    from scripts.score_continuous_prior import draw_processes, score_fold
+
+    atlas, ov = _pool(n=200)
+    rng = np.random.default_rng(0)
+    files = np.asarray([f"img{i:04d}.nii.gz" for i in range(200)])
+    cache = {"overlaps": ov, "centroids": rng.uniform(0, 16, (200, 3)),
+             "volumes": rng.uniform(100, 5000, 200), "files": files[::-1].copy()}   # shuffled order: alignment by name
+    tr, te = np.arange(160), np.arange(160, 200)
+    Z = rng.normal(size=(200, 6))
+    np.savez(tmp_path / "fold0.npz", Ztr=Z[tr], Zte=Z[te], tr_idx=tr, te_idx=te, files=files, fold=0)
+    dgps = draw_processes(cache, atlas, {"two_arms": 1.0, "effect_scale": [0.2, 1.0]}, n=2, seed=1)
+    rows = score_fold(str(tmp_path / "fold0.npz"), cache, dgps, volume=False, seed=0)
+    assert len(rows) == 2 * 2                      # 2 processes x 2 estimators
+    assert all(np.isfinite(r["pehe"]) and r["pehe"] >= 0 for r in rows)
+    vol = score_fold(str(tmp_path / "fold0.npz"), cache, dgps, volume=True, seed=0)
+    assert len(vol) == 4
+
+
+def test_score_continuous_prior_refuses_misaligned_cache(tmp_path):
+    from scripts.score_continuous_prior import _align
+
+    with pytest.raises(ValueError):
+        _align(np.asarray(["a.nii", "b.nii"]), ["a.nii", "c.nii"])
+
+
+def test_plot_bias_sweep_reads_the_scenario_roots(tmp_path):
+    pytest.importorskip("matplotlib")
+    from scripts.plot_bias_sweep import CELLS, main
+
+    for bias, suf in CELLS:
+        for t4, base in (("", 0.30), ("_t4", 0.28)):
+            d = tmp_path / f"outputs_perfold_pub{suf}{t4}"
+            d.mkdir()
+            pd.DataFrame([{"eid": "E1", "budget": "published", "channel": "disconnectome",
+                           "pehe_paper_mean": base + 0.07 * bias, "pehe_paper_ci_low": base + 0.07 * bias - 0.02,
+                           "pehe_paper_ci_high": base + 0.07 * bias + 0.02, "balacc_mean": 0.84 - 0.08 * bias}]
+                         ).to_csv(d / "leaderboard.csv", index=False)
+    out = tmp_path / "sweep.png"
+    df = main(["--perfold", str(tmp_path), "--out", str(out)])
+    assert out.exists() and (tmp_path / "sweep.csv").exists()
+    assert df["pehe"].notna().all() and len(df) == 2 * len(CELLS)
