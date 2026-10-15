@@ -1,0 +1,53 @@
+== queue (state x block)
+      7 qw sc-l
+      7 qw t4-l
+      3 r sc-l
+      3 r t4-l
+      1 Rq sc-l
+      2 Rq t4-l
+== running now
+  t4-loc-e1s 10/15/2026 03:13:47
+  sc-loc-e1s 10/15/2026 03:15:18
+  sc-loc-e1s 10/15/2026 03:19:27
+  t4-loc-e1s 10/15/2026 03:22:36
+  sc-loc-e1s 10/15/2026 03:22:38
+  t4-loc-e1s 10/15/2026 03:22:38
+== /home/ucabcrc/Scratch/neuro-causal-pfn-perfold/outputs_perfold_grp/leaderboard.csv
+eid  label   budget  task           channel        protocol           n_seeds  pehe_paper_mean      pehe_paper_seed_sd     pehe_paper_ci_low
+E1   E1+x3   chain   disconnectome  disconnectome  grp-giles-singles  1        0.2955367347766684   0.0                    0.259256045879638
+E1   E1      chain   disconnectome  disconnectome  grp-giles-singles  3        0.3035975445950218   0.0012133766239776484  0.268272939638748
+E1   E1      chain   disconnectome  disconnectome  grp-giles          3        0.30447090064246285  0.0014031285354335731  0.269272085495821
+E5   E5+x3   chain   disconnectome  disconnectome  grp-giles-singles  1        0.3099215157098303   0.0                    0.271489779277696
+E5   E5      chain   disconnectome  disconnectome  grp-giles-singles  3        0.32219727935078185  0.0017411704669355824  0.281185965589305
+E5   E5      chain   disconnectome  disconnectome  grp-giles          3        0.3227425059655336   0.0012507473324321204  0.281825846474132
+ref  volume  -       disconnectome  -              grp-giles-singles  1        0.5176624037000109   0.0                    0.458139476676182
+ref  volume  -       disconnectome  -              grp-giles          1        0.5181126189783607   0.0                    0.457895218757241
+== /home/ucabcrc/Scratch/neuro-causal-pfn-perfold/outputs_perfold_t4/leaderboard.csv
+eid  label  budget  task           channel        protocol           n_seeds  pehe_paper_mean     pehe_paper_seed_sd      pehe_paper_ci_low 
+E1   E1     chain   disconnectome  disconnectome  grp-giles-singles  3        0.2861308504461651  0.00011160241917283538  0.2542629299681175
+E1   E1+x3  chain   disconnectome  disconnectome  grp-giles-singles  1        0.2946620253484993  0.0                     0.2639512344816304
+E5   E5+x3  chain   disconnectome  disconnectome  grp-giles-singles  1        0.29247021037104    0.0                     0.2615008522824268
+E5   E5     chain   disconnectome  disconnectome  grp-giles-singles  3        0.3005952509673953  0.0006045186869417207   0.2679583363629901
+== /home/ucabcrc/Scratch/neuro-causal-pfn-perfold/outputs_perfold_pub/leaderboard.csv
+eid   label                    budget        task           channel        protocol           n_seeds            pehe_paper_mean      pehe_p
+E1    E1                       published     disconnectome  disconnectome  grp-giles-singles  3                  0.294090922352868    0.0011
+E3    E3[backbone=resnet18]    published     disconnectome  disconnectome  grp-giles-singles  3                  0.2931542569570173   0.0009
+E3    E3[backbone=resnet50]    published     disconnectome  disconnectome  grp-giles-singles  3                  0.29454426553923657  0.0003
+E3    E3[backbone=cnn]         published     disconnectome  disconnectome  grp-giles-singles  3                  0.2963550931389874   0.0011
+E3    E3[backbone=wide]        published     disconnectome  disconnectome  grp-giles-singles  3                  0.29791219619387804  0.0007
+E11b  "E11b[backbone=resnet18  w_dice=0.1]"  published      disconnectome  disconnectome      grp-giles-singles  3                    0.2827
+E11b  "E11b[backbone=resnet18  w_dice=1.0]"  published      disconnectome  disconnectome      grp-giles-singles  3                    0.2833
+E11b  "E11b[backbone=cnn       w_dice=1.0]"  published      disconnectome  disconnectome      grp-giles-singles  3                    0.2850
+E11b  "E11b[backbone=cnn       w_dice=0.1]"  published      disconnectome  disconnectome      grp-giles-singles  3                    0.2851
+ref   volume                   -             disconnectome  -              grp-giles-singles  1                  0.5176624037000109   0.0   
+== /home/ucabcrc/Scratch/neuro-causal-pfn-perfold/outputs_perfold_pub_t4/leaderboard.csv
+eid   label                    budget        task           channel        protocol           n_seeds            pehe_paper_mean      pehe_p
+E1    E1                       published     disconnectome  disconnectome  grp-giles-singles  3                  0.27923334313179526  0.0010
+E3    E3[backbone=resnet18]    published     disconnectome  disconnectome  grp-giles-singles  3                  0.2781475172593463   0.0004
+E3    E3[backbone=resnet50]    published     disconnectome  disconnectome  grp-giles-singles  3                  0.27900986018967106  0.0013
+E3    E3[backbone=cnn]         published     disconnectome  disconnectome  grp-giles-singles  3                  0.2798647066109173   0.0001
+E3    E3[backbone=wide]        published     disconnectome  disconnectome  grp-giles-singles  3                  0.28076759920005195  0.0012
+E11b  "E11b[backbone=resnet18  w_dice=1.0]"  published      disconnectome  disconnectome      grp-giles-singles  3                    0.2925
+E11b  "E11b[backbone=resnet18  w_dice=0.1]"  published      disconnectome  disconnectome      grp-giles-singles  3                    0.2927
+E11b  "E11b[backbone=cnn       w_dice=1.0]"  published      disconnectome  disconnectome      grp-giles-singles  3                    0.2928
+E11b  "E11b[backbone=cnn       w_dice=0.1]"  published      disconnectome  disconnectome      grp-giles-singles  3                    0.2930

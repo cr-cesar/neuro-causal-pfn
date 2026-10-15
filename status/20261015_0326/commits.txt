@@ -1,0 +1,2 @@
+61187cd status snapshot 20261014_2126
+576378a leaderboard: recompute the deficit CI from replica_results.csv when a headline lacks it
