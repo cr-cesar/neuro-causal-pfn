@@ -177,3 +177,18 @@ def test_job_timing_parses_qacct_and_the_trainer_line(tmp_path, monkeypatch):
     r = jt.job_row(str(log))
     assert r["job"] == "123456" and r["node"] == "node-b"           # the successful record, not the rescheduled one
     assert r["wait_h"] == pytest.approx(2.0) and r["run_h"] == pytest.approx(0.5) and r["train_h"] == pytest.approx(0.42)
+
+
+def test_job_timing_batched_records_match_by_job_number(tmp_path):
+    from scripts import job_timing as jt
+
+    text = ("==========\njobnumber 111\nhostname n1.x\nqsub_time    Wed Oct 14 03:00:00 2026\n"
+            "start_time   Wed Oct 14 03:30:00 2026\nend_time     Wed Oct 14 04:00:00 2026\nfailed 0\n"
+            "==========\njobnumber 222\nhostname n2.x\nqsub_time    Wed Oct 14 03:00:00 2026\n"
+            "start_time   Wed Oct 14 06:00:00 2026\nend_time     Wed Oct 14 06:20:00 2026\nfailed 0\n")
+    recs = {}
+    for r in jt.parse_records(text):
+        recs.setdefault(r["jobnumber"], []).append(r)
+    log = tmp_path / "e4r0s0f2.o222.2"; log.write_text("x\n")
+    row = jt.job_row(str(log), recs)
+    assert row["node"] == "n2" and row["wait_h"] == pytest.approx(3.0) and row["run_h"] == pytest.approx(1 / 3)

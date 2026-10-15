@@ -22,6 +22,29 @@ import sys
 _FMT = "%a %b %d %H:%M:%S %Y"
 
 
+def parse_records(text: str) -> list:
+    """Every record of a qacct output, as dicts."""
+    rec, recs = {}, []
+    for line in text.splitlines():
+        if line.startswith("=" * 10):
+            if rec:
+                recs.append(rec)
+            rec = {}
+            continue
+        parts = line.split(None, 1)
+        if len(parts) == 2:
+            rec[parts[0]] = parts[1].strip()
+    if rec:
+        recs.append(rec)
+    return recs
+
+
+def pick(recs: list) -> dict:
+    """The successful record of a job (a rescheduled job has several)."""
+    done = [r for r in recs if r.get("failed", "0").split()[0] == "0"]
+    return (done or recs or [{}])[-1]
+
+
 def parse_qacct(text: str) -> dict:
     """The last record of a qacct -j output (a rescheduled job has several)."""
     rec, recs = {}, []
@@ -47,13 +70,18 @@ def _t(s: str):
         return None
 
 
-def job_row(log_path: str) -> dict:
+def job_row(log_path: str, records: dict = None) -> dict:
+    """``records``: jobnumber -> qacct records from one batched query; without
+    it, one qacct call for this job (slow on a large accounting file)."""
     m = re.search(r"\.o(\d+)(?:\.(\d+))?$", log_path)
     if not m:
         return {}
     jid = m.group(1)
-    out = subprocess.run(["qacct", "-j", jid], capture_output=True, text=True).stdout
-    r = parse_qacct(out)
+    if records is not None:
+        r = pick(records.get(jid, []))
+    else:
+        out = subprocess.run(["qacct", "-j", jid], capture_output=True, text=True).stdout
+        r = parse_qacct(out)
     q, s, e = _t(r.get("qsub_time", "")), _t(r.get("start_time", "")), _t(r.get("end_time", ""))
     train_h = None
     try:
@@ -103,11 +131,28 @@ def main(argv=None):
     ap.add_argument("logs", nargs="+")
     ap.add_argument("--last", type=int, default=0, help="only the N most recent log files")
     ap.add_argument("--rows", action="store_true", help="print one line per job")
+    ap.add_argument("--days", type=int, default=7, help="accounting window passed to qacct -d")
+    ap.add_argument("--name", default=None, help="job-name pattern for qacct (default: common prefix of the logs + *)")
+    ap.add_argument("--timeout", type=int, default=300)
     args = ap.parse_args(argv)
     logs = sorted(set(args.logs), key=lambda p: os.path.getmtime(p) if os.path.exists(p) else 0)
     if args.last:
         logs = logs[-args.last:]
-    rows = [r for r in (job_row(p) for p in logs) if r]
+    # one qacct scan for every job, by name pattern and limited in days: one
+    # call per job re-reads the whole accounting file each time
+    names = [re.sub(r"\.o\d+(?:\.\d+)?$", "", os.path.basename(p)) for p in logs]
+    prefix = os.path.commonprefix(names) or names[0]
+    pattern = args.name or (prefix + "*")
+    print(f"qacct -d {args.days} -j '{pattern}' (one scan) ...", flush=True)
+    try:
+        out = subprocess.run(["qacct", "-d", str(args.days), "-j", pattern], capture_output=True,
+                             text=True, timeout=args.timeout).stdout
+    except subprocess.TimeoutExpired:
+        sys.exit(f"qacct took more than {args.timeout} s; lower --days")
+    records = {}
+    for rec in parse_records(out):
+        records.setdefault(rec.get("jobnumber", ""), []).append(rec)
+    rows = [r for r in (job_row(p, records) for p in logs) if r]
     if not rows:
         sys.exit("no SGE job id found in the given file names (expected <name>.o<jobid>)")
     if args.rows:
