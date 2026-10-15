@@ -133,6 +133,14 @@ class CausalPFNEstimator:
         # first call of each input width prints one line to the scoring log.
         self.last_info: dict = {}
         self._reported_widths: set = set()
+        # audit of 15 Oct: the repository pins one version and the neighbour
+        # search changed between releases, so every scoring states which ran
+        try:
+            from importlib.metadata import version
+
+            self.version = version("causalpfn")
+        except Exception:                       # not installed as a distribution
+            self.version = "unknown"
 
     def __call__(self, Xtr: np.ndarray, W: np.ndarray, Y: np.ndarray,
                  Xte: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -143,10 +151,11 @@ class CausalPFNEstimator:
         self.est.fit(Xtr, W, Y)
         mfs = self.est.max_feature_size
         self.last_info = {"d_in": int(Xtr.shape[1]), "max_feature_size": mfs,
-                          "truncated_svd": bool(mfs is not None and Xtr.shape[1] > mfs)}
+                          "truncated_svd": bool(mfs is not None and Xtr.shape[1] > mfs),
+                          "version": self.version}
         if self.last_info["d_in"] not in self._reported_widths:
             self._reported_widths.add(self.last_info["d_in"])
-            print(f"causalpfn: d_in={self.last_info['d_in']} max_feature_size={mfs} "
+            print(f"causalpfn {self.version}: d_in={self.last_info['d_in']} max_feature_size={mfs} "
                   f"truncated_svd={self.last_info['truncated_svd']}", flush=True)
         n = len(Xte)
         Xq = np.concatenate([Xte, Xte], axis=0)

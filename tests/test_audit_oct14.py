@@ -117,6 +117,34 @@ def test_effect_headroom_from_the_prior_hyper_string():
     assert bool(h.effect_headroom) and h.d_source == "network"
 
 
+def test_classifier_by_split_aggregates_like_the_headline(tmp_path):
+    from scripts.classifier_by_split import main
+
+    rng = np.random.default_rng(0)
+    for split, shift in (("rec", 0.0), ("gen", -0.02)):
+        for seed in range(2):
+            rows = []
+            for d in range(16):
+                for fold in range(3):
+                    for clf, lrn, base in (("extra_trees", "two", 0.36), ("logistic_regression", "two", 0.29)):
+                        rows.append({"deficit": d, "fold": fold, "classifier": clf, "learner": lrn,
+                                     "pehe_paper": base + shift + 0.01 * seed + 0.001 * fold,
+                                     "prescriptive_balacc": 0.8 + rng.normal(0, 0.01)})
+            p = tmp_path / split / f"seed{seed}"
+            p.mkdir(parents=True)
+            pd.DataFrame(rows).to_csv(p / "replica_results.csv", index=False)
+    out = tmp_path / "t.csv"
+    t = main(["--split", "rec", str(tmp_path / "rec/seed*/replica_results.csv"),
+              "--split", "gen", str(tmp_path / "gen/seed*/replica_results.csv"), "--out", str(out)])
+    et = t[(t.classifier == "extra_trees") & (t.split == "rec")].iloc[0]
+    # mean over folds (0.001), then deficits, then seeds (0 and 0.01)
+    assert et["pehe_paper_mean"] == pytest.approx(0.36 + 0.001 + 0.005)
+    assert et["n_seeds"] == 2 and et["pehe_paper_seed_sd"] == pytest.approx(0.005)
+    wide = pd.read_csv(str(out).replace(".csv", "_wide.csv"))
+    row = wide[wide.classifier == "extra_trees"].iloc[0]
+    assert row["mean_of_splits"] == pytest.approx((row["rec"] + row["gen"]) / 2)
+
+
 def test_score_continuous_prior_scores_a_fold_on_drawn_processes(tmp_path):
     from scripts.score_continuous_prior import draw_processes, score_fold
 

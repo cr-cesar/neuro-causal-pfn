@@ -152,9 +152,11 @@ def test_causalpfn_wrapper_records_the_feature_compression(monkeypatch, capsys):
     rng = np.random.default_rng(0)
     W = np.r_[np.ones(10), np.zeros(10)]; Y = rng.integers(0, 2, 20).astype(float)
     est(rng.normal(size=(20, 50)), W, Y, rng.normal(size=(5, 50)))
-    assert est.last_info == {"d_in": 50, "max_feature_size": 80, "truncated_svd": False}
+    info = dict(est.last_info); v = info.pop("version")
+    assert info == {"d_in": 50, "max_feature_size": 80, "truncated_svd": False}
+    assert isinstance(v, str) and v                          # the installed causalpfn version, or "unknown"
     est(rng.normal(size=(20, 100)), W, Y, rng.normal(size=(5, 100)))
     assert est.last_info["truncated_svd"] is True
     est(rng.normal(size=(20, 100)), W, Y, rng.normal(size=(5, 100)))
     out = capsys.readouterr().out
-    assert out.count("causalpfn: d_in=50") == 1 and out.count("causalpfn: d_in=100") == 1   # once per width
+    assert out.count(f"causalpfn {v}: d_in=50") == 1 and out.count(f"causalpfn {v}: d_in=100") == 1   # once per width
