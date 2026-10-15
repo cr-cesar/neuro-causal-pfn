@@ -434,10 +434,13 @@ PY
       [ -f "$lb/leaderboard.md" ] && cp "$lb/leaderboard.md" "$out/leaderboard_$(basename "$lb").md"
     done
     PERFOLD="$PERFOLD" python scripts/snapshot_aggregates.py "$out"
-    # PFN timing lines (iteration, context length, loss, wall-clock) of every PFN log
+    # PFN timing lines (iteration, context length, loss, wall-clock) of every PFN
+    # log, with the prior options the run was trained with (anatomy sources,
+    # two arms, effect headroom) from the config the job prints first
     for f in pfn-*.o*; do
       [ -f "$f" ] || continue
-      echo "== $f"; grep -E "^node: |parameters|iter [0-9]+/|checkpoint saved" "$f" | awk '/^node: / || NR<=3 || /iter (100|1000|5000|10000|15000|20000)\//'
+      echo "== $f"; grep -E '^node: |parameters|iter [0-9]+/|"(two_arms|d_source|s_source|s_b_source|effect_headroom)":' "$f" \
+        | awk '/^node: / || /parameters/ || /"(two_arms|d_source|s_source|s_b_source|effect_headroom)":/ || /iter (1|100|1000|5000|10000|15000|20000)\//'
     done > "$out/pfn_timing.txt" 2>/dev/null || true
     ls "$out"
     # The clone stays on the local results-snapshot branch (main + status commits);
