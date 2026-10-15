@@ -14,10 +14,14 @@ The anatomy of each patient comes from a prior cache built from the SAME
 cohort's images (overlaps, centroids, volumes and file names), aligned to the
 fold files by basename; the representation never enters the generator.
 
-CAVEAT (audit, 15 Oct): in the current caches the two overlap columns are
-the two halves of one atlas split, so this measures the generator as
-implemented, not the one of the design document. Re-run after the cache
-rebuild.
+Which generator is scored (audit, 15 Oct): with the default hyper-prior the
+two overlap columns are the two halves of one atlas split, the generator as
+implemented. A cache that also stores the whole-network overlap and both
+splits (build_prior_cache.py, default since 767d3f8, or --augment) scores
+the generator of the design document with
+--hyper "... d_source=network s_source=genetics_1 s_b_source=genetics_2".
+Treatment, outcome and true CATE depend only on the anatomy and a seed fixed
+per fold and process, so every representation faces the same trials.
 
     python scripts/score_continuous_prior.py --reps <root>/E1/E1/seed0/folds \\
         --cache outputs/prior_cache/uclh.npz --atlas-dir <atlases> \\
