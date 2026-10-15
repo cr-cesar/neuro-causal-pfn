@@ -201,6 +201,10 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
             self.n_context, self.n_query = int(n_context), int(n_query)
             self.unobserved_strength = 0.0
             self.overlaps = np.asarray(cache["overlaps"], dtype=np.float32)
+            # extra anatomy channels (scripts/build_prior_cache.py, 15 Oct):
+            # whole-network overlap and the halves of both splits
+            self.overlaps_extra = {k: cache[k] for k in ("overlaps_network", "overlaps_receptor", "overlaps_genetics")
+                                   if k in cache}
             self.centroids = np.asarray(cache["centroids"], dtype=np.float32)
             self.volumes = np.asarray(cache["volumes"], dtype=np.float64)
             self.m = len(self.overlaps)
@@ -223,6 +227,9 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
         self.hyper = hyper or (HyperPrior() if family == "giles" else TheoryHyperPrior())
         # the mixture's virtual-trial ranges (the giles family uses ``hyper``)
         self.hyper_giles = hyper_giles or HyperPrior()
+        # the theory family's anatomy view: the cache's two split columns by
+        # default; three named channels (D, S_A, S_B sources) when asked
+        self.overlaps_theory = self._theory_view()
         self.max_tries = int(max_tries)
         self.n_rejected = 0
         # Coordinate-free covariates: the per-fold encoders (and external
@@ -234,6 +241,32 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
         if self.augment:
             mu, sd = self.X.mean(0, keepdims=True), self.X.std(0, keepdims=True) + 1e-6
             self.X = (self.X - mu) / sd
+
+    def _theory_view(self) -> Optional[np.ndarray]:
+        """[m, K, 3] overlaps of the D, S_A and S_B sources named by the theory
+        hyper-prior, or None when it keeps the defaults (the cache's two split
+        columns, the behaviour of every run before 15 Oct)."""
+        from .intersynth_atlas import channel_column
+
+        h = self.hyper if self.family in ("theory", "mixture") else None
+        if h is None or not hasattr(h, "uses_extra_channels") or not h.uses_extra_channels():
+            return None
+
+        def col(name: str) -> np.ndarray:
+            if name in ("split_1", "split_2"):
+                return self.overlaps[:, :, int(name[-1]) - 1]
+            if not getattr(self, "overlaps_extra", None):
+                raise ValueError(f"the prior asks for the anatomy channel {name!r} but the cache has no extra "
+                                 "channels; rebuild it with scripts/build_prior_cache.py --augment <cache>")
+            return channel_column(self.overlaps_extra, name)
+
+        sb = h.s_b_source or (h.d_source if int(h.s_b_column) == 0 else h.s_source)
+        view = np.stack([col(h.d_source), col(h.s_source), col(sb)], axis=2).astype(np.float32)
+        log.info("theory anatomy view: D <- %s, S_A <- %s, S_B <- %s", h.d_source, h.s_source, sb)
+        return view
+
+    def _theory_ov(self) -> np.ndarray:
+        return self.overlaps if getattr(self, "overlaps_theory", None) is None else self.overlaps_theory
 
     @classmethod
     def from_cache(cls, atlas: FunctionalAtlas, cache_path: str, **kw):
@@ -257,7 +290,7 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
             idx = [self.atlas.networks.index(n) for n in dgp.networks]
             hit = (self.overlaps[:, idx, :] > dgp.threshold).any(axis=(1, 2))
         else:
-            hit = dgp.raw_scores(self.overlaps)[0] > 0.0
+            hit = dgp.raw_scores(self._theory_ov())[0] > 0.0
         return np.flatnonzero(hit)
 
     def _indices_from(self, pool: Optional[np.ndarray], n: int) -> np.ndarray:
@@ -289,7 +322,7 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
 
             # the D and S scales are fixed on the whole pool, so the ground
             # truth of a process does not depend on the batch it is sampled in
-            return InterSynthTheoryDGP(self.atlas, self.rng, self.hyper).calibrate(self.overlaps)
+            return InterSynthTheoryDGP(self.atlas, self.rng, self.hyper).calibrate(self._theory_ov())
         from .neuro_prior import NeuroPriorDGP
 
         return NeuroPriorDGP(self.atlas, self.rng, self.hyper if self.family == "giles" else self.hyper_giles)
@@ -313,8 +346,9 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
             if self.augment:
                 R = self._rotation(); Xc, Xq = Xc @ R, Xq @ R
             if fam == "theory":
-                data = make_theory_dataset(dgp, self.overlaps[ci], self.centroids[ci], Xc,
-                                           self.overlaps[qi], self.centroids[qi], Xq, self.rng)
+                ov_t = self._theory_ov()
+                data = make_theory_dataset(dgp, ov_t[ci], self.centroids[ci], Xc,
+                                           ov_t[qi], self.centroids[qi], Xq, self.rng)
                 U = None
             else:
                 data = make_prior_dataset(dgp, self.overlaps[ci], self.centroids[ci], self.volumes[ci], Xc,

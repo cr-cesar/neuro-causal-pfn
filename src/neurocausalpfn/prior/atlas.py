@@ -41,6 +41,14 @@ class FunctionalAtlas:
         a, b = self.subnetworks[network]
         return _overlap_fraction(lesion, a), _overlap_fraction(lesion, b)
 
+    def network_overlap(self, lesion: np.ndarray, network: int) -> float:
+        """Fraction of the whole network (label ``network`` of the parcellation)
+        covered by the lesion."""
+        cache = self.__dict__.setdefault("_network_masks", {})
+        if network not in cache:
+            cache[network] = (self.network_labels == network).astype(np.float32)
+        return _overlap_fraction(lesion, cache[network])
+
     def centroid(self, network: int, sub: int) -> np.ndarray:
         return self._centroids[(network, sub)]
 
