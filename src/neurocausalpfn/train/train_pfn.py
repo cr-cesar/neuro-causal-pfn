@@ -157,7 +157,13 @@ def parse_hyper_opts(text: str) -> Dict:
         key, _, val = item.partition("=")
         if not key or not val:
             raise ValueError(f"bad hyper option {item!r}: expected key=value")
-        out[key] = [float(x) for x in val.split(":")] if ":" in val else float(val)
+        if ":" in val:
+            out[key] = [float(x) for x in val.split(":")]
+        else:
+            try:
+                out[key] = float(val)
+            except ValueError:          # a channel name, e.g. d_source=network
+                out[key] = val
     return out
 
 

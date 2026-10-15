@@ -100,8 +100,16 @@ def main(argv=None):
     ap.add_argument("--allow-channel-mismatch", action="store_true",
                     help="build the cache although the latents come from the other channel")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--no-extra-channels", dest="extra", action="store_false",
+                    help="skip the whole-network overlap and the halves of both splits (on by default when "
+                         "<atlas>/2mm_parcellations has both receptor and genetics)")
+    ap.add_argument("--augment", default=None,
+                    help="existing cache npz: keep every key it has (overlaps, Z, files, ...) and add only the "
+                         "extra channels, computed from its own images_dir unless --images-dir is given")
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
+    if args.augment:
+        return augment_cache(args)
     if not args.images_dir:
         ap.error("--images-dir is required")
     if "--lesions-dir" in (sys.argv[1:] if argv is None else list(argv)):
@@ -111,7 +119,7 @@ def main(argv=None):
     import nibabel as nib
 
     from neurocausalpfn.prior.atlas import FunctionalAtlas, _centroid
-    from neurocausalpfn.prior.intersynth_atlas import compute_overlaps
+    from neurocausalpfn.prior.intersynth_atlas import compute_extra_overlaps, compute_overlaps
 
     images_dir = os.path.abspath(os.path.expanduser(args.images_dir))
     files = sorted(glob.glob(os.path.join(images_dir, "*.nii*")))
@@ -126,6 +134,8 @@ def main(argv=None):
         if rec_dir and os.path.realpath(os.path.expanduser(rec_dir)) != os.path.realpath(images_dir):
             print(f"warning: the latents were exported from {rec_dir}, the cache is built from {images_dir}")
     atlas = FunctionalAtlas.from_dir(args.atlas_dir, modality=args.modality)
+    extra_atlases = _extra_atlases(args.atlas_dir) if args.extra else None
+    extras = {"network": [], "receptor": [], "genetics": []}
     n_check = min(N_CHECK, len(files))
     channel, all_binary = None, True
     overlaps, centroids, volumes = [], [], []
@@ -144,6 +154,9 @@ def main(argv=None):
         if m.shape != atlas.shape:
             sys.exit(f"{os.path.basename(f)}: shape {m.shape} differs from the atlas {atlas.shape}")
         overlaps.append(compute_overlaps(atlas, m)); centroids.append(_centroid(m)); volumes.append(float(m.sum()))
+        if extra_atlases is not None:
+            for k, v in compute_extra_overlaps(*extra_atlases, m).items():
+                extras[k].append(v)
         if (i + 1) % 200 == 0:
             print(f"  {i + 1}/{len(files)}", flush=True)
     out = {"overlaps": np.stack(overlaps), "centroids": np.stack(centroids),
@@ -151,6 +164,9 @@ def main(argv=None):
            "networks": np.asarray(atlas.networks),
            "channel": np.array(channel), "images_dir": np.array(images_dir),
            "threshold": np.array(float(args.threshold)), "modality": np.array(args.modality)}
+    if extra_atlases is not None:
+        for k, v in extras.items():
+            out[f"overlaps_{k}"] = np.stack(v)
     if latents is not None:
         Z, names, meta = latents
         pos = {n: k for k, n in enumerate(names)}
@@ -167,7 +183,67 @@ def main(argv=None):
     np.savez_compressed(args.out, **out)
     print(f"wrote {args.out}: {len(files)} {channel} images, {atlas.n_networks} networks, "
           + format_summary(summarize_overlaps(out["overlaps"]))
-          + (f", Z {out['Z'].shape}" if "Z" in out else ""))
+          + (f", Z {out['Z'].shape}" if "Z" in out else "")
+          + (", extra channels network / receptor / genetics" if extra_atlases is not None else ""))
+
+
+def _extra_atlases(atlas_dir: str):
+    """(receptor atlas, genetics atlas) when both parcellations exist, else None."""
+    from neurocausalpfn.prior.atlas import FunctionalAtlas
+
+    base = os.path.join(atlas_dir or "", "2mm_parcellations")
+    if not all(os.path.isdir(os.path.join(base, m)) for m in ("receptor", "genetics")):
+        print(f"note: no receptor and genetics parcellations under {base}; extra channels skipped")
+        return None
+    return (FunctionalAtlas.from_dir(atlas_dir, modality="receptor"),
+            FunctionalAtlas.from_dir(atlas_dir, modality="genetics"))
+
+
+def augment_cache(args):
+    """Copy an existing cache and add the extra channels, computed on its own
+    files (same order, same binarisation threshold). Nothing it already holds
+    changes, so every checkpoint trained on it reads the new file the same way."""
+    import nibabel as nib
+
+    from neurocausalpfn.prior.intersynth_atlas import compute_extra_overlaps
+
+    with np.load(args.augment, allow_pickle=True) as z:
+        out = {k: z[k] for k in z.files}
+    images_dir = os.path.abspath(os.path.expanduser(args.images_dir)) if args.images_dir else _scalar(out["images_dir"])
+    threshold = float(out["threshold"]) if "threshold" in out else float(args.threshold)
+    atl = _extra_atlases(args.atlas_dir)
+    if atl is None:
+        sys.exit("--augment needs both the receptor and the genetics parcellations")
+    if list(atl[0].networks) != [int(k) for k in out.get("networks", atl[0].networks)]:
+        sys.exit("the atlas lists other networks than the cache")
+    names = [str(n) for n in out["files"]]
+    extras = {"network": [], "receptor": [], "genetics": []}
+    for i, n in enumerate(names):
+        path = os.path.join(images_dir, n)
+        if not os.path.exists(path):
+            sys.exit(f"image {i + 1} of {len(names)} is not in {images_dir}; pass --images-dir")
+        m = (np.asarray(nib.load(path).get_fdata()) > threshold).astype(np.float32)
+        if m.shape != atl[0].shape:
+            sys.exit(f"image {i + 1}: shape {m.shape} differs from the atlas {atl[0].shape}")
+        for k, v in compute_extra_overlaps(*atl, m).items():
+            extras[k].append(v)
+        if (i + 1) % 200 == 0:
+            print(f"  {i + 1}/{len(names)}", flush=True)
+    for k, v in extras.items():
+        out[f"overlaps_{k}"] = np.stack(v)
+    # sanity: the split the cache was built with must equal its own column pair
+    mod = _scalar(out["modality"]) if "modality" in out else "receptor"
+    if mod in ("receptor", "genetics"):
+        diff = float(np.abs(out[f"overlaps_{mod}"] - out["overlaps"]).max())
+        print(f"check: overlaps against overlaps_{mod}, max abs difference {diff:.2e}")
+        if diff > 1e-4:
+            sys.exit("the recomputed split does not match the cache's overlaps: wrong atlas or images")
+    os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
+    np.savez_compressed(args.out, **out)
+    net = out["overlaps_network"]
+    print(f"wrote {args.out}: {len(names)} images, extra channels added; whole-network overlap > 5 % in "
+          f"{float((net > 0.05).any(axis=1).mean()) * 100:.1f} % of lesions")
+    return out
 
 
 if __name__ == "__main__":

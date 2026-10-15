@@ -119,7 +119,7 @@ def main(argv=None):
     rows = []
     for _ in range(args.processes):
         fam, dgp, sl = prior._draw_process()
-        rows.append(process_diagnostics(dgp, prior.overlaps, sl))
+        rows.append(process_diagnostics(dgp, prior._theory_ov(), sl))
     df = pd.DataFrame(rows)
     print(f"hyper: {cfg['prior'].get('hyper', {})}; cache {cfg['prior'].get('cache')}; {len(df)} processes, "
           f"pool {len(prior.overlaps)} lesions, two-arm share {df['two_arms'].mean():.2f}")

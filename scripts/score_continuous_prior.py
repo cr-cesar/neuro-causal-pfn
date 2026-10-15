@@ -94,7 +94,7 @@ def score_fold(fold_npz: str, cache: Dict, dgps, volume: bool, seed: int) -> Lis
         Ztr, Zte = np.asarray(z["Ztr"], np.float64), np.asarray(z["Zte"], np.float64)
     mu, sd = Ztr.mean(0), Ztr.std(0) + 1e-8
     Ztr, Zte = (Ztr - mu) / sd, (Zte - mu) / sd
-    ov, cen = cache["overlaps"], cache["centroids"]
+    ov, cen = cache.get("overlaps_theory", cache["overlaps"]), cache["centroids"]
     fold = int(z["fold"]) if "fold" in z.files else -1
     out = []
     for p, dgp in enumerate(dgps):
@@ -114,12 +114,34 @@ def score_fold(fold_npz: str, cache: Dict, dgps, volume: bool, seed: int) -> Lis
     return out
 
 
+def theory_overlaps(cache: Dict, h) -> np.ndarray:
+    """The anatomy the theory family reads: the cache's two split columns, or
+    the [n, K, 3] view of the D, S_A and S_B sources named by the hyper-prior
+    (same rule as NeuroPriorCohort._theory_view)."""
+    from neurocausalpfn.prior.intersynth_atlas import channel_column
+
+    if not h.uses_extra_channels():
+        return np.asarray(cache["overlaps"], np.float64)
+
+    def col(name):
+        if name in ("split_1", "split_2"):
+            return np.asarray(cache["overlaps"])[:, :, int(name[-1]) - 1]
+        if "overlaps_network" not in cache:
+            raise ValueError(f"channel {name!r} requested but the cache has no extra channels "
+                             "(build_prior_cache.py --augment)")
+        return channel_column(cache, name)
+
+    sb = h.s_b_source or (h.d_source if int(h.s_b_column) == 0 else h.s_source)
+    return np.stack([col(h.d_source), col(h.s_source), col(sb)], axis=2).astype(np.float64)
+
+
 def draw_processes(cache: Dict, atlas, hyper: Dict, n: int, seed: int):
     from neurocausalpfn.prior.intersynth_theory import InterSynthTheoryDGP, TheoryHyperPrior
 
     h = TheoryHyperPrior(**{k: (tuple(v) if isinstance(v, list) else v) for k, v in hyper.items()})
+    cache["overlaps_theory"] = theory_overlaps(cache, h)
     rng = np.random.default_rng(seed)
-    return [InterSynthTheoryDGP(atlas, rng, h).calibrate(cache["overlaps"]) for _ in range(n)]
+    return [InterSynthTheoryDGP(atlas, rng, h).calibrate(cache["overlaps_theory"]) for _ in range(n)]
 
 
 def main(argv=None):
@@ -142,7 +164,8 @@ def main(argv=None):
     from neurocausalpfn.train.train_pfn import parse_hyper_opts
 
     with np.load(args.cache, allow_pickle=True) as c:
-        cache = {k: c[k] for k in ("overlaps", "centroids", "volumes", "files")}
+        cache = {k: c[k] for k in ("overlaps", "centroids", "volumes", "files",
+                                   "overlaps_network", "overlaps_receptor", "overlaps_genetics") if k in c.files}
     cache["overlaps"] = np.asarray(cache["overlaps"], np.float64)
     atlas = FunctionalAtlas.from_dir(args.atlas_dir, modality=args.modality)
     dgps = draw_processes(cache, atlas, parse_hyper_opts(args.hyper), args.processes, args.seed)

@@ -81,6 +81,19 @@ class TheoryHyperPrior:
     #   receptomic column (the one D reads; the pilots' setting) or 1 the
     #   transcriptomic column (the one S_A reads, with a second weighting)
     s_b_column: int = 0
+    # Anatomy sources of the three scores, by channel name. "split_1" and
+    # "split_2" are the two columns of the cache's ``overlaps`` (the halves of
+    # the split it was built with: the pilots' and the defaults' behaviour).
+    # A cache built with the extra channels also offers "network" (whole-network
+    # overlap, what the design document asks for D), "receptor_1",
+    # "receptor_2", "genetics_1" and "genetics_2". s_b_source "" keeps the
+    # s_b_column behaviour.
+    d_source: str = "split_1"
+    s_source: str = "split_2"
+    s_b_source: str = ""
+
+    def uses_extra_channels(self) -> bool:
+        return (self.d_source, self.s_source, self.s_b_source) != ("split_1", "split_2", "")
 
     def contains(self, alpha: float, beta: float, gamma: float) -> bool:
         return bool(self.alpha[0] <= alpha <= self.alpha[1] and self.beta[0] <= beta <= self.beta[1]
@@ -166,7 +179,7 @@ class InterSynthTheoryDGP:
         self.scale_s = max(float(np.quantile(s, q)), 1e-6)
         if self.two_arms:
             ov = np.asarray(overlaps_pool, dtype=np.float64)
-            self.scale_b = max(float(np.quantile(ov[:, :, self._col_b] @ self.w_s2, q)), 1e-6)
+            self.scale_b = max(float(np.quantile(ov[:, :, self._b_col(ov)] @ self.w_s2, q)), 1e-6)
         if self.effect_target is not None:
             # the upper quantile of |CATE| over the pool maps to the drawn target
             self.effect_factor = 1.0
@@ -187,7 +200,13 @@ class InterSynthTheoryDGP:
         if not self.two_arms:
             return np.zeros(len(overlaps))
         ov = np.asarray(overlaps, dtype=np.float64)
-        return np.clip((ov[:, :, self._col_b] @ self.w_s2) / self.scale_b, 0.0, 1.0)
+        return np.clip((ov[:, :, self._b_col(ov)] @ self.w_s2) / self.scale_b, 0.0, 1.0)
+
+    def _b_col(self, ov: np.ndarray) -> int:
+        """Column of the B-arm susceptibility: 2 in a three-column anatomy view
+        (D source, S_A source, S_B source, built by the cohort from named
+        channels), otherwise the hyper-prior's s_b_column."""
+        return 2 if ov.shape[2] == 3 else self._col_b
 
     # -------------------------------------------------------- ground truth
     def mu0(self, D: np.ndarray) -> np.ndarray:
@@ -217,7 +236,8 @@ class InterSynthTheoryDGP:
         depth = -np.linalg.norm(np.asarray(centroids, dtype=np.float64) - self.centre, axis=1)
         feats = {"severity": _standardise(D),
                  "location": _standardise(depth),
-                 "network": _standardise(ov[:, self.priority, :].sum(axis=(1, 2)))}
+                 "network": _standardise(ov[:, self.priority, 0].sum(axis=1) if ov.shape[2] == 3
+                                         else ov[:, self.priority, :].sum(axis=(1, 2)))}
         if self.mechanism == "mixed":
             g = sum(w * feats[k] for w, k in zip(self.mixed_w, ("severity", "location", "network")))
             g = _standardise(g)
@@ -238,7 +258,9 @@ class InterSynthTheoryDGP:
                 "mechanism": self.mechanism, "noise_y": self.noise_y, "noise_w": self.noise_w,
                 "priority": list(self.priority), "sign": self.sign,
                 "scale_d": self.scale_d, "scale_s": self.scale_s,
-                "two_arms": self.two_arms, "effect_factor": self.effect_factor, "binary": self.binary}
+                "two_arms": self.two_arms, "effect_factor": self.effect_factor, "binary": self.binary,
+                "d_source": self.hyper.d_source, "s_source": self.hyper.s_source,
+                "s_b_source": self.hyper.s_b_source or f"s_b_column={self._col_b}"}
 
 
 def make_theory_dataset(dgp: InterSynthTheoryDGP,
