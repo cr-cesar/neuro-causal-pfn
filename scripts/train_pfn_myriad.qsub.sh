@@ -28,6 +28,9 @@ trap 'exit 100' ERR
 
 module load python3/3.11
 source ~/venvs/neuro/bin/activate
+# audit F25: the same config and seed ran 2.4x slower on another node, so
+# every job states where it ran
+echo "node: $(hostname -s) gpu: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || echo none) job: ${JOB_ID:-?}"
 
 CACHE="${CACHE:?set CACHE to the npz from scripts/build_prior_cache.py}"
 [ -s "$CACHE" ] || { echo "no prior cache $CACHE (the cache job failed?)" >&2; exit 100; }

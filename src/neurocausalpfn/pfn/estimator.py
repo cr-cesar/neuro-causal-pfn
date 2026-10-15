@@ -127,6 +127,12 @@ class CausalPFNEstimator:
                                  num_neighbours=num_neighbours, calibrate=False, verbose=False)
         self._k = int(num_neighbours)
         self.name = "causalpfn"
+        # F08 of the audit: CausalPFN compresses any representation wider than
+        # its max_feature_size with a TruncatedSVD (uncentred) fitted on each
+        # context, while narrower ones enter raw. Every call records it and the
+        # first call of each input width prints one line to the scoring log.
+        self.last_info: dict = {}
+        self._reported_widths: set = set()
 
     def __call__(self, Xtr: np.ndarray, W: np.ndarray, Y: np.ndarray,
                  Xte: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -135,6 +141,13 @@ class CausalPFNEstimator:
         # the neighbour search needs k <= smallest treatment group of the context
         self.est.num_neighbours = max(1, min(self._k, int((W == 1).sum()), int((W == 0).sum())))
         self.est.fit(Xtr, W, Y)
+        mfs = self.est.max_feature_size
+        self.last_info = {"d_in": int(Xtr.shape[1]), "max_feature_size": mfs,
+                          "truncated_svd": bool(mfs is not None and Xtr.shape[1] > mfs)}
+        if self.last_info["d_in"] not in self._reported_widths:
+            self._reported_widths.add(self.last_info["d_in"])
+            print(f"causalpfn: d_in={self.last_info['d_in']} max_feature_size={mfs} "
+                  f"truncated_svd={self.last_info['truncated_svd']}", flush=True)
         n = len(Xte)
         Xq = np.concatenate([Xte, Xte], axis=0)
         if self.est.max_feature_size is not None and Xq.shape[1] > self.est.max_feature_size:
