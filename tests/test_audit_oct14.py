@@ -79,6 +79,44 @@ def test_prior_diagnostics_counts_clipping_and_effect_loss():
     assert 0.0 <= out["pool_effect_lost_rel"] <= 1.0
 
 
+def test_effect_headroom_removes_the_clipping_at_one():
+    from scripts.prior_diagnostics import process_diagnostics
+
+    atlas, ov = _pool(n=240)
+    for seed in range(5, 15):
+        h = TheoryHyperPrior(two_arms=1.0, effect_scale=(2.0, 2.0), effect_headroom=True)
+        dgp = _dgp(atlas, ov, h, seed=seed)
+        assert dgp.effect_factor * dgp.beta <= 1.0 - dgp.alpha + 1e-12
+        out = process_diagnostics(dgp, ov, slice_idx=None)
+        assert out["pool_frac_clip_any"] == 0.0
+        assert out["pool_effect_lost_rel"] == pytest.approx(0.0, abs=1e-12)
+        assert out["pool_mean_abs_cate"] > 0                  # the effect is capped, not removed
+        assert dgp.describe()["effect_headroom"] is True
+
+
+def test_effect_headroom_is_off_by_default_and_leaves_small_targets_alone():
+    assert TheoryHyperPrior().effect_headroom is False
+    atlas, ov = _pool(n=240)
+    big = TheoryHyperPrior(two_arms=1.0, effect_scale=(2.0, 2.0))
+    a = _dgp(atlas, ov, big, seed=5)
+    b = _dgp(atlas, ov, TheoryHyperPrior(two_arms=1.0, effect_scale=(2.0, 2.0), effect_headroom=False), seed=5)
+    assert a.effect_factor == b.effect_factor                 # default reproduces the old prior
+    # a target the headroom can hold is not touched by the cap
+    small = dict(two_arms=1.0, effect_scale=(0.01, 0.01))
+    c = _dgp(atlas, ov, TheoryHyperPrior(**small), seed=5)
+    d = _dgp(atlas, ov, TheoryHyperPrior(**small, effect_headroom=True), seed=5)
+    assert c.effect_factor * c.beta < 1.0 - c.alpha
+    assert d.effect_factor == c.effect_factor
+
+
+def test_effect_headroom_from_the_prior_hyper_string():
+    from neurocausalpfn.train.train_pfn import _as_ranges, parse_hyper_opts
+
+    kw = parse_hyper_opts("two_arms=1 effect_scale=0.2:1 effect_headroom=1 d_source=network")
+    h = TheoryHyperPrior(**_as_ranges(kw))
+    assert bool(h.effect_headroom) and h.d_source == "network"
+
+
 def test_score_continuous_prior_scores_a_fold_on_drawn_processes(tmp_path):
     from scripts.score_continuous_prior import draw_processes, score_fold
 

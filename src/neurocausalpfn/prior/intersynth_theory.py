@@ -74,6 +74,12 @@ class TheoryHyperPrior:
     #   per-process rescaling (None keeps the raw beta * D * S scale, whose
     #   upper quantile is typically 0.1-0.3)
     effect_scale: Optional[Tuple[float, float]] = None
+    # effect_headroom (audit F34 Q11): cap the effective coefficient
+    #   effect_factor * beta at the headroom 1 - alpha of mu0 = 1 - D (1 - alpha),
+    #   so that no arm exceeds 1 and nothing is clipped; a target the headroom
+    #   cannot hold is capped instead (largest CATE (1 - alpha) * D). Off by
+    #   default: the pilots' and the recommended prior's numbers are unchanged
+    effect_headroom: bool = False
     # binary_outcome: probability that a process draws Y ~ Bernoulli(mu)
     #   instead of mu + Gaussian noise (the evaluation's outcomes are binary)
     binary_outcome: float = 0.0
@@ -186,6 +192,9 @@ class InterSynthTheoryDGP:
             D, S = self.scores(overlaps_pool)
             raw = np.abs(self.beta * D * (S - self.scores_b(overlaps_pool)))
             self.effect_factor = self.effect_target / max(float(np.quantile(raw, q)), 1e-6)
+        if bool(getattr(self.hyper, "effect_headroom", False)) and self.beta > 0:
+            # with S <= 1, mu0 + effect_factor * beta * S * D <= 1 for every D
+            self.effect_factor = min(self.effect_factor, (1.0 - self.alpha) / self.beta)
         return self
 
     def scores(self, overlaps: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -259,6 +268,7 @@ class InterSynthTheoryDGP:
                 "priority": list(self.priority), "sign": self.sign,
                 "scale_d": self.scale_d, "scale_s": self.scale_s,
                 "two_arms": self.two_arms, "effect_factor": self.effect_factor, "binary": self.binary,
+                "effect_headroom": bool(getattr(self.hyper, "effect_headroom", False)),
                 "d_source": self.hyper.d_source, "s_source": self.hyper.s_source,
                 "s_b_source": self.hyper.s_b_source or f"s_b_column={self._col_b}"}
 
