@@ -8,6 +8,7 @@
 #   bash scripts/myriad_phase1b.sh ensemble E1 E5   # seed ensemble (3 seeds concatenated fold by fold) of finished per-fold reps, LR/ET + CausalPFN
 #   bash scripts/myriad_phase1b.sh repair            # resubmit published-budget folds that died (time limit after a slow start) + their scoring
 #   bash scripts/myriad_phase1b.sh perfold E1 E3 E11b    # published-budget (32-epoch) per-fold training into PUB_ROOT, independent jobs, scoring chained
+#   ONLY="E4[25+25] E6[fusion_mode=both] E7b" bash scripts/myriad_phase1b.sh perfold E4 E6 E7b   # only those variants
 #   POOL_IMAGES=<disco dir> bash scripts/myriad_phase1b.sh pool   # pool latents with the published-budget E1 (fold-0 encoder), one GPU job
 #   PRIOR_FAMILY=<theory|giles|mixture> TAG=<tag> [POOL_IMAGES=<dir> POOL_LATENTS=<npz> HOLD_JID=<job>] bash scripts/myriad_phase1b.sh phase2   # [cache ->] reduced PFN (GPU) -> scored on E1 per-fold (published budget)
 #   bash scripts/myriad_phase1b.sh probe [pfn.pt ...]   # CPU probe: does a checkpoint read the treatment, and on which prior family is it accurate
@@ -190,8 +191,11 @@ PY
     activate
     cd "$PERFOLD"
     eids="${*:-E3 E11b}"
-    python -m ncpfold.plan --eids $eids --seeds "$SEEDS" --budget published
-    python -m ncpfold.plan --eids $eids --seeds "$SEEDS" --budget published --emit-qsub --independent \
+    # ONLY="E4[25+25] E6[fusion_mode=both] E7b" keeps those variants (label,
+    # eid:run or eid); read into an array so the brackets are never globbed
+    only=(); [ -z "${ONLY:-}" ] || { read -ra only <<< "$ONLY"; only=(--only "${only[@]}"); }
+    python -m ncpfold.plan --eids $eids --seeds "$SEEDS" --budget published "${only[@]}"
+    python -m ncpfold.plan --eids $eids --seeds "$SEEDS" --budget published "${only[@]}" --emit-qsub --independent \
         --h-rt 1:30:0 --groups "$PF_GROUPS" --out-root "$PUB_ROOT" > /tmp/perfold_submit_$$.sh
     declare -A HOLD
     while read -r line; do
