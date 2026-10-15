@@ -121,3 +121,15 @@ def test_plot_bias_sweep_reads_the_scenario_roots(tmp_path):
     df = main(["--perfold", str(tmp_path), "--out", str(out)])
     assert out.exists() and (tmp_path / "sweep.csv").exists()
     assert df["pehe"].notna().all() and len(df) == 2 * len(CELLS)
+
+
+def test_paired_test_loads_label_folders_with_brackets(tmp_path):
+    from scripts.paired_deficit_test import _load
+
+    d = tmp_path / "E3[backbone=cnn]" / "seed0" / "x-singles"
+    d.mkdir(parents=True)
+    pd.DataFrame({"deficit": ["a", "a", "b"], "fold": [0, 1, 0], "classifier": ["causalpfn"] * 3,
+                  "pehe_paper": [0.2, 0.4, 0.5]}).to_csv(d / "replica_results.csv", index=False)
+    s = _load([str(tmp_path / "E3[backbone=cnn]" / "seed*" / "*-singles" / "replica_results.csv")],
+              {"classifier": "causalpfn"}, "pehe_paper")
+    assert s.loc["a"] == pytest.approx(0.3) and s.loc["b"] == pytest.approx(0.5)

@@ -30,6 +30,10 @@ import pandas as pd
 def _load(patterns: List[str], filters: Dict[str, str], metric: str) -> pd.Series:
     files = sorted(f for pat in patterns for f in glob.glob(pat))
     if not files:
+        # label folders such as E3[backbone=cnn] contain brackets, which glob
+        # reads as a character class: retry with the brackets taken literally
+        files = sorted(f for pat in patterns for f in glob.glob(pat.replace("[", "[[]")))
+    if not files:
         raise FileNotFoundError(f"no file matches {patterns}")
     frames = []
     for f in files:
