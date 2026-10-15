@@ -90,7 +90,10 @@ def main(argv=None):
         axes[1].plot(g["bias"], g["balacc"], "o-", color=colors[est], label=est)
     axes[0].set_ylabel("PEHE (paper scale)"); axes[1].set_ylabel("Balanced accuracy")
     for ax in axes:
-        ax.set_xlabel("Location bias (BIAS)"); ax.set_xticks([b for b, _ in CELLS])
+        ax.set_xlabel("Location bias (BIAS)")
+        # 0.95 and 1 sit too close for horizontal labels: rotate them
+        ax.set_xticks([b for b, _ in CELLS])
+        ax.set_xticklabels([f"{b:g}" for b, _ in CELLS], rotation=45, ha="right")
         ax.grid(alpha=0.3, lw=0.5); ax.spines[["top", "right"]].set_visible(False)
     axes[0].legend(frameon=False)
     fig.suptitle(f"{args.eid}, per-fold, {args.budget} budget: observed location bias sweep", fontsize=10)
