@@ -133,3 +133,27 @@ def test_paired_test_loads_label_folders_with_brackets(tmp_path):
     s = _load([str(tmp_path / "E3[backbone=cnn]" / "seed*" / "*-singles" / "replica_results.csv")],
               {"classifier": "causalpfn"}, "pehe_paper")
     assert s.loc["a"] == pytest.approx(0.3) and s.loc["b"] == pytest.approx(0.5)
+
+
+def test_compare_atlas_splits_detects_a_hemispheric_cut(tmp_path):
+    nib = pytest.importorskip("nibabel")
+    from scripts.compare_atlas_splits import main
+
+    base = tmp_path / "2mm_parcellations"
+    (base / "receptor").mkdir(parents=True)
+    (base / "genetics").mkdir(parents=True)
+    # 2 mm grid whose world x crosses zero at the middle voxel
+    aff = np.diag([2.0, 2.0, 2.0, 1.0]); aff[0, 3] = -10.0
+    shape = (10, 6, 6)
+    rec = np.zeros(shape); rec[:, :3, :] = 1; rec[:, 3:, :] = 2      # anterior / posterior cut
+    gen = np.zeros(shape); gen[:5] = 1; gen[5:] = 2                  # left / right cut
+    for name, vol in (("receptor", rec), ("genetics", gen)):
+        nib.save(nib.Nifti1Image(vol, aff), str(base / name / "1_net.nii.gz"))
+    df = main(["--atlas-dir", str(tmp_path), "--out", str(tmp_path / "splits.csv")])
+    assert len(df) == 1
+    # the genetics halves separate by hemisphere, the receptor halves do not
+    gsep = abs(df["genetics_left_frac_1"][0] - df["genetics_left_frac_2"][0])
+    rsep = abs(df["receptor_left_frac_1"][0] - df["receptor_left_frac_2"][0])
+    assert gsep == pytest.approx(1.0) and rsep == pytest.approx(0.0)
+    assert df["dice_best_pairing"][0] < 0.8                           # unrelated cuts
+    assert (tmp_path / "splits.csv").exists()
