@@ -57,6 +57,12 @@ def paired_summary(a: pd.Series, b: pd.Series, label_a: str = "A", label_b: str 
 
     common = a.index.intersection(b.index)
     a, b = a.loc[common].astype(float), b.loc[common].astype(float)
+    # a metric can be undefined for a deficit (balanced accuracy needs both
+    # classes among the decidable patients): pair only the finite deficits and
+    # report how many were left out, instead of letting one nan void the test
+    finite = np.isfinite(a.to_numpy()) & np.isfinite(b.to_numpy())
+    n_excluded = int((~finite).sum())
+    a, b = a[finite], b[finite]
     d = (a - b).to_numpy()
     n = len(d)
     if n < 2:
@@ -69,7 +75,7 @@ def paired_summary(a: pd.Series, b: pd.Series, label_a: str = "A", label_b: str 
         w_stat, w_p = stats.wilcoxon(d, zero_method="wilcox", alternative="two-sided")
     except ValueError:            # all differences zero
         w_stat, w_p = float("nan"), 1.0
-    return {"label_a": label_a, "label_b": label_b, "n_deficits": int(n),
+    return {"label_a": label_a, "label_b": label_b, "n_deficits": int(n), "n_excluded_nan": n_excluded,
             "mean_a": float(a.mean()), "mean_b": float(b.mean()),
             "diff_mean": mean, "diff_ci_low": mean - tcrit * se, "diff_ci_high": mean + tcrit * se,
             "diff_sd": sd, "n_a_lower": int((d < 0).sum()), "n_b_lower": int((d > 0).sum()),
@@ -105,7 +111,8 @@ def main(argv=None):
     per = pd.DataFrame({"deficit": common, args.label_a: a.loc[common].to_numpy(),
                         args.label_b: b.loc[common].to_numpy()})
     per["diff"] = per[args.label_a] - per[args.label_b]
-    print(f"{args.metric}: {s['label_a']} {s['mean_a']:.3f} vs {s['label_b']} {s['mean_b']:.3f} over n = {s['n_deficits']} deficits")
+    print(f"{args.metric}: {s['label_a']} {s['mean_a']:.3f} vs {s['label_b']} {s['mean_b']:.3f} over n = {s['n_deficits']} deficits"
+          + (f" ({s['n_excluded_nan']} left out: metric undefined)" if s["n_excluded_nan"] else ""))
     print(f"  difference A - B {s['diff_mean']:+.3f}  95% CI [{s['diff_ci_low']:+.3f}, {s['diff_ci_high']:+.3f}]  "
           f"(A lower in {s['n_a_lower']}, B lower in {s['n_b_lower']})")
     print(f"  paired t = {s['paired_t']:.2f}, p = {s['paired_t_p']:.4f};  Wilcoxon W = {s['wilcoxon_w']:.1f}, p = {s['wilcoxon_p']:.4f}")

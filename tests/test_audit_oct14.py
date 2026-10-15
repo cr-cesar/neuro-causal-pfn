@@ -192,3 +192,15 @@ def test_job_timing_batched_records_match_by_job_number(tmp_path):
     log = tmp_path / "e4r0s0f2.o222.2"; log.write_text("x\n")
     row = jt.job_row(str(log), recs)
     assert row["node"] == "n2" and row["wait_h"] == pytest.approx(3.0) and row["run_h"] == pytest.approx(1 / 3)
+
+
+def test_paired_summary_leaves_out_undefined_deficits():
+    from scripts.paired_deficit_test import paired_summary
+
+    idx = list(range(16))
+    a = pd.Series(np.linspace(0.80, 0.85, 16), index=idx); b = a - 0.01
+    a.iloc[3] = np.nan; b.iloc[7] = np.nan                    # balanced accuracy undefined in two deficits
+    s = paired_summary(a, b, "A", "B")
+    assert s["n_deficits"] == 14 and s["n_excluded_nan"] == 2
+    assert np.isfinite(s["diff_mean"]) and s["diff_mean"] == pytest.approx(0.01)
+    assert np.isfinite(s["paired_t_p"]) and np.isfinite(s["wilcoxon_p"])
