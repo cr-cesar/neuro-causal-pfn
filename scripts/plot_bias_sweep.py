@@ -65,10 +65,6 @@ def main(argv=None):
     ap.add_argument("--out", required=True, help="png; the table goes next to it as csv")
     args = ap.parse_args(argv)
 
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
     df = collect(args.perfold, args.root, args.eid, args.budget)
     df.to_csv(os.path.splitext(args.out)[0] + ".csv", index=False)
     missing = df[df["pehe"].isna()]
@@ -76,6 +72,13 @@ def main(argv=None):
         print("missing cells (not scored yet):")
         print(missing[["bias", "estimator"]].to_string(index=False))
     print(df.round(3).to_string(index=False))
+    try:                     # the table is written even where matplotlib is missing
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("matplotlib not installed: table written, no figure")
+        return df
 
     fig, axes = plt.subplots(1, 2, figsize=(9, 3.6))
     colors = {"LR / ET": "#4C72B0", "CausalPFN": "#C44E52"}
