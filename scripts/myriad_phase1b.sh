@@ -191,12 +191,14 @@ PY
     activate
     cd "$PERFOLD"
     eids="${*:-E3 E11b}"
+    # H_RT: wall-clock per fold job (default 1:30:0, enough for one-channel
+    # folds at ~0.5 h; two-channel folds measure ~0.9 h, use 3:0:0).
     # ONLY="E4[25+25] E6[fusion_mode=both] E7b" keeps those variants (label,
     # eid:run or eid); read into an array so the brackets are never globbed
     only=(); [ -z "${ONLY:-}" ] || { read -ra only <<< "$ONLY"; only=(--only "${only[@]}"); }
     python -m ncpfold.plan --eids $eids --seeds "$SEEDS" --budget published "${only[@]}"
     python -m ncpfold.plan --eids $eids --seeds "$SEEDS" --budget published "${only[@]}" --emit-qsub --independent \
-        --h-rt 1:30:0 --groups "$PF_GROUPS" --out-root "$PUB_ROOT" > /tmp/perfold_submit_$$.sh
+        --h-rt "${H_RT:-1:30:0}" --groups "$PF_GROUPS" --out-root "$PUB_ROOT" > /tmp/perfold_submit_$$.sh
     declare -A HOLD
     while read -r line; do
       [[ "$line" =~ ^qsub ]] || continue
