@@ -157,3 +157,23 @@ def test_compare_atlas_splits_detects_a_hemispheric_cut(tmp_path):
     assert gsep == pytest.approx(1.0) and rsep == pytest.approx(0.0)
     assert df["dice_best_pairing"][0] < 0.8                           # unrelated cuts
     assert (tmp_path / "splits.csv").exists()
+
+
+def test_job_timing_parses_qacct_and_the_trainer_line(tmp_path, monkeypatch):
+    import subprocess
+    from scripts import job_timing as jt
+
+    qacct = ("==============================================================\n"
+             "hostname     node-a.myriad\nqsub_time    Wed Oct 14 03:00:00 2026\n"
+             "start_time   Wed Oct 14 04:00:00 2026\nend_time     Wed Oct 14 04:15:00 2026\n"
+             "failed       25  : rescheduling\nmaxvmem      0.000B\n"
+             "==============================================================\n"
+             "hostname     node-b.myriad\nqsub_time    Wed Oct 14 03:00:00 2026\n"
+             "start_time   Wed Oct 14 05:00:00 2026\nend_time     Wed Oct 14 05:30:00 2026\n"
+             "failed       0\nmaxvmem      3.1GB\n")
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 0, stdout=qacct, stderr=""))
+    log = tmp_path / "e4r0s0f1.o123456.1"
+    log.write_text("fold 0\nwrote x/folds/fold0.npz [disconnectome]  channels ['disconnectome']  (0.42 h)\n")
+    r = jt.job_row(str(log))
+    assert r["job"] == "123456" and r["node"] == "node-b"           # the successful record, not the rescheduled one
+    assert r["wait_h"] == pytest.approx(2.0) and r["run_h"] == pytest.approx(0.5) and r["train_h"] == pytest.approx(0.42)
