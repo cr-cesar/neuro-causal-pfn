@@ -122,3 +122,39 @@ def test_off_the_shelf_causalpfn_wrapper_returns_potential_outcomes():
     W = rng.integers(0, 2, 60).astype(float); Y = (Xtr[:, 0] + W > 0.5).astype(float)
     p1, p0 = est(Xtr, W, Y, Xte)
     assert p1.shape == p0.shape == (10,) and (0 <= p0).all() and (p1 <= 1).all()
+
+
+def test_causalpfn_wrapper_records_the_feature_compression(monkeypatch, capsys):
+    """F08: wider representations are compressed by CausalPFN's TruncatedSVD,
+    narrower ones enter raw; the wrapper records and prints which."""
+    import sys
+    import types
+
+    class _FakeEst:
+        def __init__(self, **kw):
+            self.max_feature_size = 80
+            self.num_neighbours = 1
+            self.temperature = 1.0
+            self.x_dim_transformer = types.SimpleNamespace(transform=lambda X: X[:, :80])
+
+        def fit(self, X, t, y):
+            self.X_train, self.t_train, self.y_train = X, t, y
+
+        def _predict_cepo(self, X, t, y, Xq, tq, temperature=1.0):
+            return np.full(len(Xq), 0.5)
+
+    fake = types.ModuleType("causalpfn"); fake.CATEEstimator = _FakeEst
+    monkeypatch.setitem(sys.modules, "causalpfn", fake)
+    pytest.importorskip("torch")
+    from neurocausalpfn.pfn.estimator import CausalPFNEstimator
+
+    est = CausalPFNEstimator(device="cpu")
+    rng = np.random.default_rng(0)
+    W = np.r_[np.ones(10), np.zeros(10)]; Y = rng.integers(0, 2, 20).astype(float)
+    est(rng.normal(size=(20, 50)), W, Y, rng.normal(size=(5, 50)))
+    assert est.last_info == {"d_in": 50, "max_feature_size": 80, "truncated_svd": False}
+    est(rng.normal(size=(20, 100)), W, Y, rng.normal(size=(5, 100)))
+    assert est.last_info["truncated_svd"] is True
+    est(rng.normal(size=(20, 100)), W, Y, rng.normal(size=(5, 100)))
+    out = capsys.readouterr().out
+    assert out.count("causalpfn: d_in=50") == 1 and out.count("causalpfn: d_in=100") == 1   # once per width
