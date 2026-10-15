@@ -446,16 +446,20 @@ PY
     # <root>_<scenario>_t4, same folds and test set as the ideal cell.
     cd "$PERFOLD"
     sc="${SCENARIO:-location_bias}"; root="${ROOT:-$PUB_ROOT}"
+    # MODALITY=genetics scores the same latents on the gene-expression split of
+    # the atlas (the virtual trial is a different trial per split); a non-default
+    # split gets its own output roots so it never overwrites the receptor cells
+    mod="${MODALITY:-receptor}"; modsuf=""; [ "$mod" = receptor ] || modsuf="_${mod}"
     for eid in "${@:-E1}"; do
       for reps in "$root/$eid"/*/seed*/folds; do
         [ -d "$reps" ] || { echo "skip $eid: no folds under $root/$eid"; continue; }
         n=$(ls "$reps"/fold*.npz 2>/dev/null | wc -l || true); [ "$n" -eq 10 ] || { echo "skip $reps ($n folds)"; continue; }
         s=${reps%/folds}; s=${s##*/seed}
-        j1=$(REPS="$reps" qsub -terse -N sc-${sc:0:3}-${eid,,}s$s -l h_rt=6:0:0 -l mem=8G \
-             -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,WITH_VOLUME=1,SCENARIO="$sc",OUT="${root}_${sc}" qsub/perfold_score.qsub.sh)
-        j2=$(REPS="$reps" qsub -terse -N t4-${sc:0:3}-${eid,,}s$s -l h_rt=6:0:0 -l mem=8G \
-             -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS=causalpfn,ONLY_ESTIMATORS=1,SCENARIO="$sc",OUT="${root}_${sc}_t4" qsub/perfold_score.qsub.sh)
-        echo "$sc $eid seed$s: LR/ET $j1 -> ${root}_${sc}; CausalPFN $j2 -> ${root}_${sc}_t4"
+        j1=$(REPS="$reps" qsub -terse -N sc-${sc:0:3}${modsuf:1:3}-${eid,,}s$s -l h_rt=6:0:0 -l mem=8G \
+             -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,WITH_VOLUME=1,SCENARIO="$sc",MODALITY="$mod",OUT="${root}_${sc}${modsuf}" qsub/perfold_score.qsub.sh)
+        j2=$(REPS="$reps" qsub -terse -N t4-${sc:0:3}${modsuf:1:3}-${eid,,}s$s -l h_rt=6:0:0 -l mem=8G \
+             -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS=causalpfn,ONLY_ESTIMATORS=1,SCENARIO="$sc",MODALITY="$mod",OUT="${root}_${sc}${modsuf}_t4" qsub/perfold_score.qsub.sh)
+        echo "$sc $mod $eid seed$s: LR/ET $j1 -> ${root}_${sc}${modsuf}; CausalPFN $j2 -> ${root}_${sc}${modsuf}_t4"
       done
     done
     ;;
