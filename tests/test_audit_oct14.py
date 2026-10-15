@@ -204,3 +204,27 @@ def test_paired_summary_leaves_out_undefined_deficits():
     assert s["n_deficits"] == 14 and s["n_excluded_nan"] == 2
     assert np.isfinite(s["diff_mean"]) and s["diff_mean"] == pytest.approx(0.01)
     assert np.isfinite(s["paired_t_p"]) and np.isfinite(s["wilcoxon_p"])
+
+
+def test_score_continuous_prior_nmf_mode_refits_per_fold(tmp_path):
+    nib = pytest.importorskip("nibabel")
+    from scripts.score_continuous_prior import draw_processes, nmf_perfold, score_fold
+
+    atlas, ov = _pool(n=40)
+    rng = np.random.default_rng(0)
+    img_dir = tmp_path / "imgs"; img_dir.mkdir()
+    files = np.asarray([f"img{i:03d}.nii.gz" for i in range(40)])
+    for f in files:
+        vol = (rng.uniform(size=(6, 6, 6)) > 0.6).astype(np.float32)
+        nib.save(nib.Nifti1Image(vol, np.eye(4)), str(img_dir / f))
+    cache = {"overlaps": ov, "centroids": rng.uniform(0, 6, (40, 3)), "volumes": rng.uniform(1, 50, 40),
+             "files": files, "images_dir": str(img_dir)}
+    tr, te = np.arange(32), np.arange(32, 40)
+    np.savez(tmp_path / "fold0.npz", Ztr=np.zeros((32, 2)), Zte=np.zeros((8, 2)), tr_idx=tr, te_idx=te,
+             files=files, fold=0)
+    zfn = nmf_perfold(str(img_dir), list(files), k=4)
+    Ztr, Zte = zfn(tr, te)
+    assert Ztr.shape == (32, 4) and Zte.shape == (8, 4)
+    dgps = draw_processes(cache, atlas, {"two_arms": 1.0, "effect_scale": [0.2, 1.0]}, n=2, seed=1)
+    rows = score_fold(str(tmp_path / "fold0.npz"), cache, dgps, volume=False, seed=0, zfn=zfn)
+    assert len(rows) == 4 and all(np.isfinite(r["pehe"]) for r in rows)

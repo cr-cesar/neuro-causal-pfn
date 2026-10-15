@@ -79,7 +79,37 @@ def _align(cache_files: np.ndarray, files: List[str]) -> np.ndarray:
     return np.asarray([pos[os.path.basename(str(f))] for f in files])
 
 
-def score_fold(fold_npz: str, cache: Dict, dgps, volume: bool, seed: int) -> List[Dict]:
+def nmf_perfold(images_dir: str, files: List[str], k: int = 50, thresh: float = None):
+    """NMF-k refitted on each fold's train side from the disconnectome images
+    binarised at the replica's threshold: the paper's protocol for the
+    reductions, the same as ncpfold.score's nmf50_perfold. Returns a function
+    (tr_idx, te_idx) -> (Ztr, Zte)."""
+    import nibabel as nib
+    from scipy import sparse
+    from sklearn.decomposition import NMF
+
+    from neurocausalpfn.prior import giles_replica as gr
+
+    thresh = gr.DISCO_THRESH if thresh is None else thresh
+    rows, cols, shape = [], [], None
+    for i, name in enumerate(files):
+        img = nib.load(os.path.join(images_dir, os.path.basename(str(name)))).get_fdata()
+        shape = img.shape
+        nz = np.flatnonzero(img.ravel() > thresh)
+        rows.append(np.full(len(nz), i)); cols.append(nz)
+    X = sparse.csr_matrix((np.ones(sum(map(len, cols)), dtype=np.float32),
+                           (np.concatenate(rows), np.concatenate(cols))),
+                          shape=(len(files), int(np.prod(shape))))
+    kk = min(k, len(files) - 1)
+
+    def _refit(tr_idx, te_idx):
+        m = NMF(n_components=kk, init="nndsvd", max_iter=200, random_state=0, tol=1e-3)
+        return m.fit_transform(X[tr_idx]).astype(np.float64), m.transform(X[te_idx]).astype(np.float64)
+
+    return _refit
+
+
+def score_fold(fold_npz: str, cache: Dict, dgps, volume: bool, seed: int, zfn=None) -> List[Dict]:
     from neurocausalpfn.prior.intersynth_theory import make_theory_dataset
 
     z = np.load(fold_npz, allow_pickle=True)
@@ -87,7 +117,9 @@ def score_fold(fold_npz: str, cache: Dict, dgps, volume: bool, seed: int) -> Lis
     tr, te = np.asarray(z["tr_idx"]), np.asarray(z["te_idx"])
     rows_tr = _align(cache["files"], [files[i] for i in tr])
     rows_te = _align(cache["files"], [files[i] for i in te])
-    if volume:
+    if zfn is not None:
+        Ztr, Zte = zfn(tr, te)
+    elif volume:
         v = np.log1p(np.asarray(cache["volumes"], dtype=np.float64))
         Ztr, Zte = v[rows_tr, None], v[rows_te, None]
     else:
@@ -154,6 +186,9 @@ def main(argv=None):
     ap.add_argument("--processes", type=int, default=20)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--volume", action="store_true", help="score log lesion volume from the cache instead of Z")
+    ap.add_argument("--nmf", action="store_true",
+                    help="score NMF refitted per fold on the cache's images (the folds and file order come from --reps)")
+    ap.add_argument("--nmf-k", type=int, default=50)
     ap.add_argument("--label", default=None)
     ap.add_argument("--out", required=True)
     args = ap.parse_args(argv)
@@ -164,20 +199,30 @@ def main(argv=None):
     from neurocausalpfn.train.train_pfn import parse_hyper_opts
 
     with np.load(args.cache, allow_pickle=True) as c:
-        cache = {k: c[k] for k in ("overlaps", "centroids", "volumes", "files",
+        cache = {k: c[k] for k in ("overlaps", "centroids", "volumes", "files", "images_dir",
                                    "overlaps_network", "overlaps_receptor", "overlaps_genetics") if k in c.files}
     cache["overlaps"] = np.asarray(cache["overlaps"], np.float64)
     atlas = FunctionalAtlas.from_dir(args.atlas_dir, modality=args.modality)
     dgps = draw_processes(cache, atlas, parse_hyper_opts(args.hyper), args.processes, args.seed)
-    folds = sorted(glob.glob(os.path.join(args.reps, "fold*.npz")))
+    # label folders such as E3[backbone=cnn] hold brackets: escape them for glob
+    folds = sorted(glob.glob(os.path.join(glob.escape(args.reps), "fold*.npz")))
     if not folds:
         raise SystemExit(f"no fold*.npz under {args.reps}")
+    zfn = None
+    if args.nmf:
+        if "images_dir" not in cache:
+            raise SystemExit("--nmf needs a cache that records images_dir (build_prior_cache.py)")
+        with np.load(folds[0], allow_pickle=True) as z0:
+            files = [str(f) for f in z0["files"]]
+        print(f"NMF-{args.nmf_k} per fold on {len(files)} images ...", flush=True)
+        zfn = nmf_perfold(str(cache["images_dir"]), files, k=args.nmf_k)
     rows = []
     for f in folds:
-        rows += score_fold(f, cache, dgps, args.volume, args.seed)
+        rows += score_fold(f, cache, dgps, args.volume, args.seed, zfn=zfn)
         print(f"  {os.path.basename(f)} done ({len(rows)} rows)", flush=True)
     df = pd.DataFrame(rows)
-    df.insert(0, "representation", args.label or ("volume" if args.volume else os.path.basename(os.path.dirname(args.reps.rstrip("/")))))
+    df.insert(0, "representation", args.label or ("volume" if args.volume else "nmf50_perfold" if args.nmf
+                                                  else os.path.basename(os.path.dirname(args.reps.rstrip("/")))))
     df.to_csv(args.out, index=False)
     # per process: mean over folds; then mean and 95 % CI over processes
     per = df.groupby(["estimator", "process"])["pehe"].mean().reset_index()
