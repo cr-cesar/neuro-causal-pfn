@@ -294,3 +294,39 @@ def test_score_continuous_prior_nmf_mode_refits_per_fold(tmp_path):
     dgps = draw_processes(cache, atlas, {"two_arms": 1.0, "effect_scale": [0.2, 1.0]}, n=2, seed=1)
     rows = score_fold(str(tmp_path / "fold0.npz"), cache, dgps, volume=False, seed=0, zfn=zfn)
     assert len(rows) == 4 and all(np.isfinite(r["pehe"]) for r in rows)
+
+
+def test_disco_descriptives_runs_on_an_atlas_laid_out_like_giles(tmp_path, monkeypatch):
+    """The PI's F33 script finds the 16 networks of each split by their file
+    prefix and writes only the three aggregate outputs."""
+    nib = pytest.importorskip("nibabel")
+    import json
+    import sys
+    from scripts import disco_descriptives as dd
+
+    shape = (8, 8, 8)
+    for kind in ("receptor", "genetics"):
+        d = tmp_path / "atlas" / "2mm_parcellations" / kind
+        d.mkdir(parents=True)
+        for k in range(1, 17):
+            m = np.zeros(shape, np.int16)
+            m[k % 8, :4, :] = 1          # the larger half (treatment A)
+            m[k % 8, 4:6, :] = 2
+            nib.save(nib.Nifti1Image(m, np.eye(4)), str(d / f"{k}_net.nii.gz"))
+    maps = tmp_path / "maps"
+    maps.mkdir()
+    for i in range(5):
+        v = np.zeros(shape, np.float32)
+        v[i, :, :] = 0.9                 # covers half A and half B of network i (and k = i + 8)
+        nib.save(nib.Nifti1Image(v, np.eye(4)), str(maps / f"m{i}.nii.gz"))
+    out = tmp_path / "out"
+    monkeypatch.setattr(sys, "argv", ["dd", "--maps", str(maps / "*.nii.gz"), "--atlas-dir",
+                                      str(tmp_path / "atlas"), "--out", str(out)])
+    dd.main()
+    assert sorted(p.name for p in out.iterdir()) == ["freq_map.nii.gz", "per_network.csv", "summary.json"]
+    s = json.load(open(out / "summary.json"))
+    assert s["n_maps"] == 5
+    rows = open(out / "per_network.csv").read().splitlines()
+    assert len(rows) == 1 + 2 * 16 and rows[0].startswith("split,network,neither")
+    both = [r for r in rows[1:] if r.startswith("receptor,") and int(r.split(",")[5]) > 0]
+    assert both                           # some maps hit both halves of a network
