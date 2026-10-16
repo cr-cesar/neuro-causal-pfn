@@ -1,0 +1,35 @@
+== frozen-encoder replica runs: tested images per log
+      1 e0b-grp: group-aware folds (giles): 3913 tested images, 206 later acquisitions train-only
+      1 giles-replica: group-aware folds (giles): 1152 tested images, 55 later acquisitions train-only
+      4 giles-replica: group-aware folds (giles): 3913 tested images, 206 later acquisitions train-only
+      1 grp-arms_ce-public: group-aware folds (giles): 3913 tested images, 206 later acquisitions train-only
+      1 grp-arms_ce-public_paper: group-aware folds (giles): 2828 tested images, 1291 later acquisitions train-only
+      1 grp-arms_e-public: group-aware folds (giles): 3913 tested images, 206 later acquisitions train-only
+      1 grp-arms_e-public_paper: group-aware folds (giles): 2828 tested images, 1291 later acquisitions train-only
+      1 grp-E1-public: group-aware folds (giles): 3913 tested images, 206 later acquisitions train-only
+      1 grp-E1-public_paper: group-aware folds (giles): 2828 tested images, 1291 later acquisitions train-only
+      1 grp-e2_clean-public: group-aware folds (giles): 3913 tested images, 206 later acquisitions train-only
+      1 grp-e2_clean-public_paper: group-aware folds (giles): 2828 tested images, 1291 later acquisitions train-only
+      1 grp-E2-public: group-aware folds (giles): 3913 tested images, 206 later acquisitions train-only
+      1 grp-E2-public_paper: group-aware folds (giles): 2828 tested images, 1291 later acquisitions train-only
+      1 grp-e3-public: group-aware folds (giles): 3913 tested images, 206 later acquisitions train-only
+      1 grp-e3-public_paper: group-aware folds (giles): 2828 tested images, 1291 later acquisitions train-only
+      1 grp-E4-public: group-aware folds (giles): 3913 tested images, 206 later acquisitions train-only
+      1 grp-E4-public_paper: group-aware folds (giles): 2828 tested images, 1291 later acquisitions train-only
+      1 grp-e5b-public: group-aware folds (giles): 3913 tested images, 206 later acquisitions train-only
+      1 grp-e5b-public_paper: group-aware folds (giles): 2828 tested images, 1291 later acquisitions train-only
+      1 grp-E5-public: group-aware folds (giles): 3913 tested images, 206 later acquisitions train-only
+      1 grp-E5-public_paper: group-aware folds (giles): 2828 tested images, 1291 later acquisitions train-only
+      1 grp-e6_parts-public: group-aware folds (giles): 3913 tested images, 206 later acquisitions train-only
+      1 grp-e6_parts-public_paper: group-aware folds (giles): 2828 tested images, 1291 later acquisitions train-only
+      1 grp-e6-public: group-aware folds (giles): 3913 tested images, 206 later acquisitions train-only
+      1 grp-e6-public_paper: group-aware folds (giles): 2828 tested images, 1291 later acquisitions train-only
+      1 grp-e7-public: group-aware folds (giles): 3913 tested images, 206 later acquisitions train-only
+      1 grp-e7-public_paper: group-aware folds (giles): 2828 tested images, 1291 later acquisitions train-only
+== per-fold folds of E1 seed 0: distinct test images over the 10 folds
+outputs_perfold_pub: 10 folds | images 4119 | distinct test images 3913 | group_mode giles
+outputs_perfold_grp: 10 folds | images 4119 | distinct test images 3913 | group_mode giles
+== group tables (counts only)
+groups_public.csv | images 4119 | subjects 3913 | one public image 3735 | testable 3913 | train-only 206 | one acquisition in full table 2828 | acquisitions per subject {1: 2828, 2: 867, 3: 162, 4: 35, 5: 21}
+groups_public_paper.csv | images 4119 | subjects 3913 | one public image 3735 | testable 2828 | train-only 1291 | one acquisition in full table 2828 | acquisitions per subject {1: 2828, 2: 867, 3: 162, 4: 35, 5: 21}
+48:PF_GROUPS="${PF_GROUPS:-outputs_perfold/groups_public.csv}"
