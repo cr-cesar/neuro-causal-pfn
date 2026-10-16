@@ -1,0 +1,7 @@
+Name: causalpfn
+Version: 0.1.4
+installed: 2026-10-06 04:28
+E1 CausalPFN scoring (one per seed): 2026-10-08 04:11
+E1 CausalPFN scoring (one per seed): 2026-10-08 04:15
+E1 CausalPFN scoring (one per seed): 2026-10-08 04:21
+checkpoint vdblm/causalpfn causalpfn_v0.pt | model_type tabdpt | max_num_features 100 | max_feature_size 99
