@@ -1,0 +1,6 @@
+== KCH cache
+check: overlaps against overlaps_receptor, max abs difference 0.00e+00
+wrote outputs/prior_cache/kch_e1_32d_x.npz: 1207 images, extra channels added; whole-network overlap > 5 % in 99.0 % of lesions
+== UCLH cache
+images: disconnectome (continuous maps; 50 of 4119 volumes checked)
+wrote outputs/prior_cache/uclh_disco_x.npz: 4119 disconnectome images, 16 networks, 96 % hit at least one subnetwork above 5 %; per-network responsive fraction min/median/max 0.120/0.372/0.869, extra channels network / receptor / genetics

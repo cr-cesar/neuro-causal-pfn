@@ -52,6 +52,9 @@ def _cfg_from_args(args) -> Dict:
     return cfg
 
 
+_CLIP_TOL = 1e-9
+
+
 def _stats(mu0, raw_a, raw_b, mu_a, mu_b, mask) -> Dict[str, float]:
     """Clipping and effect-loss figures over the lesions in ``mask``."""
     if not mask.any():
@@ -59,11 +62,14 @@ def _stats(mu0, raw_a, raw_b, mu_a, mu_b, mask) -> Dict[str, float]:
     cate_raw = (raw_a - raw_b)[mask]
     cate = (mu_a - mu_b)[mask]
     abs_raw, abs_clip = float(np.mean(np.abs(cate_raw))), float(np.mean(np.abs(cate)))
+    # an arm that reaches exactly 1 (S = 1 under effect_headroom) can land a
+    # rounding error above it: that is not a clip
+    top = 1.0 + _CLIP_TOL
     return {"n": int(mask.sum()),
             "frac_mu0_above_0.9": float(np.mean(mu0[mask] > 0.9)),
-            "frac_clip_A": float(np.mean(raw_a[mask] > 1.0)),
-            "frac_clip_B": float(np.mean(raw_b[mask] > 1.0)),
-            "frac_clip_any": float(np.mean((raw_a[mask] > 1.0) | (raw_b[mask] > 1.0))),
+            "frac_clip_A": float(np.mean(raw_a[mask] > top)),
+            "frac_clip_B": float(np.mean(raw_b[mask] > top)),
+            "frac_clip_any": float(np.mean((raw_a[mask] > top) | (raw_b[mask] > top))),
             "mean_abs_cate_raw": abs_raw, "mean_abs_cate": abs_clip,
             "effect_lost_rel": float(1.0 - abs_clip / abs_raw) if abs_raw > 1e-9 else 0.0}
 

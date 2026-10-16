@@ -1,0 +1,2 @@
+c43ffa2 status 20261015_0326: F30 balanced accuracy paired tests (finite deficits)
+576378a leaderboard: recompute the deficit CI from replica_results.csv when a headline lacks it
