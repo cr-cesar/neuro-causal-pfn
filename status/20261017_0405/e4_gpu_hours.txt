@@ -1,0 +1,1 @@
+E4 per-fold: 80 folds, 38.0 GPU-h, 0.47 h per fold (sum of each fold timing line)
