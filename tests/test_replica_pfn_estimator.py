@@ -153,10 +153,59 @@ def test_causalpfn_wrapper_records_the_feature_compression(monkeypatch, capsys):
     W = np.r_[np.ones(10), np.zeros(10)]; Y = rng.integers(0, 2, 20).astype(float)
     est(rng.normal(size=(20, 50)), W, Y, rng.normal(size=(5, 50)))
     info = dict(est.last_info); v = info.pop("version")
-    assert info == {"d_in": 50, "max_feature_size": 80, "truncated_svd": False}
+    assert info == {"d_in": 50, "max_feature_size": 80, "truncated_svd": False,
+                    "context_cap": 0, "n_context": 20}
     assert isinstance(v, str) and v                          # the installed causalpfn version, or "unknown"
     est(rng.normal(size=(20, 100)), W, Y, rng.normal(size=(5, 100)))
     assert est.last_info["truncated_svd"] is True
     est(rng.normal(size=(20, 100)), W, Y, rng.normal(size=(5, 100)))
     out = capsys.readouterr().out
     assert out.count(f"causalpfn {v}: d_in=50") == 1 and out.count(f"causalpfn {v}: d_in=100") == 1   # once per width
+
+
+def test_cap_context_is_shared_and_deterministic(monkeypatch):
+    from neurocausalpfn.pfn.estimator import cap_context
+
+    rng = np.random.default_rng(0)
+    X = rng.normal(size=(300, 4)); W = (rng.random(300) < 0.3).astype(int); Y = rng.integers(0, 2, 300)
+    Xa, Wa, Ya = cap_context(X, W, Y, 100)
+    Xb, Wb, Yb = cap_context(X, W, Y, 100)
+    assert len(Xa) == 100 and np.array_equal(Xa, Xb) and np.array_equal(Wa, Wb)
+    assert abs(Wa.mean() - W.mean()) < 0.02                 # treated share kept
+    assert cap_context(X, W, Y, 0)[0] is X and len(cap_context(X, W, Y, 500)[0]) == 300
+    # CausalPFN's wrapper reads the same cap from its own variable
+    monkeypatch.setenv("CAUSALPFN_CONTEXT_CAP", "1024")
+    import inspect
+    from neurocausalpfn.pfn import estimator as est
+    src = inspect.getsource(est.CausalPFNEstimator.__init__)
+    assert "CAUSALPFN_CONTEXT_CAP" in src
+
+
+def test_causalpfn_wrapper_caps_its_context_like_the_pfn(monkeypatch):
+    import sys
+    import types
+
+    seen = {}
+
+    class _FakeEst:
+        def __init__(self, **kw):
+            self.max_feature_size = 80; self.num_neighbours = 1; self.temperature = 1.0
+
+        def fit(self, X, t, y):
+            self.X_train, self.t_train, self.y_train = X, t, y; seen["n"] = len(X)
+
+        def _predict_cepo(self, X, t, y, Xq, tq, temperature=1.0):
+            return np.full(len(Xq), 0.5)
+
+    fake = types.ModuleType("causalpfn"); fake.CATEEstimator = _FakeEst
+    monkeypatch.setitem(sys.modules, "causalpfn", fake)
+    pytest.importorskip("torch")
+    monkeypatch.setenv("CAUSALPFN_CONTEXT_CAP", "64")
+    from neurocausalpfn.pfn.estimator import CausalPFNEstimator, cap_context
+
+    est = CausalPFNEstimator(device="cpu")
+    rng = np.random.default_rng(1)
+    X = rng.normal(size=(200, 10)); W = (rng.random(200) < 0.4).astype(float); Y = rng.integers(0, 2, 200).astype(float)
+    est(X, W, Y, rng.normal(size=(5, 10)))
+    assert seen["n"] == 64 and est.n_capped == 1 and est.last_info["n_context"] == 64
+    np.testing.assert_array_equal(est.est.X_train, cap_context(X.astype(np.float32), W, Y, 64)[0])

@@ -29,6 +29,25 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 
 
+def cap_context(Xtr: np.ndarray, W: np.ndarray, Y: np.ndarray, cap: int):
+    """Subsample a context longer than ``cap`` at random, keeping the treated
+    share; deterministic for a given slice (seeded by its size and label
+    counts), so two estimators capped at the same length see the same rows.
+    ``cap`` <= 0 returns the slice unchanged."""
+    n = len(Xtr)
+    if cap <= 0 or n <= cap:
+        return Xtr, W, Y
+    W = np.asarray(W); Y = np.asarray(Y)
+    rng = np.random.default_rng([n, int(W.sum()), int(Y.sum()), int(cap)])
+    treated = np.flatnonzero(W == 1); control = np.flatnonzero(W != 1)
+    k1 = int(round(cap * len(treated) / n))
+    k1 = min(max(k1, 1 if len(treated) else 0), len(treated), cap)
+    k0 = min(cap - k1, len(control))
+    keep = np.sort(np.concatenate([rng.choice(treated, k1, replace=False),
+                                   rng.choice(control, k0, replace=False)]))
+    return Xtr[keep], W[keep], Y[keep]
+
+
 class PFNEstimator:
     def __init__(self, ckpt_path: str, device: Optional[str] = None,
                  standardize: Optional[bool] = None, max_queries: int = 512,
@@ -64,21 +83,9 @@ class PFNEstimator:
         self.name = "pfn"
 
     def _cap_context(self, Xtr: np.ndarray, W: np.ndarray, Y: np.ndarray):
-        """Subsample a context longer than the cap, keeping the treated share;
-        deterministic for a given slice (seeded by its size and label counts)."""
-        n = len(Xtr)
-        if self.context_cap <= 0 or n <= self.context_cap:
-            return Xtr, W, Y
-        W = np.asarray(W); Y = np.asarray(Y)
-        rng = np.random.default_rng([n, int(W.sum()), int(Y.sum()), self.context_cap])
-        treated = np.flatnonzero(W == 1); control = np.flatnonzero(W != 1)
-        k1 = int(round(self.context_cap * len(treated) / n))
-        k1 = min(max(k1, 1 if len(treated) else 0), len(treated), self.context_cap)
-        k0 = min(self.context_cap - k1, len(control))
-        keep = np.sort(np.concatenate([rng.choice(treated, k1, replace=False),
-                                       rng.choice(control, k0, replace=False)]))
-        self.n_capped += 1
-        return Xtr[keep], W[keep], Y[keep]
+        Xtr2, W2, Y2 = cap_context(Xtr, W, Y, self.context_cap)
+        self.n_capped += len(Xtr2) < len(Xtr)
+        return Xtr2, W2, Y2
 
     def __call__(self, Xtr: np.ndarray, W: np.ndarray, Y: np.ndarray,
                  Xte: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -117,9 +124,19 @@ class CausalPFNEstimator:
 
     def __init__(self, device: Optional[str] = None, model_path: str = "vdblm/causalpfn",
                  cache_dir: Optional[str] = None, max_context_length: int = 4096,
-                 num_neighbours: int = 1024):
+                 num_neighbours: int = 1024, context_cap: Optional[int] = None):
         import torch
         from causalpfn import CATEEstimator
+
+        # H3 of the Phase-2 audit: CausalPFN retrieves up to 2,048 nearest rows
+        # per arm while our transformer reads 1,024 random rows. With a cap
+        # (``context_cap`` or CAUSALPFN_CONTEXT_CAP) its context is subsampled
+        # by the same rule as PFNEstimator's, so both see the same rows.
+        if context_cap is None:
+            env = os.environ.get("CAUSALPFN_CONTEXT_CAP", "").strip()
+            context_cap = int(env) if env else 0
+        self.context_cap = int(context_cap)
+        self.n_capped = 0
 
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.est = CATEEstimator(device=self.device, model_path=model_path, cache_dir=cache_dir,
@@ -146,17 +163,21 @@ class CausalPFNEstimator:
                  Xte: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         Xtr = np.asarray(Xtr, dtype=np.float32); Xte = np.asarray(Xte, dtype=np.float32)
         W = np.asarray(W, dtype=np.float32); Y = np.asarray(Y, dtype=np.float32)
+        n_in = len(Xtr)
+        Xtr, W, Y = cap_context(Xtr, W, Y, self.context_cap)
+        self.n_capped += len(Xtr) < n_in
         # the neighbour search needs k <= smallest treatment group of the context
         self.est.num_neighbours = max(1, min(self._k, int((W == 1).sum()), int((W == 0).sum())))
         self.est.fit(Xtr, W, Y)
         mfs = self.est.max_feature_size
         self.last_info = {"d_in": int(Xtr.shape[1]), "max_feature_size": mfs,
                           "truncated_svd": bool(mfs is not None and Xtr.shape[1] > mfs),
-                          "version": self.version}
+                          "version": self.version, "context_cap": self.context_cap,
+                          "n_context": int(len(Xtr))}
         if self.last_info["d_in"] not in self._reported_widths:
             self._reported_widths.add(self.last_info["d_in"])
             print(f"causalpfn {self.version}: d_in={self.last_info['d_in']} max_feature_size={mfs} "
-                  f"truncated_svd={self.last_info['truncated_svd']}", flush=True)
+                  f"truncated_svd={self.last_info['truncated_svd']} context_cap={self.context_cap}", flush=True)
         n = len(Xte)
         Xq = np.concatenate([Xte, Xte], axis=0)
         if self.est.max_feature_size is not None and Xq.shape[1] > self.est.max_feature_size:
