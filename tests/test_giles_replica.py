@@ -171,3 +171,38 @@ def test_evaluate_representation_reports_volume_equity():
     cfg = res[(res["classifier"] == agg["classifier"]) & (res["learner"] == agg["learner"])]
     assert agg["pehe_paper_mean"] == pytest.approx(
         float(cfg.groupby("deficit")["pehe_paper"].mean().mean()))
+
+
+def test_effect_decomposition_separates_magnitude_from_ranking():
+    true = np.array([1.0, 1.0, 0.5, 0.0, 0.0, 0.5])    # tau = +1, +1, 0, -1, -1, 0
+    tau = 2 * true - 1
+    perfect = gr.effect_decomposition((1 + tau) / 2, (1 - tau) / 2, true)
+    assert perfect["tau_slope"] == pytest.approx(1.0) and perfect["mse_between"] == pytest.approx(0.0)
+    assert perfect["pehe_paper_rescaled"] == pytest.approx(0.0, abs=1e-12)
+    assert (perfect["n_pos"], perfect["n_zero"], perfect["n_neg"]) == (2, 2, 2)
+    # right order, half the magnitude: all of the error is between the group means
+    half = gr.effect_decomposition(0.5 + tau / 4, 0.5 - tau / 4, true)
+    assert half["tau_slope"] == pytest.approx(0.5) and half["tau_hat_pos"] == pytest.approx(0.5)
+    assert half["tau_hat_neg"] == pytest.approx(-0.5) and half["mse_within"] == pytest.approx(0.0)
+    assert half["rescale_factor"] == pytest.approx(2.0) and half["pehe_paper_rescaled"] == pytest.approx(0.0, abs=1e-12)
+    # in general between + within is the squared headline and rescaling never hurts
+    rng = np.random.default_rng(0)
+    true = rng.choice([0.0, 0.5, 1.0], 200)
+    p1, p0 = rng.random(200), rng.random(200)
+    d = gr.effect_decomposition(p1, p0, true)
+    s = gr.score_predictions(p1, p0, true)
+    assert d["mse_between"] + d["mse_within"] == pytest.approx(s["pehe_paper"] ** 2)
+    assert d["pehe_paper_rescaled"] <= s["pehe_paper"] + 1e-12
+    # one tau value only: no slope, empty groups are nan
+    one = gr.effect_decomposition(np.ones(3), np.zeros(3), np.ones(3))
+    assert np.isnan(one["tau_slope"]) and np.isnan(one["tau_hat_neg"]) and one["n_neg"] == 0
+
+
+def test_evaluate_representation_reports_the_effect_decomposition():
+    df = _labels(120)
+    Z = np.random.default_rng(2).normal(size=(120, 4))
+    res = gr.evaluate_representation(Z, df, {1: _fake_pair()}, gr.HEADLINE_SCENARIOS["ideal"],
+                                     n_folds=4, deficits=[1], classifiers=["logistic_regression"])
+    assert {"tau_slope", "tau_hat_pos", "mse_between", "pehe_paper_rescaled"} <= set(res.columns)
+    np.testing.assert_allclose(res["mse_between"] + res["mse_within"], res["pehe_paper"] ** 2)
+    assert (res[["n_pos", "n_zero", "n_neg"]].sum(axis=1) == res["n_test"]).all()

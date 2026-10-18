@@ -338,6 +338,52 @@ def stratified_pehe_paper(p1: np.ndarray, p0: np.ndarray, true_ITE: np.ndarray,
     return out
 
 
+def effect_decomposition(p1: np.ndarray, p0: np.ndarray, true_ITE: np.ndarray) -> Dict[str, float]:
+    """Where ``pehe_paper`` comes from in one test slice (audit H5: does an
+    estimator rank the participants well but predict effects that are too
+    small?). tau_hat = p1 - p0 against tau = 2 * true_ITE - 1 in {-1, 0, +1}.
+
+    - ``tau_hat_pos`` / ``tau_hat_zero`` / ``tau_hat_neg``: mean tau_hat among
+      the participants with tau = +1, 0 and -1 (``n_pos`` / ``n_zero`` /
+      ``n_neg`` of them; nan when a group is empty). A perfect estimator gives
+      +1, 0 and -1.
+    - ``tau_slope``: least-squares slope of tau_hat on tau (1 = the full
+      effect, 0 = no effect predicted); nan when tau is constant in the slice.
+    - ``mse_between`` + ``mse_within`` = ``pehe_paper`` ** 2: the error of the
+      group means (magnitude and offset) and the spread of tau_hat inside each
+      group (ranking noise).
+    - ``pehe_paper_rescaled``: ``pehe_paper`` after the single factor
+      ``rescale_factor`` that best maps tau_hat onto tau in this slice. The
+      factor is fitted on the test labels, so this is a bound on what fixing
+      the magnitude alone could reach, not a score.
+
+    Aggregates of the slice only; no participant-level values."""
+    tau_hat = np.asarray(p1, dtype=float) - np.asarray(p0, dtype=float)
+    tau = 2.0 * np.asarray(true_ITE, dtype=float) - 1.0
+    n = len(tau)
+    out: Dict[str, float] = {}
+    between = within = 0.0
+    for key, g in (("pos", 1.0), ("zero", 0.0), ("neg", -1.0)):
+        m = np.isclose(tau, g)
+        out[f"n_{key}"] = int(m.sum())
+        if m.any():
+            mu = float(tau_hat[m].mean())
+            out[f"tau_hat_{key}"] = mu
+            between += m.sum() * (mu - g) ** 2
+            within += float(((tau_hat[m] - mu) ** 2).sum())
+        else:
+            out[f"tau_hat_{key}"] = float("nan")
+    out["mse_between"], out["mse_within"] = float(between / n), float(within / n)
+    dt = tau - tau.mean()
+    var = float((dt ** 2).sum())
+    out["tau_slope"] = float((dt * (tau_hat - tau_hat.mean())).sum() / var) if var > 0 else float("nan")
+    ss = float((tau_hat ** 2).sum())
+    b = float((tau_hat * tau).sum() / ss) if ss > 0 else 0.0
+    out["rescale_factor"] = b
+    out["pehe_paper_rescaled"] = pehe(b * tau_hat, tau)
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # Estimators (one-model / two-model, as in prescription.py)
 # --------------------------------------------------------------------------- #
@@ -561,7 +607,8 @@ def evaluate_representation(Z: np.ndarray, labels_df, pairs: Dict[int, RoiPair],
                         p1, p0 = fit(Xtr, W, Y, Xte, cname)
                     row = {"deficit": name, "fold": k, "classifier": cname,
                            "learner": learner, "n_train": len(Xtr), "n_test": len(Xte),
-                           **scenario, **score_predictions(p1, p0, true_ITE)}
+                           **scenario, **score_predictions(p1, p0, true_ITE),
+                           **effect_decomposition(p1, p0, true_ITE)}
                     if strata_te is not None:
                         row.update(stratified_pehe_paper(p1, p0, true_ITE, strata_te))
                     results.append(row)
