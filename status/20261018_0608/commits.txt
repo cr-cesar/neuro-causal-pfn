@@ -1,0 +1,2 @@
+7d68aaa status: F42 disconnectome prior sets against Supplementary Table 2
+576378a leaderboard: recompute the deficit CI from replica_results.csv when a headline lacks it
