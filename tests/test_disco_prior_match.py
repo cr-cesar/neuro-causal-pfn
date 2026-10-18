@@ -121,3 +121,26 @@ def test_end_to_end_with_a_fake_quickdisco_prints_no_file_name(tmp_path, capsys)
     dpm.main(["--lesions", str(les), "--atlas-dir", str(tmp_path / "atlas"), "--priors", f"FAKE={priors}",
               "--work", str(tmp_path / "work"), "--n", "8", "--quickdisco", "/nonexistent/QuickDisco"])
     assert sorted(os.listdir(tmp_path / "work" / "FAKE")) == built
+
+
+def test_sample_from_restricts_every_source_to_the_partial_set(tmp_path):
+    """A partial set of maps built elsewhere (here 5 of 12 lesions) is
+    compared with the received maps of the same 5 patients."""
+    nib = pytest.importorskip("nibabel")
+    pytest.importorskip("pandas")
+    shape = (8, 8, 8)
+    _atlas(tmp_path, nib, shape)
+    les, rec, part = tmp_path / "lesions", tmp_path / "received", tmp_path / "partial"
+    for d in (les, rec, part):
+        d.mkdir()
+    for i in range(12):
+        v = np.zeros(shape, np.uint8)
+        v[i % 8, :, :] = 1
+        name = f"lesion{i}_NA_NA.nii.gz"
+        nib.save(nib.Nifti1Image(v, np.eye(4)), str(les / name))
+        nib.save(nib.Nifti1Image(v.astype(np.float32) * 0.8, np.eye(4)), str(rec / name))
+        if i < 5:
+            nib.save(nib.Nifti1Image(v.astype(np.float32) * 0.7, np.eye(4)), str(part / name))
+    summ = dpm.main(["--lesions", str(les), "--received", str(rec), "--maps-dir", f"PART={part}",
+                     "--sample-from", str(part), "--n", "100", "--atlas-dir", str(tmp_path / "atlas")])
+    assert set(summ["source"]) == {"received", "PART"} and (summ["n_maps"] == 5).all()

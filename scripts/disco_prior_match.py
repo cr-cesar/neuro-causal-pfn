@@ -22,6 +22,14 @@ with the published one.
 
 A directory of maps already built elsewhere (for example the BCBtoolkit maps)
 enters with --maps-dir LABEL=DIR; only the sampled lesions found in it count.
+--sample-from DIR draws the sample only among the lesions that have a map in
+DIR, so a partial set of maps built elsewhere is compared on its own patients
+(with --n at least its size, all of them):
+
+    python scripts/disco_prior_match.py --lesions "data/Full data/lesions" \\
+        --received "data/Full data/disconnectomes" --maps-dir BCB178=$HOME/Scratch/uclh_disco \\
+        --sample-from $HOME/Scratch/uclh_disco --n 5000 --atlas-dir data/atlases \\
+        --out status/<day>/f42_bcb_match.csv
 
 Output: aggregate enrolment fractions per network only. No file name, map or
 per-patient value is printed or written, and QuickDisco's own output (which
@@ -180,6 +188,8 @@ def main(argv=None):
     ap.add_argument("--received", default=None, help="folder of the received disconnectomes (reference)")
     ap.add_argument("--atlas-dir", required=True, help="folder containing 2mm_parcellations/")
     ap.add_argument("--work", default=os.path.expanduser("~/Scratch/disco_prior_match"))
+    ap.add_argument("--sample-from", default=None,
+                    help="draw the sample only among lesions that have a map in this folder")
     ap.add_argument("--n", type=int, default=200)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--procs", type=int, default=1)
@@ -194,6 +204,11 @@ def main(argv=None):
     lesions_all = list_maps(args.lesions)
     if not lesions_all:
         raise SystemExit("no lesion masks in --lesions")
+    if args.sample_from:
+        have = {lesion_key(f) for f in list_maps(args.sample_from)}
+        lesions_all = [f for f in lesions_all if lesion_key(f) in have]
+        if not lesions_all:
+            raise SystemExit("no lesion in --lesions has a map in --sample-from")
     lesions = sample(lesions_all, args.n, args.seed)
     keys = {lesion_key(f) for f in lesions}
     shape = nib.load(lesions[0]).shape[:3]

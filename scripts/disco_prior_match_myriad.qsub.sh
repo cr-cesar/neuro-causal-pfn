@@ -5,7 +5,8 @@
 #   export PRIORS="V2.P.WB=$HOME/Scratch/fcntm_priors/priors_full_proba_3T_comp9_thr0p01.h5 V2.D.WB=$HOME/Scratch/fcntm_priors/priors_full_deter3T.h5"
 #   qsub -v PRIORS,OUT=status/<day>/f42_prior_match.csv scripts/disco_prior_match_myriad.qsub.sh
 # Optional: N (default 200), RECEIVED (the received maps; default data/Full data/disconnectomes),
-# MAPS_DIRS ("LABEL=DIR ..." for maps built elsewhere), LESIONS, ATLAS_DIR, WORK.
+# MAPS_DIRS ("LABEL=DIR ..." for maps built elsewhere), SAMPLE_FROM (draw the sample
+# only among lesions with a map in that folder), LESIONS, ATLAS_DIR, WORK.
 #
 #$ -N disco-prior
 #$ -l h_rt=12:0:0
@@ -28,6 +29,7 @@ WORK="${WORK:-$HOME/Scratch/disco_prior_match}"
 ARGS=()
 for p in ${PRIORS:-}; do ARGS+=(--priors "$p"); done
 for m in ${MAPS_DIRS:-}; do ARGS+=(--maps-dir "$m"); done
+if [ -n "${SAMPLE_FROM:-}" ]; then ARGS+=(--sample-from "$SAMPLE_FROM"); fi
 python scripts/disco_prior_match.py --lesions "$LESIONS" --received "$RECEIVED" \
     --atlas-dir "$ATLAS_DIR" --work "$WORK" --n "${N:-200}" --procs "${NSLOTS:-4}" \
     --out "$OUT" ${ARGS[@]+"${ARGS[@]}"}
