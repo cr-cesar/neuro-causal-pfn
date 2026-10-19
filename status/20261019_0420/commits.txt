@@ -1,0 +1,2 @@
+38ccffe snapshot 19 Oct: BCB maps reproduce Supplementary Table 2 on all 4,119; Phase 2 cost timings
+576378a leaderboard: recompute the deficit CI from replica_results.csv when a headline lacks it
