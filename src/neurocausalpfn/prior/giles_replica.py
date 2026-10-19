@@ -413,6 +413,23 @@ def isotonic_pehe(tau_hat: np.ndarray, tau: np.ndarray, n_folds: int = 5, seed: 
 # --------------------------------------------------------------------------- #
 # Estimators (one-model / two-model, as in prescription.py)
 # --------------------------------------------------------------------------- #
+BUILTIN_CLASSIFIERS = ("logistic_regression", "extra_trees")
+
+# Extra classifiers (the tabular foundation-model panel of 19 Oct: TabPFN,
+# TabICL in ``neurocausalpfn.pfn.panel``): name -> factory returning an
+# sklearn-style classifier (fit / predict_proba / classes_). They take the
+# one-model and two-model learners exactly like the built-in logistic
+# regression and extra trees and compete in the same headline cell selection,
+# unlike the in-context ESTIMATORS below, which read the whole slice at once.
+CLASSIFIERS: Dict[str, Callable] = {}
+
+
+def register_classifier(name: str, factory: Callable) -> None:
+    if name in BUILTIN_CLASSIFIERS:
+        raise ValueError(f"{name!r} is a built-in classifier")
+    CLASSIFIERS[name] = factory
+
+
 def _classifier(name: str):
     from sklearn.ensemble import ExtraTreesClassifier
     from sklearn.linear_model import LogisticRegression
@@ -420,6 +437,8 @@ def _classifier(name: str):
         return LogisticRegression(max_iter=1000)
     if name == "extra_trees":
         return ExtraTreesClassifier()
+    if name in CLASSIFIERS:
+        return CLASSIFIERS[name]()
     raise ValueError(f"unknown classifier {name!r}")
 
 
@@ -463,8 +482,8 @@ ESTIMATORS: Dict[str, Callable] = {}
 
 
 def register_estimator(name: str, fn: Callable) -> None:
-    if name in ("logistic_regression", "extra_trees"):
-        raise ValueError(f"{name!r} is a built-in classifier")
+    if name in BUILTIN_CLASSIFIERS or name in CLASSIFIERS:
+        raise ValueError(f"{name!r} is a classifier")
     ESTIMATORS[name] = fn
 
 
@@ -593,7 +612,7 @@ def evaluate_representation(Z: np.ndarray, labels_df, pairs: Dict[int, RoiPair],
     # in-context estimators are the slow part of a scoring job (one forward
     # pass per deficit, fold and arm): report each finished fold so that a
     # job killed at its time limit shows how far it got
-    progress = any(c in ESTIMATORS for c in classifiers)
+    progress = any(c in ESTIMATORS or c in CLASSIFIERS for c in classifiers)
     t_start = time.time()
     for k, (tr_idx, te_idx) in enumerate(folds):
         if progress and k:
