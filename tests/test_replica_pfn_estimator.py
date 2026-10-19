@@ -209,3 +209,54 @@ def test_causalpfn_wrapper_caps_its_context_like_the_pfn(monkeypatch):
     est(X, W, Y, rng.normal(size=(5, 10)))
     assert seen["n"] == 64 and est.n_capped == 1 and est.last_info["n_context"] == 64
     np.testing.assert_array_equal(est.est.X_train, cap_context(X.astype(np.float32), W, Y, 64)[0])
+
+
+def test_effect_strata_pick_neighbours_by_estimated_effect_within_the_cap():
+    from neurocausalpfn.pfn.estimator import effect_strata
+
+    rng = np.random.default_rng(0)
+    e_ctx = rng.uniform(-1, 1, 400); W = (rng.random(400) < 0.5).astype(int)
+    e_qry = np.array([-0.9, -0.85, 0.0, 0.9, 0.95])
+    strata = list(effect_strata(e_ctx, W, e_qry, k=20, cap=30))
+    covered = np.concatenate([q for q, _ in strata])
+    assert sorted(covered.tolist()) == list(range(5))             # every query scored once
+    for q_idx, c_idx in strata:
+        assert len(np.unique(c_idx)) == len(c_idx)
+        for w in (0, 1):
+            assert (W[c_idx] == w).sum() <= 30                    # per-arm cap
+        # the chosen rows are the ones nearest in estimated effect to the stratum's queries
+        for q in q_idx:
+            for w in (0, 1):
+                arm = np.flatnonzero(W == w)
+                nearest = arm[np.argsort(np.abs(e_ctx[arm] - e_qry[q]))[:20]]
+                assert set(nearest) <= set(c_idx)
+    # queries far apart in effect never share a stratum when the cap is tight
+    assert len(strata) >= 2
+
+
+def test_pfn_estimator_effect_context_scores_every_query(tmp_path, monkeypatch):
+    """PFN_CONTEXT_SELECT=effect: the context of every query stratum is chosen
+    by estimated effect (CausalPFN's rule) and every query is scored once."""
+    pytest.importorskip("torch")
+    from neurocausalpfn.pfn.estimator import PFNEstimator
+    from neurocausalpfn.train.train_pfn import prototype_config, run_pfn
+
+    cfg = prototype_config()
+    cfg["out_dir"] = str(tmp_path); cfg["pfn"]["iters"] = 2; cfg["pfn"]["batch_size"] = 2
+    cfg["pfn"]["d_x"] = 4; cfg["pfn"]["context_max"] = 32; cfg["pfn"]["n_query"] = 4
+    cfg["device"] = "cpu"
+    run_pfn(cfg)
+    est = PFNEstimator(os.path.join(str(tmp_path), "pfn.pt"), device="cpu", max_queries=5)
+    rng = np.random.default_rng(1)
+    Xtr, Xte = rng.normal(size=(300, 4)), rng.normal(size=(23, 4))
+    W = (rng.random(300) < 0.5).astype(float)
+    Y = np.clip(0.5 + 0.3 * Xtr[:, 0] * W + 0.1 * rng.normal(size=300), 0, 1)
+    monkeypatch.setenv("PFN_CONTEXT_SELECT", "effect")
+    monkeypatch.setenv("PFN_CONTEXT_K", "40")
+    monkeypatch.setenv("PFN_CONTEXT_ARM_CAP", "60")
+    p1, p0 = est(Xtr, W, Y, Xte)
+    assert p1.shape == p0.shape == (23,) and np.isfinite(p1).all() and (0 <= p1).all() and (p1 <= 1).all()
+    assert est.n_strata >= 2                                    # the cap split the queries
+    monkeypatch.delenv("PFN_CONTEXT_SELECT")
+    q1, q0 = est(Xtr, W, Y, Xte)
+    assert q1.shape == (23,) and not np.allclose(p1 - p0, q1 - q0)   # a different context, different answers
