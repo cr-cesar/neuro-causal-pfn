@@ -206,3 +206,18 @@ def test_evaluate_representation_reports_the_effect_decomposition():
     assert {"tau_slope", "tau_hat_pos", "mse_between", "pehe_paper_rescaled"} <= set(res.columns)
     np.testing.assert_allclose(res["mse_between"] + res["mse_within"], res["pehe_paper"] ** 2)
     assert (res[["n_pos", "n_zero", "n_neg"]].sum(axis=1) == res["n_test"]).all()
+
+
+def test_isotonic_pehe_recovers_a_monotone_distortion_but_not_a_shuffle():
+    rng = np.random.default_rng(3)
+    true = rng.choice([0.0, 0.5, 1.0], 600, p=[0.2, 0.6, 0.2]); tau = 2 * true - 1
+    # right order, wrong shape: zeros at 0.1, +1 at 0.4, -1 at -0.2 (plus small noise)
+    tau_hat = np.where(tau > 0, 0.4, np.where(tau < 0, -0.2, 0.1)) + 0.02 * rng.normal(size=600)
+    d = gr.effect_decomposition((1 + tau_hat) / 2, (1 - tau_hat) / 2, true)
+    assert d["pehe_paper_rescaled"] > 0.3            # one factor cannot fix an asymmetric shape
+    assert d["pehe_paper_isotonic"] < 0.1             # a monotone map can
+    # the same values with the groups shuffled: ranking is gone and isotonic cannot recover it
+    bad = rng.permutation(tau_hat)
+    d2 = gr.effect_decomposition((1 + bad) / 2, (1 - bad) / 2, true)
+    assert d2["pehe_paper_isotonic"] > 0.6
+    assert np.isnan(gr.isotonic_pehe(np.zeros(6), np.ones(6)))

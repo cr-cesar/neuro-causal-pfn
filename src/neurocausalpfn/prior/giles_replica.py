@@ -381,7 +381,33 @@ def effect_decomposition(p1: np.ndarray, p0: np.ndarray, true_ITE: np.ndarray) -
     b = float((tau_hat * tau).sum() / ss) if ss > 0 else 0.0
     out["rescale_factor"] = b
     out["pehe_paper_rescaled"] = pehe(b * tau_hat, tau)
+    out["pehe_paper_isotonic"] = isotonic_pehe(tau_hat, tau)
     return out
+
+
+def isotonic_pehe(tau_hat: np.ndarray, tau: np.ndarray, n_folds: int = 5, seed: int = 0) -> float:
+    """``pehe_paper`` after the best monotone (isotonic) mapping of tau_hat
+    onto tau, cross-fitted over ``n_folds`` random folds of the slice so the
+    mapping is never fitted on the patients it is applied to. The monotone
+    mapping keeps the estimator's ordering of patients and lets zeros stay at
+    zero while large effects stretch, so this is the PEHE the ranking alone
+    could reach; the gap between it and ``pehe_paper_rescaled`` is what a
+    non-linear reshaping of the effects could recover, and the gap between it
+    and a competitor's is ranking. nan when the slice is too small."""
+    from sklearn.isotonic import IsotonicRegression
+
+    tau_hat, tau = np.asarray(tau_hat, dtype=float), np.asarray(tau, dtype=float)
+    n = len(tau)
+    if n < 2 * n_folds or tau.std() == 0:
+        return float("nan")
+    perm = np.random.default_rng(seed).permutation(n)
+    out = np.empty(n)
+    for k in range(n_folds):
+        te = perm[k::n_folds]
+        tr = np.setdiff1d(perm, te)
+        iso = IsotonicRegression(out_of_bounds="clip").fit(tau_hat[tr], tau[tr])
+        out[te] = iso.predict(tau_hat[te])
+    return pehe(out, tau)
 
 
 # --------------------------------------------------------------------------- #

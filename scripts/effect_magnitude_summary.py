@@ -29,9 +29,10 @@ import numpy as np
 import pandas as pd
 
 METRICS = ["pehe_paper", "prescriptive_balacc", "tau_hat_pos", "tau_hat_zero", "tau_hat_neg",
-           "tau_slope", "mse_between", "mse_within", "rescale_factor", "pehe_paper_rescaled"]
+           "tau_slope", "mse_between", "mse_within", "rescale_factor", "pehe_paper_rescaled",
+           "pehe_paper_isotonic"]
 BY_RUN = ["pehe_paper", "prescriptive_balacc", "tau_slope", "tau_hat_pos", "tau_hat_neg",
-          "between_share", "pehe_paper_rescaled"]
+          "between_share", "pehe_paper_rescaled", "pehe_paper_isotonic"]
 
 
 def find_results(paths: List[str]) -> List[str]:
@@ -100,6 +101,8 @@ def main(argv=None) -> pd.DataFrame:
     rows, skipped = [], 0
     for f in files:
         df = pd.read_csv(f)
+        if "pehe_paper_isotonic" not in df.columns:
+            df["pehe_paper_isotonic"] = np.nan          # scored before the isotonic column existed
         if not set(METRICS) <= set(df.columns):
             skipped += 1
             continue
@@ -110,7 +113,8 @@ def main(argv=None) -> pd.DataFrame:
     per = pd.DataFrame(rows).sort_values(["run", "classifier", "learner", "encoder_seed"])
     runs = by_run(per)
     cols = ["run", "classifier", "learner", "n_seeds", "pehe_paper", "prescriptive_balacc",
-            "tau_slope", "tau_hat_pos", "tau_hat_neg", "between_share", "pehe_paper_rescaled"]
+            "tau_slope", "tau_hat_pos", "tau_hat_neg", "between_share", "pehe_paper_rescaled",
+            "pehe_paper_isotonic"]
     if runs.groupby("run")["representation"].nunique().max() > 1:
         # several representations under one run (e.g. a shared output root):
         # show the eid, label and channel so the rows can be told apart
