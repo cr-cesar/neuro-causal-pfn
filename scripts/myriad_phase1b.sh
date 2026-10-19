@@ -286,8 +286,8 @@ PY
     # TAG, family and architecture do not share a checkpoint
     tag="${TAG:-pilot}"; run="${tag}-${fam}${ctxsuf}${archsuf}${VARIANT_TAG:+-$VARIANT_TAG}"; out="outputs/pfn_reduced_${run}"
     ensure_cache "$tag"
-    tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" PRIOR_HYPER="${PRIOR_HYPER:-}" LR_SCHEDULE="${LR_SCHEDULE:-constant}" BATCH="${BATCH:-}" CONTEXT_MAX="${CONTEXT_MAX:-}" AUGMENT="${AUGMENT:-}" qsub -terse -N pfn-$run ${hold[@]+"${hold[@]}"} \
-         -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="${SEED:-0}",ARCH="${ARCH:-tabicl}",FAMILY="$fam",FAMILY_WEIGHTS,PRIOR_HYPER,LR_SCHEDULE,BATCH,CONTEXT_MAX,AUGMENT,CONTEXT_POOL="$ctx" \
+    tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" PRIOR_HYPER="${PRIOR_HYPER:-}" LR_SCHEDULE="${LR_SCHEDULE:-constant}" BATCH="${BATCH:-}" CONTEXT_MAX="${CONTEXT_MAX:-}" AUGMENT="${AUGMENT:-}" CONTEXT_REPLACE="${CONTEXT_REPLACE:-}" STANDARDIZE="${STANDARDIZE:-}" qsub -terse -N pfn-$run ${hold[@]+"${hold[@]}"} \
+         -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="${SEED:-0}",ARCH="${ARCH:-tabicl}",FAMILY="$fam",FAMILY_WEIGHTS,PRIOR_HYPER,LR_SCHEDULE,BATCH,CONTEXT_MAX,AUGMENT,CONTEXT_REPLACE,STANDARDIZE,CONTEXT_POOL="$ctx" \
          scripts/train_pfn_myriad.qsub.sh)
     cd "$PERFOLD"
     # the checkpoint is scored on the headline encoder's per-fold latents: E1
@@ -347,9 +347,9 @@ PY
     tjs=""
     for k in $folds; do
       out="outputs/pfn_pf_${run}/fold$k"
-      tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" PRIOR_HYPER="$hyper" LR_SCHEDULE="${LR_SCHEDULE:-constant}" BATCH="${BATCH:-}" CONTEXT_MAX="${CONTEXT_MAX:-}" AUGMENT="${AUGMENT:-}" \
+      tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" PRIOR_HYPER="$hyper" LR_SCHEDULE="${LR_SCHEDULE:-constant}" BATCH="${BATCH:-}" CONTEXT_MAX="${CONTEXT_MAX:-}" AUGMENT="${AUGMENT:-}" CONTEXT_REPLACE="${CONTEXT_REPLACE:-}" STANDARDIZE="${STANDARDIZE:-}" \
            qsub -terse -N pf$k-$tag -hold_jid "$cj" \
-           -v CACHE="$pools/fold$k.npz",OUT="$out",ITERS="${ITERS:-20000}",SEED="$seed",ARCH="${ARCH:-linear}",FAMILY="$fam",FAMILY_WEIGHTS,PRIOR_HYPER,LR_SCHEDULE,BATCH,CONTEXT_MAX,AUGMENT,CONTEXT_POOL="$ctx" \
+           -v CACHE="$pools/fold$k.npz",OUT="$out",ITERS="${ITERS:-20000}",SEED="$seed",ARCH="${ARCH:-linear}",FAMILY="$fam",FAMILY_WEIGHTS,PRIOR_HYPER,LR_SCHEDULE,BATCH,CONTEXT_MAX,AUGMENT,CONTEXT_REPLACE,STANDARDIZE,CONTEXT_POOL="$ctx" \
            scripts/train_pfn_myriad.qsub.sh)
       tjs="${tjs:+$tjs,}$tj"
       echo "  fold $k: pfn $tj -> $out/pfn.pt"

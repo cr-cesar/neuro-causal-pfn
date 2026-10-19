@@ -196,3 +196,28 @@ def test_from_cache_matches_the_in_memory_cohort(atlas, pool, tmp_path):
     with pytest.raises(ValueError):
         np.savez(tmp_path / "bad.npz", overlaps=mem.overlaps[:5], centroids=mem.centroids, volumes=mem.volumes)
         NeuroPriorCohort.from_cache(atlas, str(tmp_path / "bad.npz"), family="giles")
+
+
+def test_context_without_replacement_and_per_context_standardisation(atlas, pool):
+    """Audit of 19 Oct: distinct lesions per context, capped at the slice, and
+    standardisation with the context's own statistics (as scoring does)."""
+    base = dict(family="giles", seed=5, n_context=40, n_query=4, augment=True)
+    with_rep = NeuroPriorCohort(atlas, pool, context_replace=True, **base)
+    no_rep = NeuroPriorCohort(atlas, pool, context_replace=False, standardize="context", **base)
+    assert with_rep.sample_batch(2, n_context=40)["Xc"].shape[1] == 40
+    b = no_rep.sample_batch(3, n_context=40)
+    for Xc, info in zip(b["Xc"], b["processes"]):
+        assert len(Xc) <= min(40, info["n_slice"])                       # never beyond the slice
+        assert len(np.unique(Xc.round(5), axis=0)) == len(Xc)             # distinct rows
+        assert np.linalg.norm(Xc.mean(0)) < 1e-6                           # centred before the rotation
+    # without the rotation every column of a context has unit sd, except the
+    # constant ones of the synthetic pool, which standardise to zero
+    plain = NeuroPriorCohort(atlas, pool, context_replace=False, standardize="context",
+                             **{**base, "augment": False})
+    Xc = plain.sample_batch(1, n_context=40)["Xc"][0]
+    sd = Xc.std(0)
+    assert np.all((np.abs(sd - 1) < 1e-3) | (sd < 1e-3)) and (np.abs(sd - 1) < 1e-3).any()
+    # the pool itself is left raw in context mode (no pool standardisation)
+    assert not np.allclose(no_rep.X.mean(0), 0)
+    with pytest.raises(ValueError):
+        NeuroPriorCohort(atlas, pool, standardize="slice", **base)

@@ -97,6 +97,11 @@ class PFNEstimator:
         if Xtr.shape[1] != self.d_x:
             raise ValueError(f"checkpoint expects d_x={self.d_x}, got {Xtr.shape[1]}")
         Xtr, W, Y = self._cap_context(Xtr, W, Y)
+        rep = int(os.environ.get("PFN_CONTEXT_REPEAT", "1") or 1)
+        if rep > 1:
+            # audit of 19 Oct, point 1: sensitivity to duplicated context rows
+            # (training contexts drawn with replacement repeat lesions)
+            Xtr, W, Y = np.repeat(Xtr, rep, axis=0), np.repeat(np.asarray(W), rep), np.repeat(np.asarray(Y), rep)
         if self.standardize:
             mu, sd = Xtr.mean(0, keepdims=True), Xtr.std(0, keepdims=True) + 1e-6
             Xtr, Xte = (Xtr - mu) / sd, (Xte - mu) / sd

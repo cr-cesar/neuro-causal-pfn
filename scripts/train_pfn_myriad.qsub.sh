@@ -46,7 +46,9 @@ PRIOR_HYPER="${PRIOR_HYPER:-}"
 LR_SCHEDULE="${LR_SCHEDULE:-constant}"   # constant | cosine (warmup 2 % then cosine decay to 0.1 lr)
 BATCH="${BATCH:-}"                        # batch size override (default: the config's)
 CONTEXT_MAX="${CONTEXT_MAX:-}"            # training context override, e.g. 3000 (default: the family's cap, 1024 with susceptible sampling)
-AUGMENT="${AUGMENT:-}"                    # 0 disables the random rotation of the pool latents (H5 of the Phase-2 audit)    # theory prior extensions, e.g. "two_arms=1 effect_scale=0.2:1 binary_outcome=0.5"
+AUGMENT="${AUGMENT:-}"                    # 0 disables the random rotation of the pool latents (H5 of the Phase-2 audit)
+CONTEXT_REPLACE="${CONTEXT_REPLACE:-}"    # 0 draws distinct lesions per context, capped at the slice (audit of 19 Oct, point 1)
+STANDARDIZE="${STANDARDIZE:-}"            # context: standardise each training context with its own statistics, as scoring does (point 2)    # theory prior extensions, e.g. "two_arms=1 effect_scale=0.2:1 binary_outcome=0.5"
 
 python - <<PY
 import json
@@ -61,6 +63,8 @@ cfg["pfn"]["lr_schedule"] = "$LR_SCHEDULE"
 if "$BATCH": cfg["pfn"]["batch_size"] = int("$BATCH")
 if "$CONTEXT_MAX": cfg["pfn"]["context_max"] = int("$CONTEXT_MAX")
 if "$AUGMENT": cfg["prior"]["augment"] = bool(int("$AUGMENT"))
+if "$CONTEXT_REPLACE": cfg["prior"]["context_replace"] = bool(int("$CONTEXT_REPLACE"))
+if "$STANDARDIZE": cfg["prior"]["standardize"] = "$STANDARDIZE"
 cfg["prior"]["cache"] = "$CACHE"; cfg["prior"]["atlas_dir"] = "data/atlases"
 cfg["prior"]["hyper"] = {**cfg["prior"].get("hyper", {}), **parse_hyper_opts("$PRIOR_HYPER")}
 print(json.dumps(cfg, indent=1, default=str))
