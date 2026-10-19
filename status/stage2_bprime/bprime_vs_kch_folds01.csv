@@ -1,0 +1,8 @@
+model,seed,folds,n_deficits,pehe_paper,prescriptive_balacc,tau_slope,pehe_paper_rescaled
+per-fold UCLH pool (B'),0,"0,1",16,0.3997,0.8665,0.3711,0.3579
+"KCH pool, headroom, full context",0,"0,1",16,0.3806,0.8669,0.4079,0.3532
+per-fold UCLH pool (B'),1,"0,1",16,0.407,0.8553,0.3444,0.3598
+"KCH pool, headroom, full context",1,"0,1",16,0.3785,0.863,0.4196,0.3584
+per-fold UCLH pool (B'),2,"0,1",16,0.3879,0.8622,0.4044,0.3628
+"KCH pool, headroom, full context",2,"0,1",16,0.3825,0.8537,0.4003,0.3537
+CausalPFN,0-2,"0,1",16,0.2695,0.8711,0.6969,0.2671
