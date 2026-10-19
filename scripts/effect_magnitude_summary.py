@@ -111,6 +111,12 @@ def main(argv=None) -> pd.DataFrame:
     runs = by_run(per)
     cols = ["run", "classifier", "learner", "n_seeds", "pehe_paper", "prescriptive_balacc",
             "tau_slope", "tau_hat_pos", "tau_hat_neg", "between_share", "pehe_paper_rescaled"]
+    if runs.groupby("run")["representation"].nunique().max() > 1:
+        # several representations under one run (e.g. a shared output root):
+        # show the eid, label and channel so the rows can be told apart
+        runs = runs.assign(rep=runs["representation"].str.split("|").str[:2].str.join("|")
+                           + "|" + runs["representation"].str.split("|").str[4])
+        cols.insert(1, "rep")
     with pd.option_context("display.width", 200, "display.max_colwidth", 60):
         print(runs[cols].round(3).to_string(index=False))
     if args.out:
