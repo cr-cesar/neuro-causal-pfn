@@ -9,6 +9,7 @@
 #   bash scripts/myriad_phase1b.sh repair            # resubmit published-budget folds that died (time limit after a slow start) + their scoring
 #   bash scripts/myriad_phase1b.sh perfold E1 E3 E11b    # published-budget (32-epoch) per-fold training into PUB_ROOT, independent jobs, scoring chained
 #   REP=outputs_perfold_pub/E1/E1/seed0/folds TAG=e1 FOLDS="0 1" PRIOR_FAMILY=theory bash scripts/myriad_phase1b.sh phase2pf   # one PFN per fold on that fold's UCLH training side
+#   CONTEXT_MAX=3000 (training context; default 1024 with susceptible sampling) and AUGMENT=0 (no latent rotation) apply to phase2, e12 and phase2pf
 #   ONLY="E4[25+25] E6[fusion_mode=both] E7b" bash scripts/myriad_phase1b.sh perfold E4 E6 E7b   # only those variants
 #   POOL_IMAGES=<disco dir> bash scripts/myriad_phase1b.sh pool   # pool latents with the published-budget E1 (fold-0 encoder), one GPU job
 #   PRIOR_FAMILY=<theory|giles|mixture> TAG=<tag> [POOL_IMAGES=<dir> POOL_LATENTS=<npz> HOLD_JID=<job>] bash scripts/myriad_phase1b.sh phase2   # [cache ->] reduced PFN (GPU) -> scored on E1 per-fold (published budget)
@@ -285,8 +286,8 @@ PY
     # TAG, family and architecture do not share a checkpoint
     tag="${TAG:-pilot}"; run="${tag}-${fam}${ctxsuf}${archsuf}${VARIANT_TAG:+-$VARIANT_TAG}"; out="outputs/pfn_reduced_${run}"
     ensure_cache "$tag"
-    tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" PRIOR_HYPER="${PRIOR_HYPER:-}" LR_SCHEDULE="${LR_SCHEDULE:-constant}" BATCH="${BATCH:-}" qsub -terse -N pfn-$run ${hold[@]+"${hold[@]}"} \
-         -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="${SEED:-0}",ARCH="${ARCH:-tabicl}",FAMILY="$fam",FAMILY_WEIGHTS,PRIOR_HYPER,LR_SCHEDULE,BATCH,CONTEXT_POOL="$ctx" \
+    tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" PRIOR_HYPER="${PRIOR_HYPER:-}" LR_SCHEDULE="${LR_SCHEDULE:-constant}" BATCH="${BATCH:-}" CONTEXT_MAX="${CONTEXT_MAX:-}" AUGMENT="${AUGMENT:-}" qsub -terse -N pfn-$run ${hold[@]+"${hold[@]}"} \
+         -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="${SEED:-0}",ARCH="${ARCH:-tabicl}",FAMILY="$fam",FAMILY_WEIGHTS,PRIOR_HYPER,LR_SCHEDULE,BATCH,CONTEXT_MAX,AUGMENT,CONTEXT_POOL="$ctx" \
          scripts/train_pfn_myriad.qsub.sh)
     cd "$PERFOLD"
     # the checkpoint is scored on the headline encoder's per-fold latents: E1
@@ -346,9 +347,9 @@ PY
     tjs=""
     for k in $folds; do
       out="outputs/pfn_pf_${run}/fold$k"
-      tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" PRIOR_HYPER="$hyper" LR_SCHEDULE="${LR_SCHEDULE:-constant}" BATCH="${BATCH:-}" \
+      tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" PRIOR_HYPER="$hyper" LR_SCHEDULE="${LR_SCHEDULE:-constant}" BATCH="${BATCH:-}" CONTEXT_MAX="${CONTEXT_MAX:-}" AUGMENT="${AUGMENT:-}" \
            qsub -terse -N pf$k-$tag -hold_jid "$cj" \
-           -v CACHE="$pools/fold$k.npz",OUT="$out",ITERS="${ITERS:-20000}",SEED="$seed",ARCH="${ARCH:-linear}",FAMILY="$fam",FAMILY_WEIGHTS,PRIOR_HYPER,LR_SCHEDULE,BATCH,CONTEXT_POOL="$ctx" \
+           -v CACHE="$pools/fold$k.npz",OUT="$out",ITERS="${ITERS:-20000}",SEED="$seed",ARCH="${ARCH:-linear}",FAMILY="$fam",FAMILY_WEIGHTS,PRIOR_HYPER,LR_SCHEDULE,BATCH,CONTEXT_MAX,AUGMENT,CONTEXT_POOL="$ctx" \
            scripts/train_pfn_myriad.qsub.sh)
       tjs="${tjs:+$tjs,}$tj"
       echo "  fold $k: pfn $tj -> $out/pfn.pt"
