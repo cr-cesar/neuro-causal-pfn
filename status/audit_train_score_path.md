@@ -58,7 +58,7 @@ In the theory family nearly the whole pool counts as susceptible (coh:293) and t
 
 Probe of 13 October, family giles:
 
-| checkpoint | corr in own family | corr in giles | mean prediction | mean truth |
+| checkpoint | corr, theory family | corr, giles family | mean prediction | mean truth |
 |---|---|---|---|---|
 | theory linear | 0.81 | 0.48 | 0.052 | 0.150 |
 | mixture linear | 0.78 | 0.59 | 0.114 | 0.150 |
