@@ -10,6 +10,12 @@
 #   bash scripts/panel_venv_myriad.sh            # create or repair ~/venvs/panel
 #   bash scripts/panel_venv_myriad.sh check      # import check only
 set -euo pipefail
+# "module" is a shell function of login shells; a plain "bash script" lacks it
+if ! command -v module >/dev/null 2>&1; then
+    for f in /etc/profile.d/modules.sh "${MODULESHOME:-/usr/share/Modules}/init/bash"; do
+        [ -r "$f" ] && { set +u; source "$f"; set -u; break; }
+    done
+fi
 module load python3/3.11
 VENV="${VENV:-$HOME/venvs/panel}"
 MAIN="${MAIN:-$HOME/Scratch/neuro-causal-pfn}"
