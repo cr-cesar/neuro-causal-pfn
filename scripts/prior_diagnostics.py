@@ -71,6 +71,10 @@ def _stats(mu0, raw_a, raw_b, mu_a, mu_b, mask) -> Dict[str, float]:
             "frac_clip_B": float(np.mean(raw_b[mask] > top)),
             "frac_clip_any": float(np.mean((raw_a[mask] > top) | (raw_b[mask] > top))),
             "mean_abs_cate_raw": abs_raw, "mean_abs_cate": abs_clip,
+            # Prior-and-context tab, Q2: the share of patients whose effect, as
+            # the prior uses it, exceeds the outcome noise
+            "frac_abs_cate_above_0.05": float(np.mean(np.abs(cate) > 0.05)),
+            "frac_abs_cate_above_0.10": float(np.mean(np.abs(cate) > 0.10)),
             "effect_lost_rel": float(1.0 - abs_clip / abs_raw) if abs_raw > 1e-9 else 0.0}
 
 
