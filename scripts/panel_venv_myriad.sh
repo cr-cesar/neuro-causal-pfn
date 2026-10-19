@@ -38,10 +38,11 @@ else
 fi
 
 python - <<'EOF'
+from importlib.metadata import version
 import numpy, scipy, sklearn, torch, tabpfn, tabicl, neurocausalpfn, ncpfold
 print(f"torch {torch.__version__} cuda {torch.version.cuda} available {torch.cuda.is_available()}")
 print(f"numpy {numpy.__version__} scipy {scipy.__version__} sklearn {sklearn.__version__} "
-      f"tabpfn {tabpfn.__version__} tabicl {tabicl.__version__}")
+      f"tabpfn {version('tabpfn')} tabicl {version('tabicl')}")
 from tabpfn import TabPFNClassifier
 from tabicl import TabICLClassifier
 from neurocausalpfn.pfn.panel import PANEL
