@@ -1,0 +1,12 @@
+qacct -d 10 -j 'p*' (one scan) ...
+   89767    node-l00a-001 wait 11.15 h  run  0.01 h  train   -   h  mem 0.000B
+  144668    node-d00a-016 wait  0.05 h  run  0.05 h  train   -   h  mem 338.672MB
+  144826    node-d00a-234 wait  0.07 h  run  0.26 h  train   -   h  mem 482.945MB
+queue wait : median 0.07 h, min 0.05, max 11.15 (n=3)
+run time   : median 0.05 h, min 0.01, max 0.26 (n=3)
+train+encode printed by the trainer: n/a
+jobs running at once: peak 1, mean 0.0 over 134.3 h of wall clock
+nodes: node-l00a-001 x1, node-d00a-016 x1, node-d00a-234 x1
+wrote outputs/prior_cache/uclh_disco_x.npz: 4119 disconnectome images, 16 networks, 96 % hit at least one subnetwork above 5 %; per-network responsive fraction min/median/max 0.120/0.372/0.869, extra channels network / receptor / genetics
+wrote outputs/prior_cache/kch_e1_32d_x.npz: 1207 images, extra channels added; whole-network overlap > 5 % in 99.0 % of lesions
+1207 images | 1 checkpoint(s) | device cuda
