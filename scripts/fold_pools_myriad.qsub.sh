@@ -18,7 +18,7 @@ trap 'exit 100' ERR
 module load python3/3.11
 source ~/venvs/neuro/bin/activate
 
-CACHE="${CACHE:?set CACHE to the cohort's anatomy cache}"
+CACHE="${CACHE:?set CACHE to the anatomy cache of the cohort}"
 FOLD_DIR="${FOLD_DIR:?set FOLD_DIR to the folder of fold<k>.npz files}"
 OUT_DIR="${OUT_DIR:?set OUT_DIR}"
 ARGS=()
