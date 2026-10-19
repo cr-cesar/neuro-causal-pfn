@@ -1,0 +1,5 @@
+context,batch,status,peak_gb,s_per_iter,device,arch
+1024,4,ok,0.54,0.026,NVIDIA A100 80GB PCIe,linear
+2048,4,ok,0.99,0.06,NVIDIA A100 80GB PCIe,linear
+3000,4,ok,1.39,0.111,NVIDIA A100 80GB PCIe,linear
+4119,4,ok,2.25,0.19,NVIDIA A100 80GB PCIe,linear
