@@ -1,0 +1,2 @@
+label_a,label_b,n_deficits,n_excluded_nan,mean_a,mean_b,diff_mean,diff_ci_low,diff_ci_high,diff_sd,n_a_lower,n_b_lower,paired_t,paired_t_p,wilcoxon_w,wilcoxon_p
+ctx3000,headroom 1024,16,0,0.36809163275324186,0.37814193137141605,-0.010050298618174223,-0.013344699024559804,-0.006755898211788642,0.006182460031951793,16,0,-6.50245925811597,9.987622162203256e-06,0.0,3.0517578125e-05
