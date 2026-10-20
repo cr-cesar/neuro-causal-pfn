@@ -25,7 +25,22 @@ done
 python scripts/hash_cache_names.py --src outputs/latents_pf_bcb --dst "$DEST/bundle/outputs"
 cp -r data/atlases "$DEST/bundle/data/"
 cp "$JOBS" "$DEST/bundle/jobs/"
-cp docs/RUN_ELSEWHERE.md "$DEST/bundle/"
+cp docs/RUN_ELSEWHERE.md scripts/START.sh "$DEST/bundle/"
+if [ -n "${FULL:-}" ]; then
+    # FULL=1: a machine with no internet at run time also gets the code and
+    # every wheel. PY (default 3.11) is the other machine's Python; the wheels
+    # are manylinux2014 (glibc 2.17 or newer), CUDA 11.8 build of torch.
+    # the code of the development branch (the clone's HEAD may be another branch)
+    CODE_REF="${CODE_REF:-origin/claude/phase-1-vae-encoder-f02ugc}"
+    git fetch -q origin "${CODE_REF#origin/}"
+    git archive --format=tar.gz --prefix=neuro-causal-pfn/ -o "$DEST/bundle/code.tgz" "$CODE_REF"
+    PY="${PY:-3.11}"; PYTAG="cp${PY/./}"
+    grep -v -E '^-e|^\s*#|^\s*$' requirements.txt > "$DEST/requirements.download.txt"
+    pip download -q --only-binary :all: --python-version "$PY" --implementation cp --abi "$PYTAG" \
+        --platform manylinux2014_x86_64 --platform manylinux_2_17_x86_64 --platform linux_x86_64 --platform any \
+        -d "$DEST/bundle/wheels" -r "$DEST/requirements.download.txt" pip "setuptools>=61" wheel
+    echo "wheels for Python $PY: $(ls "$DEST/bundle/wheels" | wc -l) files, $(du -sh "$DEST/bundle/wheels" | cut -f1)"
+fi
 # nothing identifiable: no nifti, no csv with names, and a check on the npz keys
 if find "$DEST/bundle" -iname '*.nii*' -path '*outputs*' | grep -q .; then echo "image files in the bundle: stop"; exit 2; fi
 python - "$DEST/bundle" <<'EOF'

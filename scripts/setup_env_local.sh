@@ -5,7 +5,8 @@
 # 11.8 from the PyTorch index and the project in editable mode. Needs
 # Python 3.10 or 3.11 on PATH as python3 (or set PYTHON).
 #
-#   bash scripts/setup_env_local.sh            # install
+#   bash scripts/setup_env_local.sh            # install from the internet
+#   WHEELS=bundle/wheels bash scripts/setup_env_local.sh   # install offline from the bundle's wheels
 #   bash scripts/setup_env_local.sh check      # import and GPU check only
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -16,8 +17,16 @@ if [ "${1:-}" != "check" ]; then
         || { echo "need Python 3.10 or 3.11 (set PYTHON=/path/to/python3.11)"; exit 2; }
     [ -d "$VENV" ] || "$PYTHON" -m venv "$VENV"
     source "$VENV/bin/activate"
-    pip install -q -U pip
-    pip install -q -r requirements.txt
+    if [ -n "${WHEELS:-}" ]; then
+        # offline: every wheel comes from the bundle (scripts/make_bundle.sh FULL=1)
+        pip install -q --no-index --find-links "$WHEELS" -U pip setuptools wheel
+        # --no-build-isolation: the editable install of the project builds with
+        # the setuptools just installed instead of downloading one
+        pip install -q --no-index --find-links "$WHEELS" --no-build-isolation -r requirements.txt
+    else
+        pip install -q -U pip
+        pip install -q -r requirements.txt
+    fi
 else
     source "$VENV/bin/activate"
 fi
