@@ -296,7 +296,9 @@ def _build_prior(cfg: Dict, seed_offset: int = 0):
             # sampling over the whole pool
             kw = dict(seed=seed, n_context=p["context_max"], n_query=p["n_query"], hyper=hyper,
                       augment=bool(pr.get("augment", True)), family=family,
-                      context_pool=pr.get("context_pool", "susceptible"))
+                      context_pool=pr.get("context_pool", "susceptible"),
+                      context_replace=bool(pr.get("context_replace", True)),
+                      standardize=pr.get("standardize", "pool"))
             if family == "mixture":
                 kw["hyper_giles"] = HyperPrior(**_as_ranges(pr.get("hyper_giles", {})))
                 kw["family_weights"] = tuple(pr.get("family_weights", (0.5, 0.5)))

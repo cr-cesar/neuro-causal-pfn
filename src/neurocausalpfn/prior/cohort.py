@@ -175,10 +175,20 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
                  max_tries: int = 64, augment: bool = True, cache: Optional[Dict] = None,
                  family: str = "theory", hyper_giles=None,
                  family_weights: Sequence[float] = (0.5, 0.5), context_pool: str = "susceptible",
-                 min_slice: int = 32):
+                 min_slice: int = 32, context_replace: bool = True, standardize: str = "pool"):
         from .intersynth_theory import TheoryHyperPrior
         from .neuro_prior import HyperPrior
 
+        # audit of 19 Oct: (i) a context drawn with replacement shows the same
+        # patient under both arms, which never happens at scoring;
+        # context_replace=False draws distinct lesions and caps the context at
+        # the slice; (ii) scoring standardises with the context's statistics
+        # while training standardised the pool once; standardize="context"
+        # does the same in training, so the two paths match by construction.
+        self.context_replace = bool(context_replace)
+        if standardize not in ("pool", "context"):
+            raise ValueError("standardize must be 'pool' or 'context'")
+        self.standardize = standardize
         if family not in FAMILIES:
             raise ValueError(f"unknown prior family {family!r}; choose from {FAMILIES}")
         self.family = family
@@ -238,7 +248,7 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
         # applies its own random orthogonal rotation to context and queries;
         # at scoring time PFNEstimator standardises with the context statistics.
         self.augment = bool(augment)
-        if self.augment:
+        if self.augment and self.standardize == "pool":
             mu, sd = self.X.mean(0, keepdims=True), self.X.std(0, keepdims=True) + 1e-6
             self.X = (self.X - mu) / sd
 
@@ -341,8 +351,14 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
                 # length from the rest of the slice, with replacement
                 perm = sl[self.rng.permutation(len(sl))]
                 qi, rest = perm[: self.n_query], perm[self.n_query:]
-                ci = rest[self.rng.integers(0, len(rest), size=n_context)]
+                if self.context_replace:
+                    ci = rest[self.rng.integers(0, len(rest), size=n_context)]
+                else:
+                    ci = rest[: n_context]                  # distinct lesions, at most the slice
             Xc, Xq = self.X[ci], self.X[qi]
+            if self.standardize == "context":
+                mu, sd = Xc.mean(0, keepdims=True), Xc.std(0, keepdims=True) + 1e-6
+                Xc, Xq = (Xc - mu) / sd, (Xq - mu) / sd
             if self.augment:
                 R = self._rotation(); Xc, Xq = Xc @ R, Xq @ R
             if fam == "theory":

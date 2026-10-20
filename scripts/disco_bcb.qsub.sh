@@ -15,6 +15,9 @@
 #        -v BCB=$BCB,TRACKS=$TRACKS,LESIONS=$HOME/Scratch/kch_clean,OUT=$HOME/Scratch/kch_disco,CHUNK=$CH \
 #        scripts/disco_bcb.qsub.sh
 #
+# The tool's own output goes to $OUT/logs/task_<job>_<task>.txt only (it can
+# name the lesions); the job log prints counts and the time per lesion.
+#
 # Calibration first: run 50 training lesions and compare with the reference
 # maps (scripts/compare_disconnectomes.py) before spending compute on a cohort.
 #
@@ -56,10 +59,14 @@ done
 
 ntrk=$( (ls "$TRACKS"/*.trk "$TRACKS"/*.bcbtrk 2>/dev/null || true) | wc -l)   # no .bcbtrk is fine
 echo "task $SGE_TASK_ID: $todo lesions | $ntrk tractograms | threshold $THRESHOLD | $(date)"
+logf="$OUT/logs/task_${JOB_ID:-x}_${SGE_TASK_ID}.txt"
+t0=$(date +%s)
 cd "$BCB"
-python -m bcbtoolkit disconnectome -l "$work/in" -r "$work/out" \
-    --threshold "$THRESHOLD" --tracks "$TRACKS" --batch-size "$todo" \
-    2>&1 | tee "$OUT/logs/task_${SGE_TASK_ID}.txt"
+if ! python -m bcbtoolkit disconnectome -l "$work/in" -r "$work/out" \
+        --threshold "$THRESHOLD" --tracks "$TRACKS" --batch-size "$todo" > "$logf" 2>&1; then
+    echo "task $SGE_TASK_ID: bcbtoolkit failed, see $logf"; exit 100
+fi
 
 cp "$work/out"/*.nii* "$OUT"/
-echo "task $SGE_TASK_ID: wrote $(ls "$work/out"/*.nii* | wc -l) maps to $OUT | $(date)"
+n=$(ls "$work/out"/*.nii* | wc -l); dt=$(( $(date +%s) - t0 ))
+echo "task $SGE_TASK_ID: wrote $n maps to $OUT in $dt s ($(( dt / todo )) s per lesion) | $(date)"
