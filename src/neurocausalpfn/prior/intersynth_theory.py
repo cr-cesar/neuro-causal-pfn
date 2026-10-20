@@ -97,6 +97,18 @@ class TheoryHyperPrior:
     d_source: str = "split_1"
     s_source: str = "split_2"
     s_b_source: str = ""
+    # effect shapes (Phase 2, 20 Oct, the mixed prior Cesar asked for): per
+    # process one of three shapes is drawn with these weights, in the order
+    # (continuous, discrete, null). "continuous" is the design's prior as
+    # above. "discrete" binarises every susceptibility at a per-process pool
+    # quantile (a fraction disc_frac of the pool is susceptible to each arm),
+    # so the CATE takes the values 0 and +/- effect * D as in the virtual
+    # trial, and its size is calibrated to disc_effect_scale instead of
+    # effect_scale. "null" has no effect at all (beta = 0). The default
+    # (1, 0, 0) reproduces the prior exactly.
+    shape_weights: Tuple[float, float, float] = (1.0, 0.0, 0.0)
+    disc_frac: Tuple[float, float] = (0.2, 0.6)
+    disc_effect_scale: Optional[Tuple[float, float]] = (0.5, 1.0)
 
     def uses_extra_channels(self) -> bool:
         return (self.d_source, self.s_source, self.s_b_source) != ("split_1", "split_2", "")
@@ -155,8 +167,20 @@ class InterSynthTheoryDGP:
         self.two_arms = bool(rng.uniform() < float(h.two_arms))
         self.w_s2 = np.asarray(rng.dirichlet(conc), dtype=np.float64) if self.two_arms else None
         self._col_b = int(getattr(h, "s_b_column", 0))
-        self.effect_target = (float(np.exp(rng.uniform(np.log(h.effect_scale[0]), np.log(h.effect_scale[1]))))
-                              if h.effect_scale else None)
+        wts = np.asarray(getattr(h, "shape_weights", (1.0, 0.0, 0.0)), dtype=float)
+        # no draw at the default weights, so the design's random stream is unchanged
+        self.shape = ("continuous" if wts[1] == 0 and wts[2] == 0
+                      else str(rng.choice(["continuous", "discrete", "null"], p=wts / wts.sum())))
+        scale = h.effect_scale
+        if self.shape == "discrete":
+            scale = getattr(h, "disc_effect_scale", None) or h.effect_scale
+            frac = getattr(h, "disc_frac", (0.2, 0.6))
+            self.disc_frac = float(rng.uniform(*frac))
+        elif self.shape == "null":
+            self.beta = 0.0
+        self.thr_s = self.thr_b = None            # susceptibility thresholds of a discrete process
+        self.effect_target = (float(np.exp(rng.uniform(np.log(scale[0]), np.log(scale[1]))))
+                              if scale else None)
         self.effect_factor = 1.0
         self.binary = bool(rng.uniform() < float(h.binary_outcome))
         self.centre = np.asarray(atlas.shape, dtype=np.float64) / 2.0
@@ -186,7 +210,14 @@ class InterSynthTheoryDGP:
         if self.two_arms:
             ov = np.asarray(overlaps_pool, dtype=np.float64)
             self.scale_b = max(float(np.quantile(ov[:, :, self._b_col(ov)] @ self.w_s2, q)), 1e-6)
-        if self.effect_target is not None:
+        if self.shape == "discrete":
+            # a fraction disc_frac of the pool is susceptible to each arm
+            self.thr_s = self.thr_b = None
+            _, s_cont = self.scores(overlaps_pool)
+            self.thr_s = float(np.quantile(s_cont, 1.0 - self.disc_frac))
+            if self.two_arms:
+                self.thr_b = float(np.quantile(self.scores_b(overlaps_pool), 1.0 - self.disc_frac))
+        if self.effect_target is not None and self.beta > 0:
             # the upper quantile of |CATE| over the pool maps to the drawn target
             self.effect_factor = 1.0
             D, S = self.scores(overlaps_pool)
@@ -199,7 +230,10 @@ class InterSynthTheoryDGP:
 
     def scores(self, overlaps: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         d, s = self.raw_scores(overlaps)
-        return np.clip(d / self.scale_d, 0.0, 1.0), np.clip(s / self.scale_s, 0.0, 1.0)
+        S = np.clip(s / self.scale_s, 0.0, 1.0)
+        if self.thr_s is not None:
+            S = (S > self.thr_s).astype(np.float64)          # discrete shape: susceptible or not
+        return np.clip(d / self.scale_d, 0.0, 1.0), S
 
     def scores_b(self, overlaps: np.ndarray) -> np.ndarray:
         """Susceptibility to treatment B of a two-arm process: a second Dirichlet
@@ -209,7 +243,10 @@ class InterSynthTheoryDGP:
         if not self.two_arms:
             return np.zeros(len(overlaps))
         ov = np.asarray(overlaps, dtype=np.float64)
-        return np.clip((ov[:, :, self._b_col(ov)] @ self.w_s2) / self.scale_b, 0.0, 1.0)
+        S_b = np.clip((ov[:, :, self._b_col(ov)] @ self.w_s2) / self.scale_b, 0.0, 1.0)
+        if self.thr_b is not None:
+            S_b = (S_b > self.thr_b).astype(np.float64)
+        return S_b
 
     def _b_col(self, ov: np.ndarray) -> int:
         """Column of the B-arm susceptibility: 2 in a three-column anatomy view
@@ -268,6 +305,7 @@ class InterSynthTheoryDGP:
                 "priority": list(self.priority), "sign": self.sign,
                 "scale_d": self.scale_d, "scale_s": self.scale_s,
                 "two_arms": self.two_arms, "effect_factor": self.effect_factor, "binary": self.binary,
+                "shape": self.shape, "disc_frac": getattr(self, "disc_frac", None),
                 "effect_headroom": bool(getattr(self.hyper, "effect_headroom", False)),
                 "d_source": self.hyper.d_source, "s_source": self.hyper.s_source,
                 "s_b_source": self.hyper.s_b_source or f"s_b_column={self._col_b}"}

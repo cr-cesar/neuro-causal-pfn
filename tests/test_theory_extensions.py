@@ -83,3 +83,34 @@ def test_parse_hyper_opts_and_hyperprior_fields():
     assert parse_hyper_opts("") == {}
     with pytest.raises(ValueError):
         parse_hyper_opts("two_arms")
+
+
+def test_effect_shapes_mix_discrete_and_null_processes():
+    atlas, ov, cent, X = _pool()
+    hyper = TheoryHyperPrior(two_arms=1.0, effect_scale=(0.2, 1.0), effect_headroom=True,
+                             shape_weights=(0.0, 1.0, 0.0), disc_frac=(0.3, 0.3), disc_effect_scale=(0.6, 0.6))
+    dgp = _dgp(atlas, ov, hyper)
+    assert dgp.shape == "discrete" and dgp.thr_s is not None and dgp.thr_b is not None
+    D, S = dgp.scores(ov)
+    S_b = dgp.scores_b(ov)
+    assert set(np.unique(S)) <= {0.0, 1.0} and set(np.unique(S_b)) <= {0.0, 1.0}
+    assert abs(S.mean() - 0.3) < 0.05 and abs(S_b.mean() - 0.3) < 0.05      # the drawn fraction is susceptible
+    tau = dgp.cate(D, S, S_b)
+    zero = np.isclose(tau, 0)
+    assert 0.4 < zero.mean() < 0.75                                           # both or neither susceptible
+    assert np.allclose(np.abs(tau[~zero]), dgp.effect_factor * dgp.beta * D[~zero])
+    assert abs(np.quantile(np.abs(tau), 0.95) - 0.6) < 0.05 or dgp.effect_factor * dgp.beta <= 1 - dgp.alpha + 1e-9
+    assert dgp.describe()["shape"] == "discrete"
+    # null shape: no effect anywhere
+    null = _dgp(atlas, ov, TheoryHyperPrior(two_arms=1.0, shape_weights=(0.0, 0.0, 1.0)), seed=3)
+    assert null.shape == "null" and np.allclose(null.cate(*null.scores(ov), null.scores_b(ov)), 0)
+    # default weights: the design's prior, same draws as before
+    a = InterSynthTheoryDGP(atlas, np.random.default_rng(5), TheoryHyperPrior())
+    b = InterSynthTheoryDGP(atlas, np.random.default_rng(5), TheoryHyperPrior(shape_weights=(1.0, 0.0, 0.0)))
+    assert a.shape == "continuous" and a.beta == b.beta and np.allclose(a.w_s, b.w_s)
+    # the hyper string of the jobs parses into the three weights
+    opts = parse_hyper_opts("shape_weights=0.4:0.4:0.2 binary_outcome=1 disc_frac=0.2:0.6")
+    assert opts["shape_weights"] == [0.4, 0.4, 0.2] and opts["disc_frac"] == [0.2, 0.6]
+    mixed = TheoryHyperPrior(**{k: tuple(v) if isinstance(v, list) else v for k, v in opts.items()})
+    shapes = {InterSynthTheoryDGP(atlas, np.random.default_rng(i), mixed).shape for i in range(40)}
+    assert shapes == {"continuous", "discrete", "null"}
