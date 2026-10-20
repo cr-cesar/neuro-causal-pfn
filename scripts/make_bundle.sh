@@ -35,7 +35,9 @@ if [ -n "${FULL:-}" ]; then
     git fetch -q origin "${CODE_REF#origin/}"
     git archive --format=tar.gz --prefix=neuro-causal-pfn/ -o "$DEST/bundle/code.tgz" "$CODE_REF"
     PY="${PY:-3.11}"; PYTAG="cp${PY/./}"
-    grep -v -E '^-e|^\s*#|^\s*$' requirements.txt > "$DEST/requirements.download.txt"
+    # NO_TORCH=1: the other machine keeps its own torch (a Blackwell GPU needs
+    # a newer one than the pinned 2.3.1); only the rest is downloaded
+    grep -v -E '^-e|^\s*#|^\s*$' requirements.txt | { [ -n "${NO_TORCH:-}" ] && grep -v -E '^--extra|^torch' || cat; } > "$DEST/requirements.download.txt"
     pip download -q --only-binary :all: --python-version "$PY" --implementation cp --abi "$PYTAG" \
         --platform manylinux2014_x86_64 --platform manylinux_2_17_x86_64 --platform linux_x86_64 --platform any \
         -d "$DEST/bundle/wheels" -r "$DEST/requirements.download.txt" pip "setuptools>=61" wheel

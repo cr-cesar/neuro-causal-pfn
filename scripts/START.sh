@@ -5,6 +5,7 @@
 # after the remote session closes.
 #
 #   tar -xzf neuro-causal-pfn-bundle.tgz && bash bundle/START.sh [jobs/<list>.txt]
+#   EXISTING_VENV=~/env bash bundle/START.sh      # reuse an environment whose torch fits the GPU
 #
 # Afterwards:  tail -f neuro-causal-pfn/run_*.log     (progress)
 #              ls neuro-causal-pfn/outputs/pfn_*/pfn.pt (finished checkpoints)
@@ -20,10 +21,14 @@ fi
 cd neuro-causal-pfn
 mkdir -p outputs data jobs
 cp -rn "$HERE/outputs/." outputs/ && cp -rn "$HERE/data/." data/ && cp -n "$HERE"/jobs/*.txt jobs/
-if [ ! -x .venv/bin/python ]; then
-    if [ -d "$HERE/wheels" ]; then WHEELS="$HERE/wheels" bash scripts/setup_env_local.sh; else bash scripts/setup_env_local.sh; fi
+# EXISTING_VENV=~/env: an environment that already has a torch for this GPU
+# (the RTX 5090 needs torch >= 2.7); otherwise a .venv is made from the wheels
+export VENV="${EXISTING_VENV:-$PWD/.venv}"
+if "$VENV/bin/python" -c "import neurocausalpfn, torch" 2>/dev/null; then
+    EXISTING_VENV="${EXISTING_VENV:-}" bash scripts/setup_env_local.sh check
 else
-    bash scripts/setup_env_local.sh check
+    W=(); [ -d "$HERE/wheels" ] && W=(WHEELS="$HERE/wheels")
+    env ${W[@]+"${W[@]}"} ${EXISTING_VENV:+EXISTING_VENV="$EXISTING_VENV"} bash scripts/setup_env_local.sh
 fi
 [ -s "$JOBS" ] || { echo "no jobs file $JOBS"; exit 2; }
 log="run_$(date +%Y%m%d_%H%M).log"

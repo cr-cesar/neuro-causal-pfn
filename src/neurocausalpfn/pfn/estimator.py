@@ -100,7 +100,7 @@ class PFNEstimator:
 
         from ..train.train_pfn import build_model
 
-        ckpt = torch.load(ckpt_path, map_location="cpu")
+        ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
         self.cfg: Dict = ckpt["cfg"]
         state = ckpt["state_dict"]
         # d_x is recovered from the saved weights: the context embedding of the
