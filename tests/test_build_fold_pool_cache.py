@@ -90,3 +90,29 @@ def test_mismatches_stop_the_build(tmp_path):
     with pytest.raises(SystemExit, match="no fold file"):
         bfp.main(["--cache", str(tmp_path / "uclh.npz"), "--fold-dir", str(fd), "--folds", "7",
                   "--out-dir", str(tmp_path / "pools")])
+
+
+def test_extra_only_pool_holds_the_extra_cohort_alone(tmp_path, capsys):
+    names = [f"lesion{i}_NA_NA.nii.gz" for i in range(6)]
+    knames = [f"kch{i}.nii.gz" for i in range(4)]
+    _cache(tmp_path / "uclh.npz", names)
+    _cache(tmp_path / "kch.npz", knames, seed=3)
+    Z = np.random.default_rng(1).normal(size=(6, 5)).astype(np.float32)
+    fd = tmp_path / "folds"; fd.mkdir()
+    _fold(fd / "fold0.npz", names, 0, [0, 1, 2, 3], Z)
+    Zk = np.random.default_rng(2).normal(size=(4, 5)).astype(np.float32)
+    lat = tmp_path / "lat" / "fold0"; lat.mkdir(parents=True)
+    np.savez(lat / "E1_fold0_disco.npz", Z=Zk, files=np.array(knames))
+    bfp.main(["--cache", str(tmp_path / "uclh.npz"), "--fold-dir", str(fd), "--folds", "0",
+              "--out-dir", str(tmp_path / "pools"), "--extra-cache", str(tmp_path / "kch.npz"),
+              "--extra-latents", str(tmp_path / "lat" / "fold{fold}" / "*.npz"), "--extra-only"])
+    with np.load(tmp_path / "pools" / "fold0.npz", allow_pickle=True) as p:
+        assert int(p["n_main"]) == 0 and int(p["n_extra"]) == 4
+        assert list(p["files"]) == knames and len(p["Z"]) == 4
+        np.testing.assert_array_equal(p["Z"], Zk)
+        assert "kch.npz" in str(p["images_dir"]) and "uclh.npz" not in str(p["images_dir"])
+        assert int(p["fold"]) == 0 and str(p["channel"]) == "disconnectome"
+    assert "0 training-side rows + 4 extra" in capsys.readouterr().out
+    with pytest.raises(SystemExit):
+        bfp.main(["--cache", str(tmp_path / "uclh.npz"), "--fold-dir", str(fd), "--folds", "0",
+                  "--out-dir", str(tmp_path / "p2"), "--extra-only"])

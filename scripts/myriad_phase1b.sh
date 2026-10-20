@@ -342,10 +342,14 @@ PY
     [ -s "$cohort_cache" ] || { echo "no cohort anatomy cache $cohort_cache (scripts/build_prior_cache_myriad.qsub.sh)"; exit 2; }
     hyper="${PRIOR_HYPER-two_arms=1 effect_scale=0.2:1 d_source=network s_source=genetics_1 s_b_source=genetics_2 effect_headroom=1}"
     archsuf=""; [ "${ARCH:-linear}" = linear ] || archsuf="-${ARCH}"
-    run="${tag}-${fam}${ctxsuf}${archsuf}${VARIANT_TAG:+-$VARIANT_TAG}${EXTRA_CACHE:+-x}_s$seed"
+    # POOL=extra: the pool is the EXTRA cohort alone with fold k's latents
+    # (the KCH benchmark pool decided on 19 Oct); run names carry -xonly
+    xsuf=""; [ -z "${EXTRA_CACHE:-}" ] || { xsuf="-x"; [ "${POOL:-}" = extra ] && xsuf="-xonly"; }
+    extra_only=""; [ "${POOL:-}" = extra ] && extra_only=1
+    run="${tag}-${fam}${ctxsuf}${archsuf}${VARIANT_TAG:+-$VARIANT_TAG}${xsuf}_s$seed"
     pools="outputs/prior_cache/fold_pools/${run}"
-    cj=$(FOLDS="$folds" EXTRA_CACHE="${EXTRA_CACHE:-}" EXTRA_LATENTS="${EXTRA_LATENTS:-}" qsub -terse -N pools-$tag \
-         -v CACHE="$cohort_cache",FOLD_DIR="$repdir",OUT_DIR="$pools",FOLDS,EXTRA_CACHE,EXTRA_LATENTS scripts/fold_pools_myriad.qsub.sh)
+    cj=$(FOLDS="$folds" EXTRA_CACHE="${EXTRA_CACHE:-}" EXTRA_LATENTS="${EXTRA_LATENTS:-}" EXTRA_ONLY="$extra_only" qsub -terse -N pools-$tag \
+         -v CACHE="$cohort_cache",FOLD_DIR="$repdir",OUT_DIR="$pools",FOLDS,EXTRA_CACHE,EXTRA_LATENTS,EXTRA_ONLY scripts/fold_pools_myriad.qsub.sh)
     echo "phase2pf $run: pools $cj -> $pools (folds $folds; prior: $hyper)"
     tjs=""
     for k in $folds; do
@@ -358,9 +362,11 @@ PY
       echo "  fold $k: pfn $tj -> $out/pfn.pt"
     done
     cd "$PERFOLD"
-    sj=$(REPS="$rep" PFN_CONTEXT_CAP="${PFN_CONTEXT_CAP:-0}" ONLY_FOLDS="$folds" \
+    # SCORE_DATA_DIR / SCORE_MODALITY: the trials the folds are scored on
+    # (default the per-fold repo's data; the BCB pipeline passes data_bcb)
+    sj=$(REPS="$rep" PFN_CONTEXT_CAP="${PFN_CONTEXT_CAP:-0}" ONLY_FOLDS="$folds" DATA_DIR="${SCORE_DATA_DIR:-data/Full data}" MODALITY="${SCORE_MODALITY:-receptor}" \
          qsub -terse -N sc-pf-$tag -hold_jid "$tjs" -l h_rt=6:0:0 -l mem=16G \
-         -v REPS,PFN_CONTEXT_CAP,ONLY_FOLDS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS="$MAIN/outputs/pfn_pf_${run}/fold{fold}/pfn.pt",ONLY_ESTIMATORS=1,OUT=outputs_perfold_pfn/pf_$run \
+         -v REPS,PFN_CONTEXT_CAP,ONLY_FOLDS,DATA_DIR,MODALITY,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS="$MAIN/outputs/pfn_pf_${run}/fold{fold}/pfn.pt",ONLY_ESTIMATORS=1,OUT="${SCORE_OUT:-outputs_perfold_pfn/pf_$run}" \
          qsub/perfold_score.qsub.sh)
     echo "  scoring $sj (each fold with its own checkpoint, full context) -> $PERFOLD/outputs_perfold_pfn/pf_$run/leaderboard.csv"
     ;;

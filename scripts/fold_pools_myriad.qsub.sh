@@ -23,6 +23,8 @@ FOLD_DIR="${FOLD_DIR:?set FOLD_DIR to the folder of fold<k>.npz files}"
 OUT_DIR="${OUT_DIR:?set OUT_DIR}"
 ARGS=()
 if [ -n "${EXTRA_CACHE:-}" ]; then ARGS+=(--extra-cache "$EXTRA_CACHE" --extra-latents "${EXTRA_LATENTS:?set EXTRA_LATENTS with EXTRA_CACHE}"); fi
+# EXTRA_ONLY=1: the pool is the extra cohort alone (KCH with fold k's latents)
+if [ -n "${EXTRA_ONLY:-}" ]; then ARGS+=(--extra-only); fi
 # shellcheck disable=SC2086
 python scripts/build_fold_pool_cache.py --cache "$CACHE" --fold-dir "$FOLD_DIR" --out-dir "$OUT_DIR" \
     --folds ${FOLDS:-0 1 2 3 4 5 6 7 8 9} ${ARGS[@]+"${ARGS[@]}"}

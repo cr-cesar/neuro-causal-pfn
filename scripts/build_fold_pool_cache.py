@@ -60,7 +60,12 @@ def _check_same(a: Dict, b: Dict) -> None:
 
 
 def build_fold(cache: Dict, fold_path: str, out_path: str,
-               extra: Optional[Dict] = None, extra_latents: Optional[str] = None) -> Dict[str, int]:
+               extra: Optional[Dict] = None, extra_latents: Optional[str] = None,
+               extra_only: bool = False) -> Dict[str, int]:
+    """One pool for fold k. With ``extra_only`` the pool holds the extra
+    cohort alone (e.g. KCH encoded by fold k's encoder, the benchmark pool
+    decided on 19 Oct): the fold file then only names the fold and fixes the
+    latent width, and no tested cohort row enters the pool."""
     with np.load(fold_path, allow_pickle=False) as z:
         files = [str(n) for n in z["files"]]
         tr_idx, Ztr = z["tr_idx"], np.asarray(z["Ztr"], dtype=np.float32)
@@ -68,9 +73,14 @@ def build_fold(cache: Dict, fold_path: str, out_path: str,
     names = [os.path.basename(files[i]) for i in tr_idx]
     if len(names) != len(Ztr):
         sys.exit(f"{fold_path}: {len(names)} training images but {len(Ztr)} latent rows")
-    out = _select(cache, names, "training-side")
-    out["Z"] = Ztr
-    counts = {"fold": fold, "n_main": len(names), "n_extra": 0}
+    if extra_only and extra is None:
+        sys.exit("--extra-only needs --extra-cache and --extra-latents")
+    if extra_only:
+        out, counts = {}, {"fold": fold, "n_main": 0, "n_extra": 0}
+    else:
+        out = _select(cache, names, "training-side")
+        out["Z"] = Ztr
+        counts = {"fold": fold, "n_main": len(names), "n_extra": 0}
     if extra is not None:
         if not extra_latents:
             sys.exit("--extra-cache needs --extra-latents")
@@ -83,18 +93,21 @@ def build_fold(cache: Dict, fold_path: str, out_path: str,
         if Zx.shape[1] != Ztr.shape[1]:
             sys.exit(f"extra latents have {Zx.shape[1]} dims, the fold's have {Ztr.shape[1]}")
         xrows = _select(extra, xnames, "extra")
-        for k in list(out):
-            if k == "Z":
-                continue
-            if k not in xrows:
-                sys.exit(f"extra cache lacks {k}")
-            out[k] = np.concatenate([out[k], xrows[k]])
-        out["Z"] = np.concatenate([Ztr, Zx])
+        if extra_only:
+            out = dict(xrows); out["Z"] = Zx
+        else:
+            for k in list(out):
+                if k == "Z":
+                    continue
+                if k not in xrows:
+                    sys.exit(f"extra cache lacks {k}")
+                out[k] = np.concatenate([out[k], xrows[k]])
+            out["Z"] = np.concatenate([Ztr, Zx])
         counts["n_extra"] = len(xnames)
     for k in SCALARS:
         if k in cache:
             out[k] = cache[k]
-    srcs = [str(np.asarray(cache.get("images_dir", "")).item() or "")]
+    srcs = [] if extra_only else [str(np.asarray(cache.get("images_dir", "")).item() or "")]
     if extra is not None:
         srcs.append(str(np.asarray(extra.get("images_dir", "")).item() or ""))
     out["images_dir"] = np.array(" + ".join(s for s in srcs if s))
@@ -115,6 +128,8 @@ def main(argv=None):
     ap.add_argument("--extra-cache", default=None, help="anatomy cache of a cohort appended to every pool")
     ap.add_argument("--extra-latents", default=None,
                     help="npz of the extra cohort's latents from the fold encoder; '{fold}' is replaced per fold")
+    ap.add_argument("--extra-only", action="store_true",
+                    help="pool = the extra cohort alone with fold k's latents (no training-side rows)")
     args = ap.parse_args(argv)
 
     cache = _load(args.cache)
@@ -127,7 +142,7 @@ def main(argv=None):
             sys.exit(f"no fold file for fold {k} in {args.fold_dir}")
         pattern = args.extra_latents.replace("{fold}", str(k)) if args.extra_latents else None
         out_path = os.path.join(args.out_dir, f"fold{k}.npz")
-        c = build_fold(cache, fold_path, out_path, extra, pattern)
+        c = build_fold(cache, fold_path, out_path, extra, pattern, extra_only=args.extra_only)
         print(f"fold {k}: {c['n_main']} training-side rows"
               + (f" + {c['n_extra']} extra" if c["n_extra"] else "") + f" -> {out_path}")
 
