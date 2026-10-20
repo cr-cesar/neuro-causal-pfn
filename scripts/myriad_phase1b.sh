@@ -10,6 +10,7 @@
 #   bash scripts/myriad_phase1b.sh perfold E1 E3 E11b    # published-budget (32-epoch) per-fold training into PUB_ROOT, independent jobs, scoring chained
 #   REP=outputs_perfold_pub/E1/E1/seed0/folds TAG=e1 FOLDS="0 1" PRIOR_FAMILY=theory bash scripts/myriad_phase1b.sh phase2pf   # one PFN per fold on that fold's UCLH training side
 #   CONTEXT_MAX=3000 (training context; default 1024 with susceptible sampling) and AUGMENT=0 (no latent rotation) apply to phase2, e12 and phase2pf
+#   D_MODEL=512 N_LAYERS=12 ITERS=60000 (stage 3, scale) apply to phase2 like CONTEXT_MAX
 #   TRAIN_HRT=8:0:0 shortens the GPU training job's wall-clock request (default 36 h; before a
 #   cluster drain only jobs that fit before the outage start)
 #   ONLY="E4[25+25] E6[fusion_mode=both] E7b" bash scripts/myriad_phase1b.sh perfold E4 E6 E7b   # only those variants
@@ -288,8 +289,8 @@ PY
     # TAG, family and architecture do not share a checkpoint
     tag="${TAG:-pilot}"; run="${tag}-${fam}${ctxsuf}${archsuf}${VARIANT_TAG:+-$VARIANT_TAG}"; out="outputs/pfn_reduced_${run}"
     ensure_cache "$tag"
-    tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" PRIOR_HYPER="${PRIOR_HYPER:-}" LR_SCHEDULE="${LR_SCHEDULE:-constant}" BATCH="${BATCH:-}" CONTEXT_MAX="${CONTEXT_MAX:-}" AUGMENT="${AUGMENT:-}" CONTEXT_REPLACE="${CONTEXT_REPLACE:-}" STANDARDIZE="${STANDARDIZE:-}" qsub -terse -N pfn-$run -l h_rt="${TRAIN_HRT:-36:0:0}" ${hold[@]+"${hold[@]}"} \
-         -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="${SEED:-0}",ARCH="${ARCH:-tabicl}",FAMILY="$fam",FAMILY_WEIGHTS,PRIOR_HYPER,LR_SCHEDULE,BATCH,CONTEXT_MAX,AUGMENT,CONTEXT_REPLACE,STANDARDIZE,CONTEXT_POOL="$ctx" \
+    tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" PRIOR_HYPER="${PRIOR_HYPER:-}" LR_SCHEDULE="${LR_SCHEDULE:-constant}" BATCH="${BATCH:-}" CONTEXT_MAX="${CONTEXT_MAX:-}" AUGMENT="${AUGMENT:-}" CONTEXT_REPLACE="${CONTEXT_REPLACE:-}" STANDARDIZE="${STANDARDIZE:-}" D_MODEL="${D_MODEL:-}" N_LAYERS="${N_LAYERS:-}" qsub -terse -N pfn-$run -l h_rt="${TRAIN_HRT:-36:0:0}" ${hold[@]+"${hold[@]}"} \
+         -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="${SEED:-0}",ARCH="${ARCH:-tabicl}",FAMILY="$fam",FAMILY_WEIGHTS,PRIOR_HYPER,LR_SCHEDULE,BATCH,CONTEXT_MAX,AUGMENT,CONTEXT_REPLACE,STANDARDIZE,D_MODEL,N_LAYERS,CONTEXT_POOL="$ctx" \
          scripts/train_pfn_myriad.qsub.sh)
     cd "$PERFOLD"
     # the checkpoint is scored on the headline encoder's per-fold latents: E1
