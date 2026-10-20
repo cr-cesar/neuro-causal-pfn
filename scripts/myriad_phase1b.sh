@@ -355,7 +355,7 @@ PY
     for k in $folds; do
       out="outputs/pfn_pf_${run}/fold$k"
       tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" PRIOR_HYPER="$hyper" LR_SCHEDULE="${LR_SCHEDULE:-constant}" BATCH="${BATCH:-}" CONTEXT_MAX="${CONTEXT_MAX:-}" AUGMENT="${AUGMENT:-}" CONTEXT_REPLACE="${CONTEXT_REPLACE:-}" STANDARDIZE="${STANDARDIZE:-}" \
-           qsub -terse -N pf$k-$tag -hold_jid "$cj" \
+           qsub -terse -N pf$k-$tag -l h_rt="${TRAIN_HRT:-36:0:0}" -hold_jid "$cj" \
            -v CACHE="$pools/fold$k.npz",OUT="$out",ITERS="${ITERS:-20000}",SEED="$seed",ARCH="${ARCH:-linear}",FAMILY="$fam",FAMILY_WEIGHTS,PRIOR_HYPER,LR_SCHEDULE,BATCH,CONTEXT_MAX,AUGMENT,CONTEXT_REPLACE,STANDARDIZE,CONTEXT_POOL="$ctx" \
            scripts/train_pfn_myriad.qsub.sh)
       tjs="${tjs:+$tjs,}$tj"
