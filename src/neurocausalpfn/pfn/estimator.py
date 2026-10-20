@@ -186,13 +186,22 @@ class PFNEstimator:
         W = np.asarray(W); Y = np.asarray(Y)
         e_ctx, e_qry = weak_effects(Xtr, W, Y, Xte)
         p1, p0 = np.empty(len(Xte)), np.empty(len(Xte))
-        self.n_strata = 0
+        self.n_strata, rows = 0, 0
         for q_idx, c_idx in effect_strata(e_ctx, W, e_qry, k, cap):
             for start in range(0, len(q_idx), self.max_queries):
                 qs = q_idx[start:start + self.max_queries]
                 a, b = self._forward(Xtr[c_idx], W[c_idx], Y[c_idx], Xte[qs])
                 p1[qs], p0[qs] = a, b
             self.n_strata += 1
+            rows += len(c_idx) * len(q_idx)
+        # with arms no larger than cap a single stratum holds every query and
+        # its context is close to the whole slice: the log says so once
+        frac = rows / max(1, len(Xtr) * len(Xte))
+        self.effect_context_log = getattr(self, "effect_context_log", [])
+        self.effect_context_log.append((self.n_strata, frac))
+        if len(self.effect_context_log) == 1:
+            print(f"pfn effect-context: k={k} cap={cap}: first slice {len(Xtr)} rows, {self.n_strata} strata, "
+                  f"context {100 * frac:.0f}% of the slice per query", flush=True)
         return np.clip(p1, 0, 1), np.clip(p0, 0, 1)
 
 
