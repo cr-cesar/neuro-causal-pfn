@@ -18,7 +18,7 @@ JOBS="${JOBS:-jobs/mixed_prior_seeds12.txt}"
 mkdir -p "$DEST/bundle/outputs" "$DEST/bundle/data" "$DEST/bundle/jobs"
 export HASH_SALT_FILE="${HASH_SALT_FILE:-$HOME/.cache_salt}"
 python scripts/hash_cache_names.py --dst "$DEST/bundle/outputs/prior_cache" \
-    outputs/prior_cache/kch_e1_32d_x.npz outputs/prior_cache/uclh_disco_x.npz
+    --src outputs/prior_cache/kch_e1_32d_x.npz outputs/prior_cache/uclh_disco_x.npz
 for d in outputs/prior_cache/fold_pools/bcb-e1-s*; do
     [ -d "$d" ] && python scripts/hash_cache_names.py --src "$d" --dst "$DEST/bundle/outputs/prior_cache/fold_pools"
 done
