@@ -13,8 +13,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 PYTHON="${PYTHON:-python3}"
 VENV="${VENV:-$PWD/.venv}"
-PIP() {   # pip of the environment, or uv when the environment was made by uv (no pip inside)
-    if [ -x "$VENV/bin/pip" ]; then "$VENV/bin/pip" "$@"; else uv pip --python "$VENV/bin/python" "$@"; fi
+PIP() {   # pip of the environment, or uv when the environment was made by uv (no pip inside);
+          # uv takes --python after the subcommand: uv pip install --python <py> ...
+    if [ -x "$VENV/bin/pip" ]; then "$VENV/bin/pip" "$@"; else uv pip "$1" --python "$VENV/bin/python" "${@:2}"; fi
 }
 if [ "${1:-}" != "check" ]; then
     if [ -n "${EXISTING_VENV:-}" ]; then
