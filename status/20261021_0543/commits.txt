@@ -1,0 +1,2 @@
+81c7812 Stage 4 on the BCB pipeline: per-fold PFN with the KCH-BCB pool; tabicl architecture run
+576378a leaderboard: recompute the deficit CI from replica_results.csv when a headline lacks it
