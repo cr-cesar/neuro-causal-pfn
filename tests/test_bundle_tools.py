@@ -60,3 +60,23 @@ def test_run_jobs_runs_skips_and_reports(tmp_path):
     # second pass: the finished job is skipped too
     r2 = subprocess.run(["bash", "scripts/run_jobs.sh", "jobs.txt"], cwd=repo, capture_output=True, text=True)
     assert "ok 0, skipped 2, failed 1" in r2.stdout
+
+
+def test_run_jobs_in_another_checkout_with_job_names(tmp_path):
+    """WORKDIR runs the lines in another repository (the per-fold one) with the
+    given environment; JOBNAME names the log."""
+    main = tmp_path / "main" / "scripts"; main.mkdir(parents=True)
+    (main / "run_jobs.sh").write_text(open(os.path.join(ROOT, "scripts", "run_jobs.sh")).read())
+    other = tmp_path / "perfold" / "qsub"; other.mkdir(parents=True)
+    (other / "train_local.sh").write_text('#!/bin/bash\necho "fold $FOLD in $PWD with $(command -v python)"\n')
+    env = tmp_path / "env" / "bin"; env.mkdir(parents=True)
+    (env / "python").write_text("#!/bin/sh\n"); os.chmod(env / "python", 0o755)
+    jobs = tmp_path / "jobs.txt"
+    jobs.write_text("JOBNAME=e2r0s0f0 EID=E2 FOLD=0 bash qsub/train_local.sh   # E2[w_dice=0.1]\n"
+                    "JOBNAME=e2r0s0f1 EID=E2 FOLD=1 bash qsub/train_local.sh\n")
+    r = subprocess.run(["bash", str(main / "run_jobs.sh"), str(jobs)], cwd=tmp_path,
+                       env={**os.environ, "WORKDIR": str(tmp_path / "perfold"), "VENV": str(tmp_path / "env")},
+                       capture_output=True, text=True)
+    assert r.returncode == 0 and "jobs: 2, ok 2, skipped 0, failed 0" in r.stdout, r.stdout + r.stderr
+    log = (tmp_path / "perfold" / "logs" / "2_e2r0s0f1.log").read_text()
+    assert "fold 1 in " + str(tmp_path / "perfold") in log and "ok    e2r0s0f1" in r.stdout

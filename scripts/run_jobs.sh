@@ -9,13 +9,18 @@
 #
 # A job whose OUT/pfn.pt already exists is skipped (so the list can be rerun
 # after an interruption); a failed job is logged and the next one starts.
-# Logs go to logs/<n>_<name>.log. VENV names the Python environment
-# (default .venv in the repository).
+# Logs go to logs/<n>_<name>.log, the name taken from a JOBNAME=... token
+# when the line has one, else from OUT. VENV names the Python environment
+# (default .venv in the repository). The jobs run in the repository holding
+# this script; WORKDIR=<dir> runs them in another checkout (the per-fold
+# repository, whose jobs come from `python -m ncpfold.plan --emit-local`).
 #
 #   bash scripts/run_jobs.sh jobs/today.txt
+#   WORKDIR=~/neuro-causal-pfn-perfold VENV=~/env bash scripts/run_jobs.sh jobs_perfold.txt
 set -uo pipefail
-cd "$(dirname "$0")/.."
 JOBS="${1:?usage: bash scripts/run_jobs.sh <jobs file>}"
+JOBS="$(readlink -f "$JOBS")"
+cd "${WORKDIR:-$(dirname "$0")/..}"
 export VENV="${VENV:-$PWD/.venv}"
 [ -x "$VENV/bin/python" ] || { echo "no Python environment at $VENV (run scripts/setup_env_local.sh)"; exit 2; }
 mkdir -p logs
@@ -24,7 +29,8 @@ while IFS= read -r line || [ -n "$line" ]; do
     [[ -z "${line// }" || "$line" =~ ^[[:space:]]*# ]] && continue
     n=$((n + 1))
     out=$(printf '%s\n' "$line" | sed -nE 's/(^|.*[[:space:]])OUT=("[^"]*"|[^[:space:]]+).*/\2/p' | tr -d '"')
-    name=$(basename "${out:-job$n}")
+    jobname=$(printf '%s\n' "$line" | sed -nE 's/(^|.*[[:space:]])JOBNAME=([^[:space:]]+).*/\2/p')
+    name="${jobname:-$(basename "${out:-job$n}")}"
     if [ -n "$out" ] && [ -s "$out/pfn.pt" ]; then
         echo "[$n] skip, done already: $out/pfn.pt"; skipped=$((skipped + 1)); continue
     fi

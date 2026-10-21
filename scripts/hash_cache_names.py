@@ -19,35 +19,14 @@ only. The salt is read from HASH_SALT_FILE (created with random bytes when
 missing) and must never be bundled.
 """
 import argparse
-import hashlib
 import os
-import secrets
 import sys
 
 import numpy as np
 
+from neurocausalpfn.utils.hashing import hash_name, load_salt  # noqa: F401  (shared with the per-fold export)
+
 STRING_PATH_KEYS = ("images_dir", "fold_file")
-
-
-def load_salt(path: str) -> str:
-    path = os.path.expanduser(path)
-    if not os.path.exists(path):
-        with open(path, "w") as f:
-            f.write(secrets.token_hex(32))
-        os.chmod(path, 0o600)
-    with open(path) as f:
-        salt = f.read().strip()
-    if len(salt) < 16:
-        sys.exit("the salt file is too short")
-    return salt
-
-
-def hash_name(name: str, salt: str) -> str:
-    base = os.path.basename(str(name).replace("\\", "/"))
-    for ext in (".nii.gz", ".nii"):
-        if base.lower().endswith(ext):
-            base = base[: -len(ext)]
-    return hashlib.sha256((salt + "|" + base).encode()).hexdigest()[:16]
 
 
 def hash_npz(src: str, dst: str, salt: str) -> int:
