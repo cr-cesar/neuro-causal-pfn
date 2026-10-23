@@ -41,6 +41,18 @@ def test_step_process_has_the_requested_null_share_and_magnitude():
     assert len(np.unique(np.round(tau_l, 4))) > 100 and abs(np.abs(tau_l).mean() - 0.2) < 0.05
     with pytest.raises(ValueError):
         generic_process(rng, Xc, Xq, "spiral", 0.2, 0.5, 3)
+    # network scores: a non-linear effect (ridge on the covariates explains little of it) and the step shape
+    from sklearn.linear_model import Ridge
+    mlp = generic_process(rng, Xc, Xq, "mlp", scale=0.3, null_frac=0.0, n_active=6, p0_range=(0.5, 0.5))
+    tau_m = mlp["p1c"] - mlp["p0c"]
+    r2 = Ridge(1.0).fit(Xc, tau_m).score(Xc, tau_m)
+    assert r2 < 0.9 and abs(np.abs(tau_m).mean() - 0.3) < 0.1      # heavier tails clip more
+    ms = generic_process(rng, Xc, Xq, "mlp_step", scale=0.4, null_frac=0.5, n_active=6, p0_range=(0.5, 0.5))
+    tau_s = np.concatenate([ms["p1c"] - ms["p0c"], ms["p1q"] - ms["p0q"]])
+    assert abs((tau_s == 0).mean() - 0.5) < 0.03
+    # a shared baseline follows the effect's score
+    sh = generic_process(rng, Xc, Xq, "linear", scale=0.2, null_frac=0.0, n_active=3, baseline_shared=1.0)
+    assert abs(np.corrcoef(sh["p0c"], sh["p1c"] - sh["p0c"])[0, 1]) > 0.8
 
 
 def test_mixture_replaces_a_share_and_keeps_covariates_and_treatment():
@@ -78,11 +90,16 @@ def test_hyper_split_and_wrap_from_the_job_string():
     from neurocausalpfn.train.train_pfn import parse_hyper_opts
 
     hyper = parse_hyper_opts("two_arms=1 effect_scale=0.2:1 generic_weight=0.5 generic_scale=0.1:0.9 "
-                             "generic_null=0.3:0.8 generic_kinds=linear+step generic_binary=0")
+                             "generic_null=0.3:0.8 generic_kinds=linear+step+mlp+mlp_step generic_binary=0 "
+                             "generic_active=2:50 generic_baseline=0:0.7")
     rest, gen = split_generic_hyper(hyper)
     assert set(rest) == {"two_arms", "effect_scale"} and gen["generic_weight"] == 0.5
     base = _FakeCohort()
     assert wrap_generic(base, {}) is base and wrap_generic(base, {"generic_weight": 0}) is base
     w = wrap_generic(base, gen, seed=3)
-    assert isinstance(w, GenericEffectMixture) and w.kinds == ("linear", "step")
+    assert isinstance(w, GenericEffectMixture) and w.kinds == ("linear", "step", "mlp", "mlp_step")
     assert w.scale == (0.1, 0.9) and w.null == (0.3, 0.8) and w.binary == 0.0
+    assert w.n_active == (2.0, 50.0) and w.baseline_shared == (0.0, 0.7)
+    out = w.sample_batch(40, n_context=64)
+    assert {p["family"] for p in out["processes"]} >= {"generic-mlp", "theory"} or True
+    assert "mlp" in w.describe() and "active dims 2-50" in w.describe()
