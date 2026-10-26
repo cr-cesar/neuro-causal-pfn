@@ -122,3 +122,28 @@ def test_off_the_shelf_causalpfn_wrapper_returns_potential_outcomes():
     W = rng.integers(0, 2, 60).astype(float); Y = (Xtr[:, 0] + W > 0.5).astype(float)
     p1, p0 = est(Xtr, W, Y, Xte)
     assert p1.shape == p0.shape == (10,) and (0 <= p0).all() and (p1 <= 1).all()
+
+
+@pytest.mark.parametrize("d", [4, 120])
+def test_causalpfn_wrapper_matches_the_public_api(d, capsys):
+    """F08: the wrapper reaches the package's internal ``_predict_cepo`` and
+    ``x_dim_transformer``; its effects must equal the public
+    ``CATEEstimator.estimate_cate`` on the same fitted context, below and above
+    max_feature_size (where the package projects with a TruncatedSVD)."""
+    pytest.importorskip("causalpfn")
+    from neurocausalpfn.pfn.estimator import CausalPFNEstimator
+    est = CausalPFNEstimator(device="cpu", context_cap=0)
+    rng = np.random.default_rng(0)
+    Xtr = rng.normal(size=(200, d)).astype(np.float32); Xte = rng.normal(size=(15, d)).astype(np.float32)
+    W = rng.integers(0, 2, 200).astype(np.float32); Y = (Xtr[:, 0] + W > 0.5).astype(np.float32)
+    p1, p0 = est(Xtr, W, Y, Xte)
+    cate = est.est.estimate_cate(Xte)                       # public API, same fitted context
+    np.testing.assert_allclose(p1 - p0, cate, atol=1e-5)
+    mfs = est.est.max_feature_size
+    assert est.last_info["d_in"] == d and est.last_info["max_feature_size"] == mfs
+    assert est.last_info["truncated_svd"] == (mfs is not None and d > mfs)
+    if d > 99:                                              # CausalPFN 0.1.4: max_feature_size 99
+        assert est.last_info["truncated_svd"]
+    assert f"d_in={d} max_feature_size={mfs}" in capsys.readouterr().out
+    est(Xtr, W, Y, Xte)                                     # one log line per input width
+    assert "d_in=" not in capsys.readouterr().out
