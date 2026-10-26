@@ -40,6 +40,15 @@ def fake_packages(monkeypatch):
         checkpoint_version = "tabicl-test.ckpt"
 
     ti.TabICLClassifier = _FakeICL
+    tpf = types.ModuleType("tabpfn.finetuning")
+
+    class _FakeFT(_FakeModel):
+        def __init__(self, **kw):
+            super().__init__(**{k: v for k, v in kw.items() if k in ("device", "random_state")})
+            self.kw = kw
+
+    tpf.FinetunedTabPFNClassifier = _FakeFT
+    monkeypatch.setitem(sys.modules, "tabpfn.finetuning", tpf)
     monkeypatch.setitem(sys.modules, "tabpfn", tp)
     monkeypatch.setitem(sys.modules, "tabpfn.settings", tps)
     monkeypatch.setitem(sys.modules, "tabicl", ti)
@@ -87,3 +96,19 @@ def test_panel_member_scores_inside_the_replica_like_a_built_in(fake_packages):
     assert p1.shape == (10,) and np.all((0 <= p1) & (p1 <= 1))
     with pytest.raises(ValueError):
         gr._classifier("nope")
+
+
+def test_fine_tuned_members(fake_packages, monkeypatch, tmp_path):
+    """TABPFN_MODEL_PATH makes the tabpfn member load a fine-tuned checkpoint
+    (route A); tabpfn_ft fine-tunes per slice with the env knobs (route B)."""
+    ck = tmp_path / "kch_gen05" / "tabpfn_ft.pth"; ck.parent.mkdir(); ck.write_text("x")
+    monkeypatch.setenv("TABPFN_MODEL_PATH", str(ck))
+    monkeypatch.setenv("TABPFN_FT_EPOCHS", "3"); monkeypatch.setenv("TABPFN_FT_TIME_LIMIT", "30")
+    made = panel.register_panel(["tabpfn", "tabpfn_ft"], device="cpu", warm_up=True)
+    assert made["tabpfn"].model.kw["model_path"] == str(ck) and made["tabpfn"].info["model"] == "kch_gen05/tabpfn_ft.pth"
+    ft = made["tabpfn_ft"].model
+    assert ft.kw["epochs"] == 3 and ft.kw["time_limit"] == 30 and ft.kw["extra_classifier_kwargs"] == {"model_path": str(ck)}
+    assert "per-slice fine-tune, 3 epochs, 30 s" == made["tabpfn_ft"].info["model"]
+    monkeypatch.delenv("TABPFN_MODEL_PATH")
+    plain = panel.make_tabpfn(device="cpu")
+    assert "model_path" not in plain.model.kw and plain.info["model"] == "v3.5"
