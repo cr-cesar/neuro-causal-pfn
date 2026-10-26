@@ -1,0 +1,2 @@
+label_a,label_b,n_deficits,n_excluded_nan,mean_a,mean_b,diff_mean,diff_ci_low,diff_ci_high,diff_sd,n_a_lower,n_b_lower,paired_t,paired_t_p,wilcoxon_w,wilcoxon_p
+"E11b[backbone=resnet18,w_dice=1.0]",E1,16,0,0.29428246946812964,0.26931882677931673,0.024963642688812855,0.015260519363970378,0.03466676601365533,0.01820943563042913,0,16,5.4836719150366235,6.29519618207589e-05,0.0,3.0517578125e-05

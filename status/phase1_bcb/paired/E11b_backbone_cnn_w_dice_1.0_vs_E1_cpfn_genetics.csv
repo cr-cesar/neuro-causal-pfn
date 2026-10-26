@@ -1,0 +1,2 @@
+label_a,label_b,n_deficits,n_excluded_nan,mean_a,mean_b,diff_mean,diff_ci_low,diff_ci_high,diff_sd,n_a_lower,n_b_lower,paired_t,paired_t_p,wilcoxon_w,wilcoxon_p
+"E11b[backbone=cnn,w_dice=1.0]",E1,16,0,0.29117796167006826,0.26931882677931673,0.021859134890751523,0.012797761833870729,0.03092050794763232,0.017005090410437955,0,16,5.141786221220933,0.00012047240165635148,0.0,3.0517578125e-05

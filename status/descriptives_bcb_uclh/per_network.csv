@@ -1,0 +1,33 @@
+split,network,neither,A_only,B_only,both,enrolled,enrolled_pct
+receptor,hearing,3251,245,90,533,868,21.1
+receptor,language,3431,232,2,454,688,16.7
+receptor,introspection,3611,63,168,277,508,12.3
+receptor,cognition,3266,359,5,489,853,20.7
+receptor,mood,3755,56,88,220,364,8.8
+receptor,memory,3141,578,0,400,978,23.7
+receptor,aversion,2616,16,517,970,1503,36.5
+receptor,coordination,3794,9,89,227,325,7.9
+receptor,interoception,2313,398,33,1375,1806,43.8
+receptor,sleep,1080,1269,69,1701,3039,73.8
+receptor,reward,2265,457,177,1220,1854,45.0
+receptor,visual recognition,3784,231,48,56,335,8.1
+receptor,visual perception,3712,206,10,191,407,9.9
+receptor,spatial reasoning,3108,40,559,412,1011,24.5
+receptor,motor,2889,500,163,567,1230,29.9
+receptor,somatosensory,2917,547,112,543,1202,29.2
+genetics,hearing,3232,222,211,454,887,21.5
+genetics,language,3268,496,347,8,851,20.7
+genetics,introspection,3482,254,241,142,637,15.5
+genetics,cognition,3290,117,96,616,829,20.1
+genetics,mood,3738,73,84,224,381,9.2
+genetics,memory,3164,242,37,676,955,23.2
+genetics,aversion,2773,75,194,1077,1346,32.7
+genetics,coordination,3741,44,101,233,378,9.2
+genetics,interoception,2247,596,12,1264,1872,45.4
+genetics,sleep,1371,898,102,1748,2748,66.7
+genetics,reward,2126,698,199,1096,1993,48.4
+genetics,visual recognition,3822,182,51,64,297,7.2
+genetics,visual perception,3743,283,5,88,376,9.1
+genetics,spatial reasoning,3256,384,128,351,863,21.0
+genetics,motor,2724,664,512,219,1395,33.9
+genetics,somatosensory,2692,648,553,226,1427,34.6
