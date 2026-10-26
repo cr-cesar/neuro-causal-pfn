@@ -118,8 +118,9 @@ def test_off_the_shelf_causalpfn_wrapper_returns_potential_outcomes():
     from neurocausalpfn.pfn.estimator import CausalPFNEstimator
     est = CausalPFNEstimator(device="cpu")
     rng = np.random.default_rng(0)
-    Xtr, Xte = rng.normal(size=(60, 4)), rng.normal(size=(10, 4))
-    W = rng.integers(0, 2, 60).astype(float); Y = (Xtr[:, 0] + W > 0.5).astype(float)
+    # 200 rows: the package's weak learner takes min_samples_leaf = n // 100
+    Xtr, Xte = rng.normal(size=(200, 4)), rng.normal(size=(10, 4))
+    W = rng.integers(0, 2, 200).astype(float); Y = (Xtr[:, 0] + W > 0.5).astype(float)
     p1, p0 = est(Xtr, W, Y, Xte)
     assert p1.shape == p0.shape == (10,) and (0 <= p0).all() and (p1 <= 1).all()
 
@@ -138,7 +139,13 @@ def test_causalpfn_wrapper_matches_the_public_api(d, capsys):
     W = rng.integers(0, 2, 200).astype(np.float32); Y = (Xtr[:, 0] + W > 0.5).astype(np.float32)
     p1, p0 = est(Xtr, W, Y, Xte)
     cate = est.est.estimate_cate(Xte)                       # public API, same fitted context
-    np.testing.assert_allclose(p1 - p0, cate, atol=1e-5)
+    # the wrapper clips each potential outcome to [0, 1]; the public effect is
+    # unclipped, so the two agree exactly where no clip was applied and the
+    # clipped effect is the public one with the out-of-range part removed
+    inside = (p1 > 0) & (p1 < 1) & (p0 > 0) & (p0 < 1)
+    assert inside.any()
+    np.testing.assert_allclose((p1 - p0)[inside], cate[inside], atol=1e-5)
+    assert (np.abs(p1 - p0)[~inside] <= np.abs(cate[~inside]) + 1e-5).all()
     mfs = est.est.max_feature_size
     assert est.last_info["d_in"] == d and est.last_info["max_feature_size"] == mfs
     assert est.last_info["truncated_svd"] == (mfs is not None and d > mfs)
