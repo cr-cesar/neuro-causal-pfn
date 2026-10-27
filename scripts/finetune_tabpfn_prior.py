@@ -14,10 +14,12 @@ raw logits, cross-entropy on the query rows). The result is a TabPFN
 checkpoint that the panel loads through ``TABPFN_MODEL_PATH`` and scores
 exactly like the untuned one, so the gain of the prior is read on one scale.
 
-    python scripts/finetune_tabpfn_prior.py --cache outputs/prior_cache/kch_e1_32d_x.npz \\
+    python scripts/finetune_tabpfn_prior.py --cache outputs/prior_cache/fold_pools/<pool>/fold0.npz \\
+        --family mixture --family-weights 0.5 0.5 \\
+        --giles-hyper "random_partitions=1 threshold=0.03:0.08 p_te=0.5:1" \\
         --prior-hyper "two_arms=1 effect_scale=0.2:1 d_source=network s_source=genetics_1 \\
                        s_b_source=genetics_2 effect_headroom=1 generic_weight=0.5" \\
-        --steps 2000 --n-context 2000 --out outputs/tabpfn_ft/kch_gen05
+        --steps 2000 --n-context 2000 --out outputs/tabpfn_ft/bcb_thr03
 
 Needs the panel environment (tabpfn >= 9.2, torch >= 2.5) and a GPU. The
 weights' licence (Prior Labs, non-commercial) covers research use; the
@@ -42,16 +44,26 @@ sys.path.insert(0, os.path.join(REPO, "src"))
 
 
 def prior_from_args(cache: str, hyper_text: str, seed: int, n_context: int, n_query: int,
-                    context_pool: str = "susceptible", atlas_dir: str = "data/atlases"):
+                    context_pool: str = "susceptible", atlas_dir: str = "data/atlases",
+                    family: str = "theory", family_weights=None, giles_hyper_text: str = ""):
     """The Neuro-Prior of the training jobs (same config keys as
-    scripts/train_pfn_myriad.qsub.sh), built once."""
+    scripts/train_pfn_myriad.qsub.sh: FAMILY, FAMILY_WEIGHTS, PRIOR_HYPER,
+    GILES_HYPER), built once."""
     from neurocausalpfn.train.train_pfn import _build_prior, parse_hyper_opts
 
+    prior_cfg = {"kind": "neuro_prior", "family": family, "cache": cache, "atlas_dir": atlas_dir,
+                 "hyper": parse_hyper_opts(hyper_text), "context_pool": context_pool,
+                 "context_replace": True, "standardize": "pool", "augment": True}
+    if family == "mixture":
+        w = [float(x) for x in (family_weights or [0.5, 0.5])]
+        if len(w) != 2 or min(w) < 0 or sum(w) <= 0:
+            sys.exit("--family-weights takes two non-negative numbers: theory giles")
+        prior_cfg["family_weights"] = [w[0] / sum(w), w[1] / sum(w)]
+    if giles_hyper_text:
+        prior_cfg["hyper_giles"] = parse_hyper_opts(giles_hyper_text)
     cfg = {"seed": int(seed),
            "pfn": {"context_max": int(n_context), "n_query": int(n_query), "d_x": 0},
-           "prior": {"kind": "neuro_prior", "family": "theory", "cache": cache, "atlas_dir": atlas_dir,
-                     "hyper": parse_hyper_opts(hyper_text), "context_pool": context_pool,
-                     "context_replace": True, "standardize": "pool", "augment": True}}
+           "prior": prior_cfg}
     prior, d_x, ok = _build_prior(cfg)
     if not ok:
         sys.exit("the configuration did not build a Neuro-Prior")
@@ -111,8 +123,12 @@ def finetune(args) -> str:
     device = args.device if args.device != "auto" else ("cuda" if torch.cuda.is_available() else "cpu")
     rng = np.random.default_rng(args.seed)
     prior, d_x, cfg = prior_from_args(args.cache, args.prior_hyper, args.seed, args.n_context, args.n_query,
-                                      context_pool=args.context_pool, atlas_dir=args.atlas_dir)
-    print(f"prior: d_x={d_x}, context {args.n_context}+{args.n_query}, {getattr(prior, 'describe', lambda: '')()}", flush=True)
+                                      context_pool=args.context_pool, atlas_dir=args.atlas_dir,
+                                      family=args.family, family_weights=args.family_weights,
+                                      giles_hyper_text=args.giles_hyper)
+    print(f"prior: family {args.family}" + (f" {cfg['prior'].get('family_weights')}" if args.family == "mixture" else "")
+          + f", giles hyper {cfg['prior'].get('hyper_giles', {})}, d_x={d_x}, context {args.n_context}+{args.n_query}, "
+          f"{getattr(prior, 'describe', lambda: '')()}", flush=True)
 
     kw = dict(device=device, n_estimators=args.n_estimators, random_state=args.seed,
               ignore_pretraining_limits=True, fit_mode="batched")
@@ -192,6 +208,9 @@ def _save(est, out, step, history, cfg, args, save_tabpfn_model) -> str:
                       additional_fields={"neuro_prior_finetune": {"steps": int(step), "learner": args.learner,
                                                                   "n_context": int(args.n_context),
                                                                   "prior_hyper": args.prior_hyper,
+                                                                  "family": args.family,
+                                                                  "family_weights": args.family_weights,
+                                                                  "giles_hyper": args.giles_hyper,
                                                                   "cache": os.path.basename(args.cache)}})
     with open(os.path.join(out, "history.json"), "w") as f:
         json.dump({"history": history, "config": {k: v for k, v in vars(args).items()},
@@ -204,6 +223,12 @@ def main(argv=None):
     ap.add_argument("--cache", required=True, help="anatomy cache of the pool (scripts/build_prior_cache.py)")
     ap.add_argument("--prior-hyper", default="two_arms=1 effect_scale=0.2:1 d_source=network s_source=genetics_1 "
                                             "s_b_source=genetics_2 effect_headroom=1 generic_weight=0.5")
+    ap.add_argument("--family", default="theory", choices=["theory", "giles", "mixture"],
+                    help="Neuro-Prior family, as FAMILY of the training jobs")
+    ap.add_argument("--family-weights", nargs=2, type=float, default=None, metavar=("THEORY", "GILES"),
+                    help="mixture weights, as FAMILY_WEIGHTS")
+    ap.add_argument("--giles-hyper", default="",
+                    help="virtual-trial family ranges, as GILES_HYPER, e.g. 'random_partitions=1 threshold=0.03:0.08'")
     ap.add_argument("--atlas-dir", default="data/atlases")
     ap.add_argument("--context-pool", default="susceptible", choices=["susceptible", "all"])
     ap.add_argument("--out", required=True)

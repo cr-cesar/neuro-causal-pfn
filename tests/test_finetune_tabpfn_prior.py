@@ -48,3 +48,25 @@ def test_ce_loss_reshapes_raw_logits_like_tabpfn():
     assert float(loss) < 0.1
     y0 = np.zeros(Q, dtype=int)
     assert float(ft.ce_loss_from_raw_logits(logits, y0, "cpu")) > 2.5
+
+
+def test_prior_from_args_accepts_the_mixture_and_giles_ranges(monkeypatch):
+    captured = {}
+
+    def fake_build(cfg, seed_offset=0):
+        captured.update(cfg)
+        return object(), 7, True
+
+    import neurocausalpfn.train.train_pfn as tp
+    monkeypatch.setattr(tp, "_build_prior", fake_build)
+    prior, d_x, cfg = ft.prior_from_args("pool/fold0.npz", "two_arms=1 generic_weight=0.5", 0, 512, 32,
+                                         family="mixture", family_weights=[1, 1],
+                                         giles_hyper_text="random_partitions=1 threshold=0.03:0.08 te_re_coupled=1")
+    pr = cfg["prior"]
+    assert d_x == 7 and pr["family"] == "mixture" and pr["family_weights"] == [0.5, 0.5]
+    assert pr["hyper_giles"] == {"random_partitions": 1.0, "threshold": [0.03, 0.08], "te_re_coupled": 1.0}
+    assert pr["hyper"] == {"two_arms": 1.0, "generic_weight": 0.5}
+    plain = ft.prior_from_args("pool/fold0.npz", "two_arms=1", 0, 512, 32)[2]["prior"]
+    assert plain["family"] == "theory" and "family_weights" not in plain and "hyper_giles" not in plain
+    with pytest.raises(SystemExit):
+        ft.prior_from_args("p", "", 0, 512, 32, family="mixture", family_weights=[1])
