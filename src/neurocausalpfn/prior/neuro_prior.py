@@ -55,6 +55,10 @@ class HyperPrior:
     # share of processes with the paper's coupling of the two effects,
     # RE = 1 - TE (its grid: (1, 0), (0.75, 0.25), (0.5, 0.5), (0.25, 0.75))
     te_re_coupled: float = 0.0
+    # share of processes whose context outcomes are the response probability
+    # itself instead of a Bernoulli draw (the factorial's "all-or-none effect,
+    # continuous outcome" cell)
+    continuous_outcome: float = 0.0
 
     def contains_giles(self, TE: float, RE: float, BIAS: float, BIASTYPE: str) -> bool:
         """True when a paper scenario is a possible draw of this hyper-prior."""
@@ -114,6 +118,8 @@ class NeuroPriorDGP:
         self.label_noise = float(rng.uniform(*h.label_noise)) if label_noise is None else float(label_noise)
         self.severity_sign = int(rng.choice([-1, 1])) if severity_sign is None else int(severity_sign)
         self.both_hit_value = h.both_hit_value
+        self.continuous = bool(float(getattr(h, "continuous_outcome", 0.0) or 0.0) > 0
+                               and rng.uniform() < float(h.continuous_outcome))
 
     # ------------------------------------------------------------------ paper
     @classmethod
@@ -200,6 +206,7 @@ class NeuroPriorDGP:
         return {"networks": list(self.networks), "optimal_for_A": dict(self.optimal_for_A),
                 "p_te": self.p_te, "p_re": self.p_re, "bias": self.bias, "bias_type": self.bias_type,
                 "threshold": self.threshold, "label_noise": self.label_noise,
+                "outcome": "continuous" if getattr(self, "continuous", False) else "binary",
                 "partitions": "random" if getattr(self, "virtual_overlaps", None) is not None else "atlas"}
 
 
@@ -217,8 +224,11 @@ def make_prior_dataset(dgp: NeuroPriorDGP,
     e = dgp.propensity(cent_ctx, vol_ctx, nets_c, s_c)
     Tc = (rng.uniform(size=len(s_c)) < e).astype(np.float64)
     mu_c = np.array([dgp.mu(nets_c[i], s_c[i], int(Tc[i])) for i in range(len(s_c))])
-    Yc = (rng.uniform(size=len(s_c)) < mu_c).astype(np.float64)
-    if dgp.label_noise > 0:
+    if getattr(dgp, "continuous", False):
+        Yc = mu_c.astype(np.float64)                      # the probability itself, no draw
+    else:
+        Yc = (rng.uniform(size=len(s_c)) < mu_c).astype(np.float64)
+    if dgp.label_noise > 0 and not getattr(dgp, "continuous", False):
         flip = rng.uniform(size=len(Yc)) < dgp.label_noise
         Yc = np.where(flip, 1.0 - Yc, Yc)
 

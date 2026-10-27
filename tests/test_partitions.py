@@ -72,3 +72,18 @@ def test_te_re_coupling_follows_the_paper_grid():
     h0 = HyperPrior(te_re_coupled=0.0, p_te=(0.25, 1.0), p_re=(0.0, 0.5))
     assert any(abs(NeuroPriorDGP(atlas, rng, h0).p_re - (1.0 - NeuroPriorDGP(atlas, rng, h0).p_te)) > 1e-6
                for _ in range(5))
+
+
+def test_continuous_outcome_option_returns_probabilities():
+    from neurocausalpfn.prior.neuro_prior import NeuroPriorDGP, make_prior_dataset
+    atlas = FunctionalAtlas.synthetic(shape=SHAPE, n_networks=6, seed=1)
+    pool = _pool(atlas, 40, seed=0)
+    coh = NeuroPriorCohort(atlas, pool, seed=1, n_context=24, n_query=4, family="giles",
+                           hyper=HyperPrior(continuous_outcome=1.0, p_te=(0.5, 0.9), p_re=(0.1, 0.3)),
+                           context_pool="all", augment=False)
+    b = coh.sample_batch(3)
+    assert all(p["outcome"] == "continuous" for p in b["processes"])
+    assert not set(np.unique(b["Yc"])) <= {0.0, 1.0}                # probabilities, not draws
+    plain = NeuroPriorCohort(atlas, pool, seed=1, n_context=24, n_query=4, family="giles",
+                             context_pool="all", augment=False).sample_batch(2)
+    assert set(np.unique(plain["Yc"])) <= {0.0, 1.0}

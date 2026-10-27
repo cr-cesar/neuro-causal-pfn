@@ -260,3 +260,33 @@ def test_pfn_estimator_effect_context_scores_every_query(tmp_path, monkeypatch):
     monkeypatch.delenv("PFN_CONTEXT_SELECT")
     q1, q0 = est(Xtr, W, Y, Xte)
     assert q1.shape == (23,) and not np.allclose(p1 - p0, q1 - q0)   # a different context, different answers
+
+
+def test_rotation_ensembling_averages_rotated_predictions(monkeypatch):
+    """PFN_ROTATIONS / PFN_ARM_FLIP: the estimator averages _predict over
+    rotated copies (and the arm swap, outputs swapped back)."""
+    import numpy as np
+    from neurocausalpfn.pfn import estimator as E
+
+    class _Est(E.PFNEstimator):
+        def __init__(self):
+            self.d_x, self.standardize, self.context_cap, self.n_capped = 3, False, 0, 0
+            self.calls = []
+        def _predict(self, Xtr, W, Y, Xte):
+            self.calls.append((Xtr.copy(), np.asarray(W).copy()))
+            return np.full(len(Xte), 0.8), np.full(len(Xte), 0.2 + 0.1 * float(np.asarray(W)[0]))
+
+    rng = np.random.default_rng(0)
+    Xtr, Xte = rng.normal(size=(10, 3)).astype(np.float32), rng.normal(size=(4, 3)).astype(np.float32)
+    W, Y = np.array([1, 0] * 5, dtype=np.float32), np.zeros(10, dtype=np.float32)
+    monkeypatch.setenv("PFN_ROTATIONS", "3"); monkeypatch.setenv("PFN_ARM_FLIP", "1")
+    e = _Est(); mu1, mu0 = e(Xtr, W, Y, Xte)
+    assert len(e.calls) == 8                                        # (identity + 3 rotations) x 2 arm orders
+    assert any(np.allclose(c[0], Xtr) for c in e.calls) and any(np.allclose(c[1], 1 - W) for c in e.calls)
+    # rotations keep norms
+    assert all(np.allclose(np.linalg.norm(c[0], axis=1), np.linalg.norm(Xtr, axis=1), atol=1e-4) for c in e.calls)
+    # with the arms swapped, outputs are swapped back: mu1 averages 0.8 and the flipped mu0
+    assert np.allclose(mu0, (0.3 + 0.8) / 2) and np.allclose(mu1, (0.8 + 0.2) / 2)
+    monkeypatch.delenv("PFN_ROTATIONS"); monkeypatch.delenv("PFN_ARM_FLIP")
+    e2 = _Est(); e2(Xtr, W, Y, Xte)
+    assert len(e2.calls) == 1
