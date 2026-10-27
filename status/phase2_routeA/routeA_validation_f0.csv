@@ -1,0 +1,5 @@
+model,split,learner,pehe_paper,pehe_code,n_deficits,pseudo_fold,test_set,finetune
+tabpfn_base,receptor,one,0.259,0.212,16,0,extras (never-tested),none
+tabpfn_base,genetics,one,0.224,0.219,16,0,extras (never-tested),none
+tabpfn_ft,receptor,one,0.261,0.214,16,0,extras (never-tested),thr03 mixture 0.5/0.5 + generic 0.5; 2000 steps; lr 1e-5; n_context 1500; 1 estimator; KCH pool fold0
+tabpfn_ft,genetics,one,0.230,0.221,16,0,extras (never-tested),thr03 mixture 0.5/0.5 + generic 0.5; 2000 steps; lr 1e-5; n_context 1500; 1 estimator; KCH pool fold0
