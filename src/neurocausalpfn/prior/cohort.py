@@ -379,7 +379,13 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
                 if self.context_replace:
                     ci = rest[self.rng.integers(0, len(rest), size=n_context)]
                 else:
-                    ci = rest[: n_context]                  # distinct lesions, at most the slice
+                    # distinct lesions first; a slice shorter than the context is
+                    # topped up with replacement so every item of a batch has
+                    # the same length (audit of 27 Oct: a short slice broke the
+                    # batch stacking)
+                    ci = rest[: n_context]
+                    if len(ci) < n_context:
+                        ci = np.concatenate([ci, rest[self.rng.integers(0, len(rest), size=n_context - len(ci))]])
             Xc, Xq = self.X[ci], self.X[qi]
             if self.standardize == "context":
                 mu, sd = Xc.mean(0, keepdims=True), Xc.std(0, keepdims=True) + 1e-6
