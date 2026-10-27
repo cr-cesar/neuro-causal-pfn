@@ -242,6 +242,8 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
         self.overlaps_theory = self._theory_view()
         self.max_tries = int(max_tries)
         self.n_rejected = 0
+        self.overlaps_extra = getattr(self, "overlaps_extra", {})
+        self._atoms = None                 # (labels, table) of the anatomical atoms, built on first use
         # Coordinate-free covariates: the per-fold encoders (and external
         # cohorts) each have their own latent basis, so the transformer must
         # not learn one. The pool is standardised once and every process
@@ -297,8 +299,9 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
         if self.context_pool == "all":
             return None
         if family == "giles":
-            idx = [self.atlas.networks.index(n) for n in dgp.networks]
-            hit = (self.overlaps[:, idx, :] > dgp.threshold).any(axis=(1, 2))
+            ov = self._giles_ov(dgp)
+            idx = [dgp.atlas.networks.index(n) for n in dgp.networks]
+            hit = (ov[:, idx, :] > dgp.threshold).any(axis=(1, 2))
         else:
             hit = dgp.raw_scores(self._theory_ov())[0] > 0.0
         return np.flatnonzero(hit)
@@ -335,7 +338,29 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
             return InterSynthTheoryDGP(self.atlas, self.rng, self.hyper).calibrate(self._theory_ov())
         from .neuro_prior import NeuroPriorDGP
 
-        return NeuroPriorDGP(self.atlas, self.rng, self.hyper if self.family == "giles" else self.hyper_giles)
+        h = self.hyper if self.family == "giles" else self.hyper_giles
+        if float(getattr(h, "random_partitions", 0.0) or 0.0) > 0 and self.rng.uniform() < float(h.random_partitions):
+            # route C: the process's networks are random partitions of the
+            # cache's anatomical atoms, never the benchmark's own halves
+            from .partitions import VirtualAtlas, atom_table, draw_virtual_networks
+
+            if self._atoms is None:
+                self._atoms = atom_table(self.overlaps, self.overlaps_extra)
+            labels, table = self._atoms
+            k = int(self.rng.integers(h.n_networks[0], h.n_networks[1] + 1))
+            vov, desc = draw_virtual_networks(self.rng, labels, table, k, atoms_per_side=h.atoms_per_side)
+            atlas = VirtualAtlas(vov, self.centroids)
+            dgp = NeuroPriorDGP(atlas, self.rng, h, networks=list(atlas.networks))
+            dgp.virtual_overlaps = vov
+            dgp.virtual_desc = desc
+            return dgp
+        return NeuroPriorDGP(self.atlas, self.rng, h)
+
+    def _giles_ov(self, dgp) -> np.ndarray:
+        """The [m, K, 2] overlaps a virtual-trial process reads: the cache's
+        atlas halves, or the process's own virtual networks."""
+        v = getattr(dgp, "virtual_overlaps", None)
+        return self.overlaps if v is None else v
 
     def _one(self, n_context: int, drawn=None) -> Dict[str, np.ndarray]:
         from .intersynth_theory import make_theory_dataset
@@ -367,8 +392,9 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
                                            ov_t[qi], self.centroids[qi], Xq, self.rng)
                 U = None
             else:
-                data = make_prior_dataset(dgp, self.overlaps[ci], self.centroids[ci], self.volumes[ci], Xc,
-                                          self.overlaps[qi], self.centroids[qi], self.volumes[qi], Xq, self.rng)
+                ov_g = self._giles_ov(dgp)
+                data = make_prior_dataset(dgp, ov_g[ci], self.centroids[ci], self.volumes[ci], Xc,
+                                          ov_g[qi], self.centroids[qi], self.volumes[qi], Xq, self.rng)
                 U = data["u_ctx"][:, None] if dgp.bias_type == "agnostic" else None
             n_slice = int(self.m if sl is None else len(sl))
             if verify_identifiability(data["Tc"], data["Xc"], None, None, U=U):

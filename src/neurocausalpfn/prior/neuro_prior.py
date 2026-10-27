@@ -47,6 +47,11 @@ class HyperPrior:
     threshold: Tuple[float, float] = (0.02, 0.10)     # overlap fraction that counts as a hit
     label_noise: Tuple[float, float] = (0.0, 0.05)    # probability of flipping an observed outcome
     both_hit_value: float = 0.5                       # paper's y_true when both subnetworks are hit
+    # route C (27 Oct): share of processes whose networks are random
+    # partitions built from the cache's anatomical atoms (prior/partitions.py)
+    # instead of the atlas's own halves, and the atoms per side of those
+    random_partitions: float = 0.0
+    atoms_per_side: Tuple[float, float] = (1, 2)
 
     def contains_giles(self, TE: float, RE: float, BIAS: float, BIASTYPE: str) -> bool:
         """True when a paper scenario is a possible draw of this hyper-prior."""
@@ -188,7 +193,8 @@ class NeuroPriorDGP:
     def describe(self) -> Dict:
         return {"networks": list(self.networks), "optimal_for_A": dict(self.optimal_for_A),
                 "p_te": self.p_te, "p_re": self.p_re, "bias": self.bias, "bias_type": self.bias_type,
-                "threshold": self.threshold, "label_noise": self.label_noise}
+                "threshold": self.threshold, "label_noise": self.label_noise,
+                "partitions": "random" if getattr(self, "virtual_overlaps", None) is not None else "atlas"}
 
 
 def make_prior_dataset(dgp: NeuroPriorDGP,
