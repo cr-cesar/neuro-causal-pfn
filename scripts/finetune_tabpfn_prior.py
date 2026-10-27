@@ -116,8 +116,11 @@ def finetune(args) -> str:
     from tabpfn.finetuning.finetuned_base import _parameters_unused_by_task, _ratio_ctx_query_split
     from tabpfn.finetuning.train_util import get_and_init_optimizer, get_cosine_schedule_with_warmup
     from tabpfn.model_loading import save_tabpfn_model
-    from tabpfn.utils import meta_dataset_collator
     from torch.optim.lr_scheduler import LambdaLR
+    try:                                                    # tabpfn 9.2: the collator lives with the data utilities
+        from tabpfn.finetuning.data_util import meta_dataset_collator
+    except ImportError:                                     # earlier releases exported it from tabpfn.utils
+        from tabpfn.utils import meta_dataset_collator
 
     os.makedirs(args.out, exist_ok=True)
     device = args.device if args.device != "auto" else ("cuda" if torch.cuda.is_available() else "cpu")
