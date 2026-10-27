@@ -112,3 +112,6 @@ def test_fine_tuned_members(fake_packages, monkeypatch, tmp_path):
     monkeypatch.delenv("TABPFN_MODEL_PATH")
     plain = panel.make_tabpfn(device="cpu")
     assert "model_path" not in plain.model.kw and plain.info["model"] == "v3.5"
+    monkeypatch.setenv("TABPFN_N_ESTIMATORS", "4")
+    same = panel.make_tabpfn(device="cpu")
+    assert same.model.kw["n_estimators"] == 4 and same.info["n_estimators"] == 4

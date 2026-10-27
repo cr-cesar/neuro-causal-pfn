@@ -103,11 +103,16 @@ def make_tabpfn(device: Optional[str] = None, n_estimators="auto", seed: int = 0
     model_path = os.environ.get("TABPFN_MODEL_PATH")
     if model_path:
         kw["model_path"] = model_path
+    # TABPFN_N_ESTIMATORS: the ensemble size at scoring, so a fine-tuned and
+    # an untuned member are compared with the same settings
+    if os.environ.get("TABPFN_N_ESTIMATORS", "").strip():
+        kw["n_estimators"] = int(os.environ["TABPFN_N_ESTIMATORS"])
     clf = TabPFNClassifier(**kw)
     version = settings.tabpfn.model_version
     label = os.path.basename(os.path.dirname(model_path.rstrip("/"))) + "/" + os.path.basename(model_path) \
         if model_path else getattr(version, "value", str(version))
-    return LoggedClassifier("tabpfn", clf, {"version": _version("tabpfn"), "model": label, "device": dev})
+    return LoggedClassifier("tabpfn", clf, {"version": _version("tabpfn"), "model": label, "device": dev,
+                                            "n_estimators": kw["n_estimators"]})
 
 
 def make_tabpfn_ft(device: Optional[str] = None, n_estimators=None, seed: int = 0) -> LoggedClassifier:
