@@ -59,3 +59,16 @@ def test_cohort_draws_random_partition_processes():
     plain = NeuroPriorCohort(atlas, pool, seed=5, n_context=32, n_query=4, family="giles",
                              context_pool="all", augment=False)
     assert all(p["partitions"] == "atlas" for p in plain.sample_batch(3)["processes"])
+
+
+def test_te_re_coupling_follows_the_paper_grid():
+    atlas = FunctionalAtlas.synthetic(shape=SHAPE, n_networks=6, seed=1)
+    from neurocausalpfn.prior.neuro_prior import NeuroPriorDGP
+    rng = np.random.default_rng(0)
+    h = HyperPrior(te_re_coupled=1.0, p_te=(0.25, 1.0))
+    for _ in range(5):
+        d = NeuroPriorDGP(atlas, rng, h)
+        assert abs(d.p_re - (1.0 - d.p_te)) < 1e-12
+    h0 = HyperPrior(te_re_coupled=0.0, p_te=(0.25, 1.0), p_re=(0.0, 0.5))
+    assert any(abs(NeuroPriorDGP(atlas, rng, h0).p_re - (1.0 - NeuroPriorDGP(atlas, rng, h0).p_te)) > 1e-6
+               for _ in range(5))

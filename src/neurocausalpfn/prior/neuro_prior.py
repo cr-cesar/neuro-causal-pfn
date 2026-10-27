@@ -52,6 +52,9 @@ class HyperPrior:
     # instead of the atlas's own halves, and the atoms per side of those
     random_partitions: float = 0.0
     atoms_per_side: Tuple[float, float] = (1, 2)
+    # share of processes with the paper's coupling of the two effects,
+    # RE = 1 - TE (its grid: (1, 0), (0.75, 0.25), (0.5, 0.5), (0.25, 0.75))
+    te_re_coupled: float = 0.0
 
     def contains_giles(self, TE: float, RE: float, BIAS: float, BIASTYPE: str) -> bool:
         """True when a paper scenario is a possible draw of this hyper-prior."""
@@ -97,6 +100,9 @@ class NeuroPriorDGP:
         self.optimal_for_A: Dict[int, int] = {n: int(o) for n, o in zip(self.networks, optimal_for_A)}
         self.p_te = float(rng.uniform(*h.p_te)) if p_te is None else float(p_te)
         self.p_re = float(rng.uniform(*h.p_re)) if p_re is None else float(p_re)
+        if p_re is None and float(getattr(h, "te_re_coupled", 0.0) or 0.0) > 0 \
+                and rng.uniform() < float(h.te_re_coupled):
+            self.p_re = 1.0 - self.p_te
         self.bias = float(rng.uniform(*h.bias)) if bias is None else float(bias)
         if bias_type is None:
             w = np.asarray(h.bias_weights, dtype=float)[: len(h.bias_types)]
