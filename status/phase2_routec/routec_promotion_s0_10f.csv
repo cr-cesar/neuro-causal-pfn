@@ -1,0 +1,7 @@
+variant,split,pehe_paper,pehe_code,n_deficits,train_context,folds,seed,test_set
+thr03,receptor,0.362,0.232,16,3000,0-9,0,extras (never-tested)
+thr03,genetics,0.347,0.247,16,3000,0-9,0,extras (never-tested)
+rpg05,receptor,0.372,0.238,16,3000,0-9,0,extras (never-tested)
+rpg05,genetics,0.350,0.251,16,3000,0-9,0,extras (never-tested)
+kch-s0,receptor,0.374,0.238,16,3000,0-9,0,extras (never-tested)
+kch-s0,genetics,0.349,0.251,16,3000,0-9,0,extras (never-tested)
