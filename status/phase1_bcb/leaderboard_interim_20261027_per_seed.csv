@@ -1,0 +1,329 @@
+estimator,split,eid,label,seed,pehe,balacc,cell,source
+CausalPFN,genetics,E1,E1,0,0.2705845902849442,0.9475512996362191,causalpfn,station
+LR/ET best cell,genetics,E1,E1,0,0.28084768022744366,0.8977273567297519,logistic_regression/two,station
+CausalPFN,genetics,E1,E1,1,0.26888399076034275,0.9272223551436353,causalpfn,station
+LR/ET best cell,genetics,E1,E1,1,0.27806662608413585,0.9248988857121891,logistic_regression/two,station
+CausalPFN,genetics,E1,E1,2,0.2684878992926633,0.9429972347548082,causalpfn,station
+LR/ET best cell,genetics,E1,E1,2,0.2801588702978616,0.9134605645150529,logistic_regression/two,station
+CausalPFN,genetics,E10a,E10a,0,0.3579218376597235,0.8547047049907963,causalpfn,myriad
+LR/ET best cell,genetics,E10a,E10a,0,0.3828854040454241,0.8465348455244205,extra_trees/two,myriad
+CausalPFN,genetics,E10a,E10a,1,0.3536438805359971,0.8802368564636038,causalpfn,myriad
+LR/ET best cell,genetics,E10a,E10a,1,0.38282543610195957,0.8632462848455172,extra_trees/two,myriad
+CausalPFN,genetics,E10a,E10a,2,0.35790472674301477,0.8766463309531279,causalpfn,myriad
+LR/ET best cell,genetics,E10a,E10a,2,0.3851087030963196,0.8686047548713199,extra_trees/two,myriad
+CausalPFN,genetics,E10b,E10b,0,0.3543575312823484,0.8693163247575503,causalpfn,myriad
+LR/ET best cell,genetics,E10b,E10b,0,0.38332643461288973,0.8380271262133016,extra_trees/two,myriad
+CausalPFN,genetics,E10b,E10b,1,0.3534276775184877,0.8786242949517327,causalpfn,myriad
+LR/ET best cell,genetics,E10b,E10b,1,0.38220614062570835,0.8677268988519936,extra_trees/two,myriad
+CausalPFN,genetics,E10b,E10b,2,0.3513091295291695,0.8707461093721642,causalpfn,myriad
+LR/ET best cell,genetics,E10b,E10b,2,0.3796662404856915,0.8575101732145473,extra_trees/two,myriad
+CausalPFN,genetics,E10c,E10c,1,0.35583035483424996,0.8793232859323621,causalpfn,myriad
+LR/ET best cell,genetics,E10c,E10c,1,0.3840093045384474,0.8684037455791168,extra_trees/two,myriad
+CausalPFN,genetics,E10c,E10c,2,0.3541785627772731,0.8755272669853656,causalpfn,myriad
+LR/ET best cell,genetics,E10c,E10c,2,0.38326224406782716,0.8547292646295754,extra_trees/two,myriad
+CausalPFN,genetics,E11a,E11a,0,0.29414502295659845,0.9278821089949173,causalpfn,myriad
+LR/ET best cell,genetics,E11a,E11a,0,0.27544873642329815,0.9082795829751493,logistic_regression/two,myriad
+CausalPFN,genetics,E11a,E11a,1,0.2975035575038974,0.9321744777281252,causalpfn,myriad
+LR/ET best cell,genetics,E11a,E11a,1,0.27175620548807333,0.9264127778032385,logistic_regression/two,myriad
+CausalPFN,genetics,E11a,E11a,2,0.2970956277285728,0.9299726159780854,causalpfn,myriad
+LR/ET best cell,genetics,E11a,E11a,2,0.27242244321216075,0.9257901350628883,logistic_regression/two,myriad
+CausalPFN,genetics,E11b,"E11b[backbone=cnn,w_dice=0.1]",0,0.2914800506319208,0.9195026204614538,causalpfn,station
+LR/ET best cell,genetics,E11b,"E11b[backbone=cnn,w_dice=0.1]",0,0.27260935145723414,0.9216324630011161,logistic_regression/two,station
+CausalPFN,genetics,E11b,"E11b[backbone=cnn,w_dice=0.1]",1,0.2957230455092093,0.9214644979510472,causalpfn,station
+LR/ET best cell,genetics,E11b,"E11b[backbone=cnn,w_dice=0.1]",1,0.2713163037696074,0.9324064856431428,logistic_regression/two,station
+CausalPFN,genetics,E11b,"E11b[backbone=cnn,w_dice=0.1]",2,0.29141869475554877,0.9247431246424904,causalpfn,station
+LR/ET best cell,genetics,E11b,"E11b[backbone=cnn,w_dice=0.1]",2,0.27007553924770555,0.9135877396252534,logistic_regression/two,station
+CausalPFN,genetics,E11b,"E11b[backbone=cnn,w_dice=1.0]",0,0.291895414709383,0.9217817127913395,causalpfn,station
+LR/ET best cell,genetics,E11b,"E11b[backbone=cnn,w_dice=1.0]",0,0.27271260644342266,0.921241838001116,logistic_regression/two,station
+CausalPFN,genetics,E11b,"E11b[backbone=cnn,w_dice=1.0]",1,0.2905614889519607,0.9304196133399857,causalpfn,station
+LR/ET best cell,genetics,E11b,"E11b[backbone=cnn,w_dice=1.0]",1,0.27111238293594087,0.9339333128382319,logistic_regression/two,station
+CausalPFN,genetics,E11b,"E11b[backbone=cnn,w_dice=1.0]",2,0.29107698134886106,0.9228943558097912,causalpfn,station
+LR/ET best cell,genetics,E11b,"E11b[backbone=cnn,w_dice=1.0]",2,0.2706151191521269,0.9127413854585867,logistic_regression/two,station
+CausalPFN,genetics,E11b,"E11b[backbone=resnet18,w_dice=0.1]",0,0.29535489630961015,0.9128597009037636,causalpfn,station
+LR/ET best cell,genetics,E11b,"E11b[backbone=resnet18,w_dice=0.1]",0,0.2746747854930178,0.9242978736590015,logistic_regression/two,station
+CausalPFN,genetics,E11b,"E11b[backbone=resnet18,w_dice=0.1]",1,0.2928295111434249,0.9178211972617121,causalpfn,station
+LR/ET best cell,genetics,E11b,"E11b[backbone=resnet18,w_dice=0.1]",1,0.27224463726824516,0.928363050554452,logistic_regression/two,station
+CausalPFN,genetics,E11b,"E11b[backbone=resnet18,w_dice=0.1]",2,0.29571501377956666,0.9231835604639295,causalpfn,station
+LR/ET best cell,genetics,E11b,"E11b[backbone=resnet18,w_dice=0.1]",2,0.26999947150145825,0.9233235347504843,logistic_regression/two,station
+CausalPFN,genetics,E11b,"E11b[backbone=resnet18,w_dice=1.0]",0,0.2952777519477574,0.9211626215470344,causalpfn,station
+LR/ET best cell,genetics,E11b,"E11b[backbone=resnet18,w_dice=1.0]",0,0.27518603085224796,0.9134434646781205,logistic_regression/two,station
+CausalPFN,genetics,E11b,"E11b[backbone=resnet18,w_dice=1.0]",1,0.29293799445081337,0.9207802384215455,causalpfn,station
+LR/ET best cell,genetics,E11b,"E11b[backbone=resnet18,w_dice=1.0]",1,0.27150215348125234,0.9272164796211798,logistic_regression/two,station
+CausalPFN,genetics,E11b,"E11b[backbone=resnet18,w_dice=1.0]",2,0.29463166200581803,0.915268795619662,causalpfn,station
+LR/ET best cell,genetics,E11b,"E11b[backbone=resnet18,w_dice=1.0]",2,0.2707500987506784,0.9206517306780901,logistic_regression/two,station
+CausalPFN,genetics,E2,E2[w_dice=0.1],0,0.26380710247971867,0.9430806477881828,causalpfn,myriad
+LR/ET best cell,genetics,E2,E2[w_dice=0.1],0,0.2773177135017323,0.9091636675930947,logistic_regression/two,myriad
+CausalPFN,genetics,E2,E2[w_dice=0.1],1,0.2638736580729766,0.9379433030475308,causalpfn,myriad
+LR/ET best cell,genetics,E2,E2[w_dice=0.1],1,0.2747367272901101,0.9144786495290635,logistic_regression/two,myriad
+CausalPFN,genetics,E2,E2[w_dice=0.1],2,0.2664785110841943,0.9435520868875518,causalpfn,myriad
+LR/ET best cell,genetics,E2,E2[w_dice=0.1],2,0.27964157848649146,0.927056423292054,logistic_regression/two,myriad
+CausalPFN,genetics,E2,E2[w_dice=0.5],0,0.263897029071821,0.9433111643926927,causalpfn,myriad
+LR/ET best cell,genetics,E2,E2[w_dice=0.5],0,0.2797599136410332,0.9029494555959705,logistic_regression/two,myriad
+CausalPFN,genetics,E2,E2[w_dice=0.5],1,0.266060248029163,0.9399990895386864,causalpfn,myriad
+LR/ET best cell,genetics,E2,E2[w_dice=0.5],1,0.2753565462908144,0.9154717106410031,logistic_regression/two,myriad
+CausalPFN,genetics,E2,E2[w_dice=0.5],2,0.26897685923316617,0.9438504284998003,causalpfn,myriad
+LR/ET best cell,genetics,E2,E2[w_dice=0.5],2,0.27864172968864415,0.925328464034507,logistic_regression/two,myriad
+CausalPFN,genetics,E2,E2[w_dice=1.0],0,0.2644365008328312,0.9447484688330597,causalpfn,myriad
+LR/ET best cell,genetics,E2,E2[w_dice=1.0],0,0.27704173358570733,0.9219390788437216,logistic_regression/two,myriad
+CausalPFN,genetics,E2,E2[w_dice=1.0],1,0.26639758155666904,0.9355928080526074,causalpfn,myriad
+LR/ET best cell,genetics,E2,E2[w_dice=1.0],1,0.2753565550362102,0.9155344285425543,logistic_regression/two,myriad
+CausalPFN,genetics,E2,E2[w_dice=1.0],2,0.26931069674843133,0.943174746208164,causalpfn,myriad
+LR/ET best cell,genetics,E2,E2[w_dice=1.0],2,0.27941062718862936,0.9258278026588456,logistic_regression/two,myriad
+CausalPFN,genetics,E3,E3[backbone=cnn],0,0.26505202303551234,0.9292032564251995,causalpfn,station
+LR/ET best cell,genetics,E3,E3[backbone=cnn],0,0.2771173761452647,0.9130174175346701,logistic_regression/two,station
+CausalPFN,genetics,E3,E3[backbone=cnn],1,0.26470962848719953,0.94096471601651,causalpfn,station
+LR/ET best cell,genetics,E3,E3[backbone=cnn],1,0.2816599660951427,0.9160363249382527,logistic_regression/two,station
+CausalPFN,genetics,E3,E3[backbone=cnn],2,0.26545161948834867,0.9395756228890677,causalpfn,station
+LR/ET best cell,genetics,E3,E3[backbone=cnn],2,0.27533972752295105,0.9203056881382831,logistic_regression/two,station
+CausalPFN,genetics,E3,E3[backbone=resnet18],0,0.26500282349962573,0.9379518784420153,causalpfn,station
+LR/ET best cell,genetics,E3,E3[backbone=resnet18],0,0.27892949592607796,0.9233663313999063,logistic_regression/two,station
+CausalPFN,genetics,E3,E3[backbone=resnet18],1,0.2678374299831259,0.9319180146498176,causalpfn,station
+LR/ET best cell,genetics,E3,E3[backbone=resnet18],1,0.27784014581093397,0.9095764019727309,logistic_regression/two,station
+CausalPFN,genetics,E3,E3[backbone=resnet18],2,0.26751297440170796,0.9272124100945642,causalpfn,station
+LR/ET best cell,genetics,E3,E3[backbone=resnet18],2,0.2782395786696663,0.9206722743183885,logistic_regression/two,station
+CausalPFN,genetics,E3,E3[backbone=resnet50],0,0.2686839108907881,0.9267107305692246,causalpfn,station
+LR/ET best cell,genetics,E3,E3[backbone=resnet50],0,0.28081317950633655,0.9072864925223921,logistic_regression/two,station
+CausalPFN,genetics,E3,E3[backbone=resnet50],1,0.2676298756010598,0.9321131584924147,causalpfn,station
+LR/ET best cell,genetics,E3,E3[backbone=resnet50],1,0.27800740179728683,0.9173666286833738,logistic_regression/two,station
+CausalPFN,genetics,E3,E3[backbone=resnet50],2,0.2671219392586653,0.9201204304420029,causalpfn,station
+LR/ET best cell,genetics,E3,E3[backbone=resnet50],2,0.28021484510097466,0.9165764999700359,logistic_regression/two,station
+CausalPFN,genetics,E3,E3[backbone=wide],0,0.2684143219238645,0.9332887819466764,causalpfn,station
+LR/ET best cell,genetics,E3,E3[backbone=wide],0,0.2773368575276703,0.9215224161498577,logistic_regression/two,station
+CausalPFN,genetics,E3,E3[backbone=wide],1,0.2672655825367129,0.939215878073696,causalpfn,station
+LR/ET best cell,genetics,E3,E3[backbone=wide],1,0.27744672894824535,0.9089328437533992,logistic_regression/two,station
+CausalPFN,genetics,E3,E3[backbone=wide],2,0.2669667070796028,0.9350716858615481,causalpfn,station
+LR/ET best cell,genetics,E3,E3[backbone=wide],2,0.28100674789901536,0.9199647310396626,logistic_regression/two,station
+CausalPFN,genetics,E4,E4[100+100],0,0.29747225514985953,0.9309734071500092,causalpfn,station
+LR/ET best cell,genetics,E4,E4[100+100],0,0.27859861269974223,0.9240805833195078,logistic_regression/two,station
+CausalPFN,genetics,E4,E4[100+100],1,0.2960240944493721,0.9011383520461667,causalpfn,station
+LR/ET best cell,genetics,E4,E4[100+100],1,0.27009927183428856,0.9200807996452247,logistic_regression/two,station
+CausalPFN,genetics,E4,E4[100+100],2,0.29133648285457336,0.9298956518185928,causalpfn,station
+LR/ET best cell,genetics,E4,E4[100+100],2,0.2714415370713852,0.9255298895387817,logistic_regression/two,station
+CausalPFN,genetics,E4,E4[25+25],0,0.277608153065046,0.9367073807380566,causalpfn,station
+LR/ET best cell,genetics,E4,E4[25+25],0,0.3083310168145072,0.9108287228985441,logistic_regression/two,station
+CausalPFN,genetics,E4,E4[25+25],1,0.27193332191683256,0.9213660601482818,causalpfn,station
+LR/ET best cell,genetics,E4,E4[25+25],1,0.30109516782850315,0.8879417180230011,logistic_regression/two,station
+CausalPFN,genetics,E4,E4[25+25],2,0.27269036873852553,0.9254612429550051,causalpfn,station
+LR/ET best cell,genetics,E4,E4[25+25],2,0.2995183409826755,0.8978622904952722,logistic_regression/two,station
+CausalPFN,genetics,E4,E4[25+75],0,0.271566554213052,0.9436273643247294,causalpfn,station
+LR/ET best cell,genetics,E4,E4[25+75],0,0.2758730050341921,0.9118581096560568,logistic_regression/two,station
+CausalPFN,genetics,E4,E4[25+75],1,0.26812733017106244,0.9395126511662923,causalpfn,station
+LR/ET best cell,genetics,E4,E4[25+75],1,0.27128660770830837,0.9281294373129215,logistic_regression/two,station
+CausalPFN,genetics,E4,E4[25+75],2,0.26625725710116444,0.9252196209038597,causalpfn,station
+LR/ET best cell,genetics,E4,E4[25+75],2,0.27478463629371874,0.9108222621568101,logistic_regression/two,station
+CausalPFN,genetics,E4,E4[40+60],0,0.2666630071046045,0.9413762401506536,causalpfn,myriad
+LR/ET best cell,genetics,E4,E4[40+60],0,0.2729387456523426,0.9126477978763925,logistic_regression/two,myriad
+CausalPFN,genetics,E4,E4[40+60],1,0.2643785996187621,0.9439666774920191,causalpfn,myriad
+LR/ET best cell,genetics,E4,E4[40+60],1,0.273758533808907,0.9143486596482948,logistic_regression/two,myriad
+CausalPFN,genetics,E4,E4[40+60],2,0.2664300583829993,0.9418006507625056,causalpfn,myriad
+LR/ET best cell,genetics,E4,E4[40+60],2,0.27469596306000876,0.9212871134405772,logistic_regression/two,myriad
+CausalPFN,genetics,E4,E4[50+50],0,0.2686826265010428,0.9471952772462527,causalpfn,station
+LR/ET best cell,genetics,E4,E4[50+50],0,0.2782361916818247,0.8990383333189415,logistic_regression/two,station
+CausalPFN,genetics,E4,E4[50+50],1,0.2704285779113437,0.9275715277434131,causalpfn,station
+LR/ET best cell,genetics,E4,E4[50+50],1,0.27995979470764043,0.9195096171648324,logistic_regression/two,station
+CausalPFN,genetics,E4,E4[50+50],2,0.2669845843691161,0.9430495337182097,causalpfn,station
+LR/ET best cell,genetics,E4,E4[50+50],2,0.2824341347179098,0.9138848499911014,logistic_regression/two,station
+CausalPFN,genetics,E4,E4[60+40],0,0.2685948584629854,0.9257008358664003,causalpfn,station
+LR/ET best cell,genetics,E4,E4[60+40],0,0.28606950331697534,0.9066970313480004,logistic_regression/two,station
+CausalPFN,genetics,E4,E4[60+40],1,0.2660885091079954,0.9311956381907087,causalpfn,station
+LR/ET best cell,genetics,E4,E4[60+40],1,0.28292065129851746,0.9087876019330576,logistic_regression/two,station
+CausalPFN,genetics,E4,E4[60+40],2,0.26628630667070835,0.9277944689420187,causalpfn,station
+LR/ET best cell,genetics,E4,E4[60+40],2,0.2786119973261828,0.9100221424046894,logistic_regression/two,station
+CausalPFN,genetics,E4,E4[75+25],0,0.2725032894947337,0.9337494204424681,causalpfn,myriad
+LR/ET best cell,genetics,E4,E4[75+25],0,0.302418011988746,0.9015394774029556,logistic_regression/two,myriad
+CausalPFN,genetics,E4,E4[75+25],1,0.2729285465064058,0.9330339290509579,causalpfn,myriad
+LR/ET best cell,genetics,E4,E4[75+25],1,0.3025078566743964,0.90096146499688,logistic_regression/two,myriad
+CausalPFN,genetics,E4,E4[75+25],2,0.27246111965667374,0.9325305279361581,causalpfn,myriad
+LR/ET best cell,genetics,E4,E4[75+25],2,0.2992893630849851,0.8983120980779786,logistic_regression/two,myriad
+CausalPFN,genetics,E4,E4[75+75],0,0.27032521826173456,0.9485153728242656,causalpfn,myriad
+LR/ET best cell,genetics,E4,E4[75+75],0,0.2775520832882877,0.908906699641229,logistic_regression/two,myriad
+CausalPFN,genetics,E4,E4[75+75],1,0.2679327774817032,0.9445147886225879,causalpfn,myriad
+LR/ET best cell,genetics,E4,E4[75+75],1,0.27179118227168586,0.935411437896812,logistic_regression/two,myriad
+CausalPFN,genetics,E4,E4[75+75],2,0.26704534323797635,0.9251676505044386,causalpfn,myriad
+LR/ET best cell,genetics,E4,E4[75+75],2,0.2764335451876616,0.9071092008264098,logistic_regression/two,myriad
+CausalPFN,genetics,E5b,E5b[lambda_pns=0.01],0,0.3194558476372454,0.8905992468754318,causalpfn,station
+LR/ET best cell,genetics,E5b,E5b[lambda_pns=0.01],0,0.31886309703488463,0.9066935188652672,logistic_regression/two,station
+CausalPFN,genetics,E5b,E5b[lambda_pns=0.01],1,0.3171261331457769,0.9105712102280595,causalpfn,station
+LR/ET best cell,genetics,E5b,E5b[lambda_pns=0.01],1,0.31245299671825,0.9148780628303177,logistic_regression/two,station
+CausalPFN,genetics,E5b,E5b[lambda_pns=0.01],2,0.3185073826627807,0.9128628660218061,causalpfn,station
+LR/ET best cell,genetics,E5b,E5b[lambda_pns=0.01],2,0.3154049230645618,0.9129446235205008,logistic_regression/two,station
+CausalPFN,genetics,E5b,E5b[lambda_pns=0.5],0,0.3306477600397291,0.8948529699904877,causalpfn,myriad
+LR/ET best cell,genetics,E5b,E5b[lambda_pns=0.5],0,0.3314614935663931,0.899132114944664,logistic_regression/two,myriad
+CausalPFN,genetics,E5b,E5b[lambda_pns=0.5],1,0.3315682206669187,0.8955287505524088,causalpfn,myriad
+LR/ET best cell,genetics,E5b,E5b[lambda_pns=0.5],1,0.3358463392721546,0.9019649968108062,logistic_regression/two,myriad
+CausalPFN,genetics,E5b,E5b[lambda_pns=0.5],2,0.3336446259514765,0.8980087574416853,causalpfn,myriad
+LR/ET best cell,genetics,E5b,E5b[lambda_pns=0.5],2,0.3348935536098363,0.9258982722251659,logistic_regression/two,myriad
+CausalPFN,genetics,E6,E6[fusion_mode=both],0,0.29586256845596365,0.9274238624832648,causalpfn,myriad
+LR/ET best cell,genetics,E6,E6[fusion_mode=both],0,0.28645299038887534,0.9200251903788825,logistic_regression/two,myriad
+CausalPFN,genetics,E6,E6[fusion_mode=both],1,0.29324993716188935,0.9202784705036448,causalpfn,myriad
+LR/ET best cell,genetics,E6,E6[fusion_mode=both],1,0.2883131108145622,0.926146832450562,logistic_regression/two,myriad
+CausalPFN,genetics,E6,E6[fusion_mode=both],2,0.29381648206477323,0.9292631577024187,causalpfn,myriad
+LR/ET best cell,genetics,E6,E6[fusion_mode=both],2,0.2826527881561831,0.9280784260584534,logistic_regression/two,myriad
+CausalPFN,genetics,E7a,E7a,0,0.3288222646428248,0.879656281573284,causalpfn,myriad
+LR/ET best cell,genetics,E7a,E7a,0,0.33579543172675785,0.8976958249000065,logistic_regression/two,myriad
+CausalPFN,genetics,E7a,E7a,2,0.3252946726433846,0.8792149970587813,causalpfn,myriad
+LR/ET best cell,genetics,E7a,E7a,2,0.3326519639245639,0.905382537769788,logistic_regression/two,myriad
+CausalPFN,receptor,E1,E1,0,0.29969539041671667,0.8167982459944066,causalpfn,station
+LR/ET best cell,receptor,E1,E1,0,0.3106322083053034,0.8112274934088983,logistic_regression/two,station
+CausalPFN,receptor,E1,E1,1,0.29971120756055275,0.8019177718863783,causalpfn,station
+LR/ET best cell,receptor,E1,E1,1,0.3128463176432395,0.8177334344614596,logistic_regression/two,station
+CausalPFN,receptor,E1,E1,2,0.2964758575060081,0.8069598458588803,causalpfn,station
+LR/ET best cell,receptor,E1,E1,2,0.3091771397235934,0.82262448619258,logistic_regression/two,station
+CausalPFN,receptor,E10a,E10a,0,0.37659758755082506,0.7534833297444885,causalpfn,myriad
+LR/ET best cell,receptor,E10a,E10a,0,0.3973366855821812,0.7511972257361932,extra_trees/two,myriad
+CausalPFN,receptor,E10a,E10a,1,0.3795241957547771,0.7400225364735775,causalpfn,myriad
+LR/ET best cell,receptor,E10a,E10a,1,0.4023188978285098,0.7351339006409711,extra_trees/two,myriad
+CausalPFN,receptor,E10a,E10a,2,0.375733547977222,0.7468830214826367,causalpfn,myriad
+LR/ET best cell,receptor,E10a,E10a,2,0.3978728498262636,0.737622563533225,extra_trees/two,myriad
+CausalPFN,receptor,E10b,E10b,0,0.3774759271670798,0.7665199953848137,causalpfn,myriad
+LR/ET best cell,receptor,E10b,E10b,0,0.3980079841860869,0.7449275212132995,extra_trees/two,myriad
+CausalPFN,receptor,E10b,E10b,1,0.3735205895451755,0.7778310805562295,causalpfn,myriad
+LR/ET best cell,receptor,E10b,E10b,1,0.3981968792515749,0.7681377808575203,extra_trees/two,myriad
+CausalPFN,receptor,E10b,E10b,2,0.37819866143176856,0.7666777251037151,causalpfn,myriad
+LR/ET best cell,receptor,E10b,E10b,2,0.3982699894201479,0.7568294326103313,extra_trees/two,myriad
+CausalPFN,receptor,E10c,E10c,1,0.37872092614192554,0.7497887975149805,causalpfn,myriad
+LR/ET best cell,receptor,E10c,E10c,1,0.39931685350051904,0.7341834766629938,extra_trees/two,myriad
+CausalPFN,receptor,E10c,E10c,2,0.37869787653397513,0.7587403985196981,causalpfn,myriad
+LR/ET best cell,receptor,E10c,E10c,2,0.39719944199247215,0.753707571613287,extra_trees/two,myriad
+CausalPFN,receptor,E11a,E11a,0,0.32701796794949534,0.8163800228583978,causalpfn,myriad
+LR/ET best cell,receptor,E11a,E11a,0,0.30819308467762807,0.8121519195604165,logistic_regression/two,myriad
+CausalPFN,receptor,E11a,E11a,1,0.33017639729905,0.8025541720151773,causalpfn,myriad
+LR/ET best cell,receptor,E11a,E11a,1,0.30910454575616986,0.8231615904813457,logistic_regression/two,myriad
+CausalPFN,receptor,E11a,E11a,2,0.3294032874378038,0.8067638534296234,causalpfn,myriad
+LR/ET best cell,receptor,E11a,E11a,2,0.30828414274650756,0.8095579872122419,logistic_regression/two,myriad
+CausalPFN,receptor,E11b,"E11b[backbone=cnn,w_dice=0.1]",0,0.32750364323799547,0.8013815350148921,causalpfn,station
+LR/ET best cell,receptor,E11b,"E11b[backbone=cnn,w_dice=0.1]",0,0.30527152484263237,0.8207982694109877,logistic_regression/two,station
+CausalPFN,receptor,E11b,"E11b[backbone=cnn,w_dice=0.1]",1,0.3262594007484828,0.809670272914581,causalpfn,station
+LR/ET best cell,receptor,E11b,"E11b[backbone=cnn,w_dice=0.1]",1,0.30597917166207167,0.8217850906738063,logistic_regression/two,station
+CausalPFN,receptor,E11b,"E11b[backbone=cnn,w_dice=0.1]",2,0.3304036559450819,0.8152137101823204,causalpfn,station
+LR/ET best cell,receptor,E11b,"E11b[backbone=cnn,w_dice=0.1]",2,0.3068474758882156,0.8065142153993053,logistic_regression/two,station
+CausalPFN,receptor,E11b,"E11b[backbone=cnn,w_dice=1.0]",0,0.3266345588876894,0.8014757622414722,causalpfn,station
+LR/ET best cell,receptor,E11b,"E11b[backbone=cnn,w_dice=1.0]",0,0.3052683833570018,0.8207982694109877,logistic_regression/two,station
+CausalPFN,receptor,E11b,"E11b[backbone=cnn,w_dice=1.0]",1,0.32678602634852355,0.8079789686990834,causalpfn,station
+LR/ET best cell,receptor,E11b,"E11b[backbone=cnn,w_dice=1.0]",1,0.30688450458560623,0.8175019016406174,logistic_regression/two,station
+CausalPFN,receptor,E11b,"E11b[backbone=cnn,w_dice=1.0]",2,0.3300312108653253,0.8105064890633346,causalpfn,station
+LR/ET best cell,receptor,E11b,"E11b[backbone=cnn,w_dice=1.0]",2,0.30714584452259286,0.8067631991391427,logistic_regression/two,station
+CausalPFN,receptor,E11b,"E11b[backbone=resnet18,w_dice=0.1]",0,0.32753038295098585,0.8171748485653846,causalpfn,station
+LR/ET best cell,receptor,E11b,"E11b[backbone=resnet18,w_dice=0.1]",0,0.3056596946413248,0.8115819382002469,logistic_regression/two,station
+CausalPFN,receptor,E11b,"E11b[backbone=resnet18,w_dice=0.1]",1,0.3243860774821142,0.8076025716327323,causalpfn,station
+LR/ET best cell,receptor,E11b,"E11b[backbone=resnet18,w_dice=0.1]",1,0.30271604894745685,0.8236148341004786,logistic_regression/two,station
+CausalPFN,receptor,E11b,"E11b[backbone=resnet18,w_dice=0.1]",2,0.3269477495812296,0.8101128607994561,causalpfn,station
+LR/ET best cell,receptor,E11b,"E11b[backbone=resnet18,w_dice=0.1]",2,0.3043671077708109,0.8046985226926489,logistic_regression/two,station
+CausalPFN,receptor,E11b,"E11b[backbone=resnet18,w_dice=1.0]",0,0.32775410335176225,0.8033025682621439,causalpfn,station
+LR/ET best cell,receptor,E11b,"E11b[backbone=resnet18,w_dice=1.0]",0,0.3060005212574995,0.809795722374749,logistic_regression/two,station
+CausalPFN,receptor,E11b,"E11b[backbone=resnet18,w_dice=1.0]",1,0.3244006607783224,0.8095409181088858,causalpfn,station
+LR/ET best cell,receptor,E11b,"E11b[backbone=resnet18,w_dice=1.0]",1,0.30116027912262766,0.8183799067093481,logistic_regression/two,station
+CausalPFN,receptor,E11b,"E11b[backbone=resnet18,w_dice=1.0]",2,0.32146087030980397,0.8239458600621994,causalpfn,station
+LR/ET best cell,receptor,E11b,"E11b[backbone=resnet18,w_dice=1.0]",2,0.3034844786662049,0.812726352030126,logistic_regression/two,station
+CausalPFN,receptor,E2,E2[w_dice=0.1],0,0.2983045079482974,0.8106140771153599,causalpfn,myriad
+LR/ET best cell,receptor,E2,E2[w_dice=0.1],0,0.31196329702272063,0.8141243846893481,logistic_regression/two,myriad
+CausalPFN,receptor,E2,E2[w_dice=0.1],1,0.29860928829019373,0.8125191363186915,causalpfn,myriad
+LR/ET best cell,receptor,E2,E2[w_dice=0.1],1,0.31168691816018523,0.8246386544719786,logistic_regression/two,myriad
+CausalPFN,receptor,E2,E2[w_dice=0.1],2,0.29826606022439844,0.812975739230226,causalpfn,myriad
+LR/ET best cell,receptor,E2,E2[w_dice=0.1],2,0.3116645343959943,0.813161223625627,logistic_regression/two,myriad
+CausalPFN,receptor,E2,E2[w_dice=0.5],0,0.30043734822415774,0.8064032244432069,causalpfn,myriad
+LR/ET best cell,receptor,E2,E2[w_dice=0.5],0,0.3130274748094605,0.8139968266627705,logistic_regression/two,myriad
+CausalPFN,receptor,E2,E2[w_dice=0.5],1,0.2981335217162213,0.8128312850281859,causalpfn,myriad
+LR/ET best cell,receptor,E2,E2[w_dice=0.5],1,0.3104582248742651,0.81879757250996,logistic_regression/two,myriad
+CausalPFN,receptor,E2,E2[w_dice=0.5],2,0.29978341571326894,0.807072492545433,causalpfn,myriad
+LR/ET best cell,receptor,E2,E2[w_dice=0.5],2,0.31148030397474175,0.8104399691524178,logistic_regression/two,myriad
+CausalPFN,receptor,E2,E2[w_dice=1.0],0,0.29867024127248976,0.8081942591165946,causalpfn,myriad
+LR/ET best cell,receptor,E2,E2[w_dice=1.0],0,0.3111285397531336,0.8148861053725146,logistic_regression/two,myriad
+CausalPFN,receptor,E2,E2[w_dice=1.0],1,0.29671860341887024,0.8073955259488658,causalpfn,myriad
+LR/ET best cell,receptor,E2,E2[w_dice=1.0],1,0.3069436380602324,0.8280058215252973,logistic_regression/two,myriad
+CausalPFN,receptor,E2,E2[w_dice=1.0],2,0.2994349261360878,0.8135270312116651,causalpfn,myriad
+LR/ET best cell,receptor,E2,E2[w_dice=1.0],2,0.3106193604906282,0.8135747749981547,logistic_regression/two,myriad
+CausalPFN,receptor,E3,E3[backbone=cnn],0,0.2985661985070376,0.8122138070770962,causalpfn,station
+LR/ET best cell,receptor,E3,E3[backbone=cnn],0,0.3081376234279152,0.8099043552135025,logistic_regression/two,station
+CausalPFN,receptor,E3,E3[backbone=cnn],1,0.299819835009519,0.8262220552648486,causalpfn,station
+LR/ET best cell,receptor,E3,E3[backbone=cnn],1,0.3120924546997413,0.8153397958272028,logistic_regression/two,station
+CausalPFN,receptor,E3,E3[backbone=cnn],2,0.29866937040792807,0.8169968853418189,causalpfn,station
+LR/ET best cell,receptor,E3,E3[backbone=cnn],2,0.30892040396374865,0.8133615534716591,logistic_regression/two,station
+CausalPFN,receptor,E3,E3[backbone=resnet18],0,0.2981701575368773,0.815086730451222,causalpfn,station
+LR/ET best cell,receptor,E3,E3[backbone=resnet18],0,0.30951979447861583,0.8036973811345337,logistic_regression/two,station
+CausalPFN,receptor,E3,E3[backbone=resnet18],1,0.2990829967215125,0.8200346087590531,causalpfn,station
+LR/ET best cell,receptor,E3,E3[backbone=resnet18],1,0.30815720670542296,0.8231212537168097,logistic_regression/two,station
+CausalPFN,receptor,E3,E3[backbone=resnet18],2,0.2971685896412088,0.8139565288204765,causalpfn,station
+LR/ET best cell,receptor,E3,E3[backbone=resnet18],2,0.3088077096492244,0.8173200881724144,logistic_regression/two,station
+CausalPFN,receptor,E3,E3[backbone=resnet50],0,0.2996369117975443,0.8102179435333251,causalpfn,station
+LR/ET best cell,receptor,E3,E3[backbone=resnet50],0,0.3105453091728544,0.8126044134630869,logistic_regression/two,station
+CausalPFN,receptor,E3,E3[backbone=resnet50],1,0.3029571378960002,0.814994540773356,causalpfn,station
+LR/ET best cell,receptor,E3,E3[backbone=resnet50],1,0.3116015486460405,0.8208255375986698,logistic_regression/two,station
+CausalPFN,receptor,E3,E3[backbone=resnet50],2,0.29820827090416246,0.8120403276123533,causalpfn,station
+LR/ET best cell,receptor,E3,E3[backbone=resnet50],2,0.31157216015099537,0.814102155264752,logistic_regression/two,station
+CausalPFN,receptor,E3,E3[backbone=wide],0,0.30048660956465956,0.8117063350904649,causalpfn,station
+LR/ET best cell,receptor,E3,E3[backbone=wide],0,0.3109925484220975,0.8144839020092111,logistic_regression/two,station
+CausalPFN,receptor,E3,E3[backbone=wide],1,0.2998342236066593,0.8002257577069724,causalpfn,station
+LR/ET best cell,receptor,E3,E3[backbone=wide],1,0.3104803440661552,0.8094625408498071,logistic_regression/two,station
+CausalPFN,receptor,E3,E3[backbone=wide],2,0.300922704942369,0.8184845144486431,causalpfn,station
+LR/ET best cell,receptor,E3,E3[backbone=wide],2,0.3113629060732104,0.8035642096035929,logistic_regression/two,station
+CausalPFN,receptor,E4,E4[100+100],0,0.32837770548462947,0.8015337545126037,causalpfn,station
+LR/ET best cell,receptor,E4,E4[100+100],0,0.3048109001706567,0.8106666603102582,logistic_regression/two,station
+CausalPFN,receptor,E4,E4[100+100],1,0.3271795767523723,0.8129483914255471,causalpfn,station
+LR/ET best cell,receptor,E4,E4[100+100],1,0.3106061626462021,0.8117606900875257,logistic_regression/two,station
+CausalPFN,receptor,E4,E4[100+100],2,0.3264751452362848,0.8046987971932137,causalpfn,station
+LR/ET best cell,receptor,E4,E4[100+100],2,0.3045116665063975,0.820297252146753,logistic_regression/two,station
+CausalPFN,receptor,E4,E4[25+25],0,0.3037239750499778,0.8384267964678981,causalpfn,station
+LR/ET best cell,receptor,E4,E4[25+25],0,0.32648508664650233,0.8036659381568512,logistic_regression/two,station
+CausalPFN,receptor,E4,E4[25+25],1,0.30242649390991494,0.8261165484215568,causalpfn,station
+LR/ET best cell,receptor,E4,E4[25+25],1,0.326449898706971,0.8011790797088921,logistic_regression/two,station
+CausalPFN,receptor,E4,E4[25+25],2,0.30404066542856245,0.8135352991204019,causalpfn,station
+LR/ET best cell,receptor,E4,E4[25+25],2,0.32862370035047883,0.8084844892578162,logistic_regression/two,station
+CausalPFN,receptor,E4,E4[25+75],0,0.30302477475254797,0.7998831303282016,causalpfn,station
+LR/ET best cell,receptor,E4,E4[25+75],0,0.31245948465891266,0.8224205509595037,logistic_regression/two,station
+CausalPFN,receptor,E4,E4[25+75],1,0.30194554910850485,0.8182629778113202,causalpfn,station
+LR/ET best cell,receptor,E4,E4[25+75],1,0.3083026932263784,0.8154287174348025,logistic_regression/two,station
+CausalPFN,receptor,E4,E4[25+75],2,0.2983323905982947,0.820670856841365,causalpfn,station
+LR/ET best cell,receptor,E4,E4[25+75],2,0.3117736373024795,0.839461717377425,logistic_regression/two,station
+CausalPFN,receptor,E4,E4[40+60],0,0.2977577762178482,0.8166405662328987,causalpfn,myriad
+LR/ET best cell,receptor,E4,E4[40+60],0,0.3105703043524297,0.8148353449571163,logistic_regression/two,myriad
+CausalPFN,receptor,E4,E4[40+60],1,0.2973602322485918,0.8125640277374636,causalpfn,myriad
+LR/ET best cell,receptor,E4,E4[40+60],1,0.3098421003220113,0.8073730755938813,logistic_regression/two,myriad
+CausalPFN,receptor,E4,E4[40+60],2,0.29846505079091223,0.82171615121873,causalpfn,myriad
+LR/ET best cell,receptor,E4,E4[40+60],2,0.30847874729175895,0.8115607351037052,logistic_regression/two,myriad
+CausalPFN,receptor,E4,E4[50+50],0,0.29959303235724877,0.816739663373324,causalpfn,station
+LR/ET best cell,receptor,E4,E4[50+50],0,0.30926109393786055,0.8065491440415312,logistic_regression/two,station
+CausalPFN,receptor,E4,E4[50+50],1,0.2999642510442001,0.8128492573689577,causalpfn,station
+LR/ET best cell,receptor,E4,E4[50+50],1,0.31268772583587184,0.8107212997664192,logistic_regression/two,station
+CausalPFN,receptor,E4,E4[50+50],2,0.29721990312265795,0.8096648080704516,causalpfn,station
+LR/ET best cell,receptor,E4,E4[50+50],2,0.3096976319925585,0.8068750886138817,logistic_regression/two,station
+CausalPFN,receptor,E4,E4[60+40],0,0.3031076784636734,0.8093291751477572,causalpfn,station
+LR/ET best cell,receptor,E4,E4[60+40],0,0.3176155768226549,0.8145650367667813,logistic_regression/two,station
+CausalPFN,receptor,E4,E4[60+40],1,0.3005718147114344,0.8304787550109913,causalpfn,station
+LR/ET best cell,receptor,E4,E4[60+40],1,0.31368653967960913,0.8112229752714417,logistic_regression/two,station
+CausalPFN,receptor,E4,E4[60+40],2,0.3018663795039394,0.8032422621775286,causalpfn,station
+LR/ET best cell,receptor,E4,E4[60+40],2,0.316504785249634,0.7868023454821068,logistic_regression/two,station
+CausalPFN,receptor,E4,E4[75+25],0,0.30159725508530805,0.8310647870700804,causalpfn,myriad
+LR/ET best cell,receptor,E4,E4[75+25],0,0.32619634106647644,0.7952757659060592,logistic_regression/two,myriad
+CausalPFN,receptor,E4,E4[75+25],1,0.3037026350623141,0.8225931528356613,causalpfn,myriad
+LR/ET best cell,receptor,E4,E4[75+25],1,0.3293331367515937,0.8009545296862355,logistic_regression/two,myriad
+CausalPFN,receptor,E4,E4[75+25],2,0.30423951617071426,0.8135649737517026,causalpfn,myriad
+LR/ET best cell,receptor,E4,E4[75+25],2,0.3279580139601334,0.8162042348939944,logistic_regression/two,myriad
+CausalPFN,receptor,E4,E4[75+75],0,0.3028454747650937,0.8112803084718365,causalpfn,myriad
+LR/ET best cell,receptor,E4,E4[75+75],0,0.31295547826741293,0.8121220664211394,logistic_regression/two,myriad
+CausalPFN,receptor,E4,E4[75+75],1,0.3008091197166601,0.8324148355722173,causalpfn,myriad
+LR/ET best cell,receptor,E4,E4[75+75],1,0.3086916563951039,0.8136460766906378,logistic_regression/two,myriad
+CausalPFN,receptor,E4,E4[75+75],2,0.2998651600145498,0.8289423224102832,causalpfn,myriad
+LR/ET best cell,receptor,E4,E4[75+75],2,0.3119377585955709,0.8195215151181312,logistic_regression/two,myriad
+CausalPFN,receptor,E5b,E5b[lambda_pns=0.01],0,0.3427598885034639,0.7768761542580191,causalpfn,station
+LR/ET best cell,receptor,E5b,E5b[lambda_pns=0.01],0,0.3438863138958873,0.8666556210375427,logistic_regression/two,station
+CausalPFN,receptor,E5b,E5b[lambda_pns=0.01],1,0.344027762294417,0.8025684814061247,causalpfn,station
+LR/ET best cell,receptor,E5b,E5b[lambda_pns=0.01],1,0.33785771816586935,0.8356902568726993,logistic_regression/two,station
+CausalPFN,receptor,E5b,E5b[lambda_pns=0.01],2,0.34128042222905086,0.8002890566265974,causalpfn,station
+LR/ET best cell,receptor,E5b,E5b[lambda_pns=0.01],2,0.3348806587006329,0.8470190718227179,logistic_regression/two,station
+CausalPFN,receptor,E5b,E5b[lambda_pns=0.5],0,0.35607254241568614,0.7833643239212316,causalpfn,myriad
+LR/ET best cell,receptor,E5b,E5b[lambda_pns=0.5],0,0.3579942475716288,0.8655367030183433,logistic_regression/two,myriad
+CausalPFN,receptor,E5b,E5b[lambda_pns=0.5],1,0.35411478424919224,0.7943651191752218,causalpfn,myriad
+LR/ET best cell,receptor,E5b,E5b[lambda_pns=0.5],1,0.350161337489353,0.8437785431097531,logistic_regression/two,myriad
+CausalPFN,receptor,E5b,E5b[lambda_pns=0.5],2,0.354059615909482,0.7961952462045114,causalpfn,myriad
+LR/ET best cell,receptor,E5b,E5b[lambda_pns=0.5],2,0.35229480361654436,0.7960951844228443,logistic_regression/two,myriad
+CausalPFN,receptor,E6,E6[fusion_mode=both],0,0.328281869796571,0.8175069572511294,causalpfn,myriad
+LR/ET best cell,receptor,E6,E6[fusion_mode=both],0,0.32335923161400143,0.8359195880311778,logistic_regression/two,myriad
+CausalPFN,receptor,E6,E6[fusion_mode=both],1,0.3250774463841368,0.8066423683612362,causalpfn,myriad
+LR/ET best cell,receptor,E6,E6[fusion_mode=both],1,0.32249608576761835,0.8128441276870699,logistic_regression/two,myriad
+CausalPFN,receptor,E6,E6[fusion_mode=both],2,0.3266886996123759,0.8160587852615534,causalpfn,myriad
+LR/ET best cell,receptor,E6,E6[fusion_mode=both],2,0.32655796692503936,0.8184996608755294,logistic_regression/two,myriad
+CausalPFN,receptor,E7a,E7a,0,0.35328137313216346,0.783515940486689,causalpfn,myriad
+LR/ET best cell,receptor,E7a,E7a,0,0.3659284017380755,0.8102959923114009,logistic_regression/two,myriad
+CausalPFN,receptor,E7a,E7a,2,0.35032802880750663,0.7798318990046228,causalpfn,myriad
+LR/ET best cell,receptor,E7a,E7a,2,0.3601730273620365,0.8104555675628531,logistic_regression/two,myriad
