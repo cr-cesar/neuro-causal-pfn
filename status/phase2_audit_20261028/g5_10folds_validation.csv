@@ -1,0 +1,15 @@
+kind,model,split,n_folds,n_rows,pehe_mean,pehe_sd_folds,balacc_mean,n_rows_balacc_defined,n_deficits_balacc_defined_any_fold,n_deficits,diff_ci95_lo,diff_ci95_hi,gain_ge_threshold,rule_both_splits
+model,C1,receptor,10,160.0,0.3606,0.0295,0.8924,102.0,14.0,16.0,,,,
+model,C1,genetics,10,160.0,0.3317,0.0217,0.9343,138.0,16.0,16.0,,,,
+model,G4c,receptor,10,160.0,0.3663,0.03,0.9003,102.0,14.0,16.0,,,,
+model,G4c,genetics,10,160.0,0.3497,0.0217,0.9304,138.0,16.0,16.0,,,,
+model,G5,receptor,10,160.0,0.3592,0.0339,0.855,102.0,14.0,16.0,,,,
+model,G5,genetics,10,160.0,0.3319,0.0228,0.9275,138.0,16.0,16.0,,,,
+model,LR_two,receptor,10,160.0,0.3103,0.0223,0.9017,102.0,14.0,16.0,,,,
+model,LR_two,genetics,10,160.0,0.2731,0.0403,0.9455,138.0,16.0,16.0,,,,
+model,TabPFN_one,receptor,10,160.0,0.283,0.0166,0.9203,102.0,14.0,16.0,,,,
+model,TabPFN_one,genetics,10,160.0,0.2533,0.0313,0.9532,138.0,16.0,16.0,,,,
+paired_diff,G5 - G4c,receptor,10,,-0.0071,0.016,,,,,-0.0185,0.0043,False,fail
+paired_diff,G5 - G4c,genetics,10,,-0.0178,0.0179,,,,,-0.0307,-0.005,False,fail
+paired_diff,G5 - C1,receptor,10,,-0.0013,0.014,,,,,-0.0114,0.0087,False,fail
+paired_diff,G5 - C1,genetics,10,,0.0001,0.0114,,,,,-0.0081,0.0083,False,fail
