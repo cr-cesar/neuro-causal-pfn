@@ -236,6 +236,33 @@ class PFNEstimator:
         return np.clip(p1, 0, 1), np.clip(p0, 0, 1)
 
 
+def leaf_safe_weak_learner(train):
+    """Wrap CausalPFN's ``_train_weak_learner`` so that its stratifier gets
+    ``min_samples_leaf >= 1``. The package sets ``int(n / 100)``, which is 0
+    (and rejected by sklearn) when the context has fewer than 100 rows, as in
+    the slices of a small external cohort. The stratifier only picks
+    neighbours when the context exceeds ``max_context_length``, so below 100
+    rows it never shapes a prediction; from 100 rows up nothing changes."""
+    def _train(X, t, y):
+        import causalpfn.causal_estimator as ce
+
+        original = ce.GradientBoostingRegressor
+
+        def _regressor(**kw):
+            leaf = kw.get("min_samples_leaf")
+            if isinstance(leaf, int) and leaf < 1:
+                kw["min_samples_leaf"] = 1
+            return original(**kw)
+
+        ce.GradientBoostingRegressor = _regressor
+        try:
+            return train(X, t, y)
+        finally:
+            ce.GradientBoostingRegressor = original
+
+    return _train
+
+
 class CausalPFNEstimator:
     """The off-the-shelf CausalPFN of Balazadeh et al. (2025) with fixed weights:
     the Tier-4 evaluator of the design (encoder selection under a fixed
@@ -267,6 +294,8 @@ class CausalPFNEstimator:
         self.est = CATEEstimator(device=self.device, model_path=model_path, cache_dir=cache_dir,
                                  max_context_length=max_context_length, max_query_length=max_context_length,
                                  num_neighbours=num_neighbours, calibrate=False, verbose=False)
+        if hasattr(self.est, "_train_weak_learner"):
+            self.est._train_weak_learner = leaf_safe_weak_learner(self.est._train_weak_learner)
         self._k = int(num_neighbours)
         self.name = "causalpfn"
         # F08 of the audit: CausalPFN compresses any representation wider than
