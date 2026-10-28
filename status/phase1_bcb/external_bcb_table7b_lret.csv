@@ -5,9 +5,9 @@ A_disconnectome,receptor,volume,0.533 / 0.503,0.534 / 0.501,0.559 / 0.500,0.520 
 A_disconnectome,genetics,E1_perfold_bcb,0.280 / 0.912,0.360 / 0.844,0.378 / 0.856,0.478 / 0.739,0.393 / 0.782,
 A_disconnectome,genetics,nmf50_perfold,0.320 / 0.858,0.341 / 0.839,0.365 / 0.848,0.503 / 0.704,0.383 / 0.817,
 A_disconnectome,genetics,volume,0.636 / 0.554,0.641 / 0.531,0.666 / 0.532,0.655 / 0.511,0.548 / 0.525,
-B_lesion,receptor,E1_perfold_lesion_encoder,pending,pending,pending,–,pending,lesion task (deficits from masks); volume and NMF on masks; UCLH 144: only 0-3 deficits reach the minimum n with 144 masks (as in Table 7)
-B_lesion,receptor,nmf50_perfold,0.482 / 0.756,pending,pending,–,pending,UCLH 2828 from status/phase1_bcb/e0_baselines.csv (lesion condition)
-B_lesion,receptor,volume,0.630 / 0.500,pending,pending,–,pending,
-B_lesion,genetics,E1_perfold_lesion_encoder,pending,pending,pending,–,pending,
-B_lesion,genetics,nmf50_perfold,0.422 / 0.883,pending,pending,–,pending,
-B_lesion,genetics,volume,0.730 / 0.535,pending,pending,–,pending,
+B_lesion,receptor,E1_perfold_lesion_encoder,pending,0.522 / 0.694,0.510 / 0.724,–,0.508 / 0.577,lesion task (deficits from masks); lesion-mask encoder (mean of the 10 fold encoders); volume and NMF on masks; deficits evaluable: KCH 14 / UCLH-1207 15 / ISLES 10; UCLH 144: 0-3 deficits reach the minimum n (as in Table 7)
+B_lesion,receptor,nmf50_perfold,0.482 / 0.756,0.553 / 0.690,0.543 / 0.717,–,0.518 / 0.518,UCLH 2828 volume/NMF from status/phase1_bcb/e0_baselines.csv (lesion condition); E1 UCLH 2828 lesion-task row pending
+B_lesion,receptor,volume,0.630 / 0.500,0.659 / 0.513,0.700 / 0.570,–,0.532 / 0.500,
+B_lesion,genetics,E1_perfold_lesion_encoder,pending,0.517 / 0.747,0.444 / 0.838,–,0.469 / 0.758,
+B_lesion,genetics,nmf50_perfold,0.422 / 0.883,0.538 / 0.746,0.498 / 0.783,–,0.511 / 0.785,
+B_lesion,genetics,volume,0.730 / 0.535,0.775 / 0.512,0.737 / 0.522,–,0.695 / 0.504,
