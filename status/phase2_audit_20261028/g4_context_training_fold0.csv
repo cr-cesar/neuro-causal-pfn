@@ -1,0 +1,5 @@
+model,code_commit,context_min,context_max,context_replace,val_pehe_receptor,val_balacc_receptor,val_pehe_genetics,val_balacc_genetics,bench128_pool_slope,bench128_pool_calib,bench128_pool_corr,bench128_pool_pehe,bench256_pool_slope,bench256_pool_calib,bench256_pool_corr,bench256_pool_pehe,note
+C1,1e1cf42,256,3000,True,0.353,0.901,0.320,0.924,0.604,1.012,0.782,0.436,0.639,1.015,0.805,0.406,bench rows from T7a (distinct contexts)
+G4c,8b2b104,256,3000,True,0.368,0.899,0.345,0.902,0.674,0.911,0.784,0.439,0.709,0.904,0.801,0.415,control: C1 launch on the new code (partition guard fixed)
+G4,8b2b104,64,512,False,0.383,0.780,0.370,0.921,0.629,0.995,0.791,0.428,0.616,1.026,0.795,0.415,contexts sized like the trial
+LR_two,,,,,0.298,0.884,0.278,0.953,0.690,0.931,0.802,0.420,0.708,0.952,0.821,0.392,same contexts and processes
