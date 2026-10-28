@@ -1,0 +1,24 @@
+# Seeds 1 and 2 of the mixed-prior runs of 20 Oct (seed 0 runs on Myriad), for
+# scripts/run_jobs.sh on a machine with one GPU. Each job is 20,000
+# iterations on the KCH anatomy cache, 0.5 to 1 GPU-hour on a V100 class
+# card. Results: OUT/pfn.pt and OUT/history.json; copy the OUT folders back
+# to the cluster for scoring (the scoring needs the UCLH latents and trials).
+#
+# H: the headroom prior; M: the mixture of effect shapes (40 % continuous,
+# 40 % discrete Giles-like, 20 % null).
+
+# (a) linear, mixed prior, binary outcomes
+CACHE=outputs/prior_cache/kch_e1_32d_x.npz OUT=outputs/pfn_reduced_kch_e1_32d_x-theory-linear-2arms-mix-binY-project-head-s1 SEED=1 ARCH=linear FAMILY=theory PRIOR_HYPER="two_arms=1 effect_scale=0.2:1 d_source=network s_source=genetics_1 s_b_source=genetics_2 effect_headroom=1 shape_weights=0.4:0.4:0.2 binary_outcome=1" scripts/train_pfn_myriad.qsub.sh
+CACHE=outputs/prior_cache/kch_e1_32d_x.npz OUT=outputs/pfn_reduced_kch_e1_32d_x-theory-linear-2arms-mix-binY-project-head-s2 SEED=2 ARCH=linear FAMILY=theory PRIOR_HYPER="two_arms=1 effect_scale=0.2:1 d_source=network s_source=genetics_1 s_b_source=genetics_2 effect_headroom=1 shape_weights=0.4:0.4:0.2 binary_outcome=1" scripts/train_pfn_myriad.qsub.sh
+
+# (b) linear, mixed prior, continuous outcomes
+CACHE=outputs/prior_cache/kch_e1_32d_x.npz OUT=outputs/pfn_reduced_kch_e1_32d_x-theory-linear-2arms-mix-project-head-s1 SEED=1 ARCH=linear FAMILY=theory PRIOR_HYPER="two_arms=1 effect_scale=0.2:1 d_source=network s_source=genetics_1 s_b_source=genetics_2 effect_headroom=1 shape_weights=0.4:0.4:0.2" scripts/train_pfn_myriad.qsub.sh
+CACHE=outputs/prior_cache/kch_e1_32d_x.npz OUT=outputs/pfn_reduced_kch_e1_32d_x-theory-linear-2arms-mix-project-head-s2 SEED=2 ARCH=linear FAMILY=theory PRIOR_HYPER="two_arms=1 effect_scale=0.2:1 d_source=network s_source=genetics_1 s_b_source=genetics_2 effect_headroom=1 shape_weights=0.4:0.4:0.2" scripts/train_pfn_myriad.qsub.sh
+
+# (c) tabicl architecture, mixed prior, binary outcomes
+CACHE=outputs/prior_cache/kch_e1_32d_x.npz OUT=outputs/pfn_reduced_kch_e1_32d_x-theory-2arms-mix-binY-project-head-s1 SEED=1 ARCH=tabicl FAMILY=theory PRIOR_HYPER="two_arms=1 effect_scale=0.2:1 d_source=network s_source=genetics_1 s_b_source=genetics_2 effect_headroom=1 shape_weights=0.4:0.4:0.2 binary_outcome=1" scripts/train_pfn_myriad.qsub.sh
+CACHE=outputs/prior_cache/kch_e1_32d_x.npz OUT=outputs/pfn_reduced_kch_e1_32d_x-theory-2arms-mix-binY-project-head-s2 SEED=2 ARCH=tabicl FAMILY=theory PRIOR_HYPER="two_arms=1 effect_scale=0.2:1 d_source=network s_source=genetics_1 s_b_source=genetics_2 effect_headroom=1 shape_weights=0.4:0.4:0.2 binary_outcome=1" scripts/train_pfn_myriad.qsub.sh
+
+# (d) tabicl architecture, headroom prior, half the contexts with binary outcomes
+CACHE=outputs/prior_cache/kch_e1_32d_x.npz OUT=outputs/pfn_reduced_kch_e1_32d_x-theory-2arms-scale-bin05-s1 SEED=1 ARCH=tabicl FAMILY=theory PRIOR_HYPER="two_arms=1 effect_scale=0.2:1 d_source=network s_source=genetics_1 s_b_source=genetics_2 effect_headroom=1 binary_outcome=0.5" scripts/train_pfn_myriad.qsub.sh
+CACHE=outputs/prior_cache/kch_e1_32d_x.npz OUT=outputs/pfn_reduced_kch_e1_32d_x-theory-2arms-scale-bin05-s2 SEED=2 ARCH=tabicl FAMILY=theory PRIOR_HYPER="two_arms=1 effect_scale=0.2:1 d_source=network s_source=genetics_1 s_b_source=genetics_2 effect_headroom=1 binary_outcome=0.5" scripts/train_pfn_myriad.qsub.sh

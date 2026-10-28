@@ -1,6 +1,7 @@
 #!/bin/bash -l
 # Precompute the Neuro-Prior anatomy cache of a covariate pool (CPU):
 #   qsub -v IMAGES=<image dir of the pool>,LATENTS=<latents npz>,OUT=outputs/prior_cache/pool.npz scripts/build_prior_cache_myriad.qsub.sh
+#   qsub -v AUGMENT=outputs/prior_cache/pool.npz,OUT=outputs/prior_cache/pool_x.npz scripts/build_prior_cache_myriad.qsub.sh
 #
 # IMAGES must be the directory the latents were exported from (POOL_IMAGES of
 # the pool block in scripts/myriad_phase1b.sh): the cache's overlaps decide
@@ -27,6 +28,16 @@ trap 'exit 100' ERR
 module load python3/3.11
 source ~/venvs/neuro/bin/activate
 
+# AUGMENT=<existing cache npz>: copy it and add only the extra anatomy channels
+# (whole-network overlap, receptor and genetics halves), computed from the
+# cache's own images_dir; IMAGES is then optional.
+if [ -n "${AUGMENT:-}" ]; then
+    OUT="${OUT:?set OUT to the new cache npz}"
+    [ -s "$AUGMENT" ] || { echo "no cache $AUGMENT" >&2; exit 100; }
+    python scripts/build_prior_cache.py --augment "$AUGMENT" --atlas-dir "${ATLAS_DIR:-data/atlases}" \
+        ${IMAGES:+--images-dir "$IMAGES"} --out "$OUT"
+    exit 0
+fi
 if [ -z "${IMAGES:-}" ] && [ -n "${LESIONS:-}" ]; then
     echo "warning: LESIONS is the former name of IMAGES; the cache must be built from the directory the latents were exported from" >&2
     IMAGES="$LESIONS"

@@ -38,6 +38,36 @@ def compute_overlaps(atlas: FunctionalAtlas, lesion: np.ndarray) -> np.ndarray:
     return out
 
 
+# Anatomy channels a prior cache can carry next to ``overlaps`` (the two halves
+# of the split the cache was built with). The theory family reads its scores
+# from these by name (TheoryHyperPrior.d_source, s_source, s_b_source).
+EXTRA_CHANNELS = ("network", "receptor_1", "receptor_2", "genetics_1", "genetics_2")
+
+
+def compute_extra_overlaps(atlas_receptor: FunctionalAtlas, atlas_genetics: FunctionalAtlas,
+                           lesion: np.ndarray) -> dict:
+    """Whole-network overlap [K] and the two halves of both splits [K, 2], in
+    the network order of ``atlas_receptor``."""
+    nets = atlas_receptor.networks
+    if list(atlas_genetics.networks) != list(nets):
+        raise ValueError("the receptor and genetics parcellations list different networks")
+    return {"network": np.asarray([atlas_receptor.network_overlap(lesion, k) for k in nets], dtype=np.float32),
+            "receptor": compute_overlaps(atlas_receptor, lesion),
+            "genetics": compute_overlaps(atlas_genetics, lesion)}
+
+
+def channel_column(extra: dict, name: str) -> np.ndarray:
+    """One named anatomy channel [n, K] from the extra arrays of a cache
+    (keys overlaps_network [n, K], overlaps_receptor and overlaps_genetics
+    [n, K, 2])."""
+    if name == "network":
+        return np.asarray(extra["overlaps_network"], dtype=np.float32)
+    split, _, half = name.rpartition("_")
+    if split in ("receptor", "genetics") and half in ("1", "2"):
+        return np.asarray(extra[f"overlaps_{split}"], dtype=np.float32)[:, :, int(half) - 1]
+    raise ValueError(f"unknown anatomy channel {name!r}; choose from {EXTRA_CHANNELS} or split_1 / split_2")
+
+
 class InterSynthDGP:
     """A condition (a process of the prior) sampled from the InterSynth framework."""
 

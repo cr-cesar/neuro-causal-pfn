@@ -5,8 +5,12 @@ Ports the ground-truth simulation and the PEHE scale of
 Communications 16:8968; code CC BY-NC-SA 4.0, adapted here with citation) so
 that any lesion representation — theirs or ours — can be scored on the SAME
 scale as the published headline (disconnectome VAE-50: PEHE 0.349, 95% CI
-[0.33, 0.37], random allocation, averaged over the 16 functional networks;
-0.305 under location bias).
+[0.33, 0.37], random allocation, averaged over the 16 functional networks,
+classifier not stated in the main text; Supplementary Table 8g, "ideal
+experimental conditions", gives 0.305 for VAE-50 with logistic regression
+two-model, i.e. the ideal cell, not the confounded one. Under location bias
+the paper publishes no single cell: Supplementary Table 5 gives grid means
+over TE x RE x bias, and Supplementary Figs. 77-78 the heatmaps).
 
 The mechanism, exactly as in their code:
 
@@ -67,6 +71,21 @@ HEADLINE_SCENARIOS = {
     "ideal": {"TE": 1.0, "RE": 0.0, "BIAS": 0.0, "BIASTYPE": "observed"},
     "location_bias": {"TE": 1.0, "RE": 0.0, "BIAS": 1.0, "BIASTYPE": "observed"},
 }
+# the location-bias sweep (F30): BIAS = 1 is deterministic allocation with
+# positivity violated, the worst case; the intermediate cells give the curve
+for _b in (0.25, 0.5, 0.75, 0.95):
+    HEADLINE_SCENARIOS[f"location_bias_{int(round(_b * 100)):03d}"] = {
+        "TE": 1.0, "RE": 0.0, "BIAS": float(_b), "BIASTYPE": "observed"}
+del _b
+# the paper's noisy cells (27 Oct): lower treatment efficacy with spontaneous
+# recovery, TE + RE = 1 as in its grid, randomised allocation. The true effect
+# stays y_true in {0, 0.5, 1} (tau in {-1, 0, +1}) in the paper's code and
+# here: these cells measure robustness to noisy outcomes, not calibration to
+# the smaller identifiable effect TE * (1 - RE).
+for _te in (0.75, 0.5, 0.25):
+    HEADLINE_SCENARIOS[f"noisy_te{int(round(_te * 100)):03d}"] = {
+        "TE": float(_te), "RE": float(round(1.0 - _te, 2)), "BIAS": 0.0, "BIASTYPE": "observed"}
+del _te
 
 
 # --------------------------------------------------------------------------- #
@@ -328,9 +347,98 @@ def stratified_pehe_paper(p1: np.ndarray, p0: np.ndarray, true_ITE: np.ndarray,
     return out
 
 
+def effect_decomposition(p1: np.ndarray, p0: np.ndarray, true_ITE: np.ndarray) -> Dict[str, float]:
+    """Where ``pehe_paper`` comes from in one test slice (audit H5: does an
+    estimator rank the participants well but predict effects that are too
+    small?). tau_hat = p1 - p0 against tau = 2 * true_ITE - 1 in {-1, 0, +1}.
+
+    - ``tau_hat_pos`` / ``tau_hat_zero`` / ``tau_hat_neg``: mean tau_hat among
+      the participants with tau = +1, 0 and -1 (``n_pos`` / ``n_zero`` /
+      ``n_neg`` of them; nan when a group is empty). A perfect estimator gives
+      +1, 0 and -1.
+    - ``tau_slope``: least-squares slope of tau_hat on tau (1 = the full
+      effect, 0 = no effect predicted); nan when tau is constant in the slice.
+    - ``mse_between`` + ``mse_within`` = ``pehe_paper`` ** 2: the error of the
+      group means (magnitude and offset) and the spread of tau_hat inside each
+      group (ranking noise).
+    - ``pehe_paper_rescaled``: ``pehe_paper`` after the single factor
+      ``rescale_factor`` that best maps tau_hat onto tau in this slice. The
+      factor is fitted on the test labels, so this is a bound on what fixing
+      the magnitude alone could reach, not a score.
+
+    Aggregates of the slice only; no participant-level values."""
+    tau_hat = np.asarray(p1, dtype=float) - np.asarray(p0, dtype=float)
+    tau = 2.0 * np.asarray(true_ITE, dtype=float) - 1.0
+    n = len(tau)
+    out: Dict[str, float] = {}
+    between = within = 0.0
+    for key, g in (("pos", 1.0), ("zero", 0.0), ("neg", -1.0)):
+        m = np.isclose(tau, g)
+        out[f"n_{key}"] = int(m.sum())
+        if m.any():
+            mu = float(tau_hat[m].mean())
+            out[f"tau_hat_{key}"] = mu
+            between += m.sum() * (mu - g) ** 2
+            within += float(((tau_hat[m] - mu) ** 2).sum())
+        else:
+            out[f"tau_hat_{key}"] = float("nan")
+    out["mse_between"], out["mse_within"] = float(between / n), float(within / n)
+    dt = tau - tau.mean()
+    var = float((dt ** 2).sum())
+    out["tau_slope"] = float((dt * (tau_hat - tau_hat.mean())).sum() / var) if var > 0 else float("nan")
+    ss = float((tau_hat ** 2).sum())
+    b = float((tau_hat * tau).sum() / ss) if ss > 0 else 0.0
+    out["rescale_factor"] = b
+    out["pehe_paper_rescaled"] = pehe(b * tau_hat, tau)
+    out["pehe_paper_isotonic"] = isotonic_pehe(tau_hat, tau)
+    return out
+
+
+def isotonic_pehe(tau_hat: np.ndarray, tau: np.ndarray, n_folds: int = 5, seed: int = 0) -> float:
+    """``pehe_paper`` after the best monotone (isotonic) mapping of tau_hat
+    onto tau, cross-fitted over ``n_folds`` random folds of the slice so the
+    mapping is never fitted on the patients it is applied to. The monotone
+    mapping keeps the estimator's ordering of patients and lets zeros stay at
+    zero while large effects stretch, so this is the PEHE the ranking alone
+    could reach; the gap between it and ``pehe_paper_rescaled`` is what a
+    non-linear reshaping of the effects could recover, and the gap between it
+    and a competitor's is ranking. nan when the slice is too small."""
+    from sklearn.isotonic import IsotonicRegression
+
+    tau_hat, tau = np.asarray(tau_hat, dtype=float), np.asarray(tau, dtype=float)
+    n = len(tau)
+    if n < 2 * n_folds or tau.std() == 0:
+        return float("nan")
+    perm = np.random.default_rng(seed).permutation(n)
+    out = np.empty(n)
+    for k in range(n_folds):
+        te = perm[k::n_folds]
+        tr = np.setdiff1d(perm, te)
+        iso = IsotonicRegression(out_of_bounds="clip").fit(tau_hat[tr], tau[tr])
+        out[te] = iso.predict(tau_hat[te])
+    return pehe(out, tau)
+
+
 # --------------------------------------------------------------------------- #
 # Estimators (one-model / two-model, as in prescription.py)
 # --------------------------------------------------------------------------- #
+BUILTIN_CLASSIFIERS = ("logistic_regression", "extra_trees")
+
+# Extra classifiers (the tabular foundation-model panel of 19 Oct: TabPFN,
+# TabICL in ``neurocausalpfn.pfn.panel``): name -> factory returning an
+# sklearn-style classifier (fit / predict_proba / classes_). They take the
+# one-model and two-model learners exactly like the built-in logistic
+# regression and extra trees and compete in the same headline cell selection,
+# unlike the in-context ESTIMATORS below, which read the whole slice at once.
+CLASSIFIERS: Dict[str, Callable] = {}
+
+
+def register_classifier(name: str, factory: Callable) -> None:
+    if name in BUILTIN_CLASSIFIERS:
+        raise ValueError(f"{name!r} is a built-in classifier")
+    CLASSIFIERS[name] = factory
+
+
 def _classifier(name: str):
     from sklearn.ensemble import ExtraTreesClassifier
     from sklearn.linear_model import LogisticRegression
@@ -338,6 +446,8 @@ def _classifier(name: str):
         return LogisticRegression(max_iter=1000)
     if name == "extra_trees":
         return ExtraTreesClassifier()
+    if name in CLASSIFIERS:
+        return CLASSIFIERS[name]()
     raise ValueError(f"unknown classifier {name!r}")
 
 
@@ -381,8 +491,8 @@ ESTIMATORS: Dict[str, Callable] = {}
 
 
 def register_estimator(name: str, fn: Callable) -> None:
-    if name in ("logistic_regression", "extra_trees"):
-        raise ValueError(f"{name!r} is a built-in classifier")
+    if name in BUILTIN_CLASSIFIERS or name in CLASSIFIERS:
+        raise ValueError(f"{name!r} is a classifier")
     ESTIMATORS[name] = fn
 
 
@@ -511,7 +621,7 @@ def evaluate_representation(Z: np.ndarray, labels_df, pairs: Dict[int, RoiPair],
     # in-context estimators are the slow part of a scoring job (one forward
     # pass per deficit, fold and arm): report each finished fold so that a
     # job killed at its time limit shows how far it got
-    progress = any(c in ESTIMATORS for c in classifiers)
+    progress = any(c in ESTIMATORS or c in CLASSIFIERS for c in classifiers)
     t_start = time.time()
     for k, (tr_idx, te_idx) in enumerate(folds):
         if progress and k:
@@ -551,7 +661,8 @@ def evaluate_representation(Z: np.ndarray, labels_df, pairs: Dict[int, RoiPair],
                         p1, p0 = fit(Xtr, W, Y, Xte, cname)
                     row = {"deficit": name, "fold": k, "classifier": cname,
                            "learner": learner, "n_train": len(Xtr), "n_test": len(Xte),
-                           **scenario, **score_predictions(p1, p0, true_ITE)}
+                           **scenario, **score_predictions(p1, p0, true_ITE),
+                           **effect_decomposition(p1, p0, true_ITE)}
                     if strata_te is not None:
                         row.update(stratified_pehe_paper(p1, p0, true_ITE, strata_te))
                     results.append(row)

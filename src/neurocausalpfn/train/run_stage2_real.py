@@ -54,7 +54,7 @@ def stage2_real_config() -> Dict:
 
 
 def load_vae(ckpt_path: str, device: str = "cpu") -> ConvVAE3D:
-    ck = torch.load(ckpt_path, map_location=device)
+    ck = torch.load(ckpt_path, map_location=device, weights_only=False)
     v = ck["cfg"]["vae"]
     res = tuple(ck["cfg"]["data"]["resolution"])
     model = ConvVAE3D(in_channels=ck.get("in_channels", 1),

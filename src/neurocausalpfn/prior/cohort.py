@@ -175,10 +175,20 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
                  max_tries: int = 64, augment: bool = True, cache: Optional[Dict] = None,
                  family: str = "theory", hyper_giles=None,
                  family_weights: Sequence[float] = (0.5, 0.5), context_pool: str = "susceptible",
-                 min_slice: int = 32):
+                 min_slice: int = 32, context_replace: bool = True, standardize: str = "pool"):
         from .intersynth_theory import TheoryHyperPrior
         from .neuro_prior import HyperPrior
 
+        # audit of 19 Oct: (i) a context drawn with replacement shows the same
+        # patient under both arms, which never happens at scoring;
+        # context_replace=False draws distinct lesions and caps the context at
+        # the slice; (ii) scoring standardises with the context's statistics
+        # while training standardised the pool once; standardize="context"
+        # does the same in training, so the two paths match by construction.
+        self.context_replace = bool(context_replace)
+        if standardize not in ("pool", "context"):
+            raise ValueError("standardize must be 'pool' or 'context'")
+        self.standardize = standardize
         if family not in FAMILIES:
             raise ValueError(f"unknown prior family {family!r}; choose from {FAMILIES}")
         self.family = family
@@ -201,6 +211,10 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
             self.n_context, self.n_query = int(n_context), int(n_query)
             self.unobserved_strength = 0.0
             self.overlaps = np.asarray(cache["overlaps"], dtype=np.float32)
+            # extra anatomy channels (scripts/build_prior_cache.py, 15 Oct):
+            # whole-network overlap and the halves of both splits
+            self.overlaps_extra = {k: cache[k] for k in ("overlaps_network", "overlaps_receptor", "overlaps_genetics")
+                                   if k in cache}
             self.centroids = np.asarray(cache["centroids"], dtype=np.float32)
             self.volumes = np.asarray(cache["volumes"], dtype=np.float64)
             self.m = len(self.overlaps)
@@ -223,17 +237,48 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
         self.hyper = hyper or (HyperPrior() if family == "giles" else TheoryHyperPrior())
         # the mixture's virtual-trial ranges (the giles family uses ``hyper``)
         self.hyper_giles = hyper_giles or HyperPrior()
+        # the theory family's anatomy view: the cache's two split columns by
+        # default; three named channels (D, S_A, S_B sources) when asked
+        self.overlaps_theory = self._theory_view()
         self.max_tries = int(max_tries)
         self.n_rejected = 0
+        self.overlaps_extra = getattr(self, "overlaps_extra", {})
+        self._atoms = None                 # (labels, table) of the anatomical atoms, built on first use
         # Coordinate-free covariates: the per-fold encoders (and external
         # cohorts) each have their own latent basis, so the transformer must
         # not learn one. The pool is standardised once and every process
         # applies its own random orthogonal rotation to context and queries;
         # at scoring time PFNEstimator standardises with the context statistics.
         self.augment = bool(augment)
-        if self.augment:
+        if self.augment and self.standardize == "pool":
             mu, sd = self.X.mean(0, keepdims=True), self.X.std(0, keepdims=True) + 1e-6
             self.X = (self.X - mu) / sd
+
+    def _theory_view(self) -> Optional[np.ndarray]:
+        """[m, K, 3] overlaps of the D, S_A and S_B sources named by the theory
+        hyper-prior, or None when it keeps the defaults (the cache's two split
+        columns, the behaviour of every run before 15 Oct)."""
+        from .intersynth_atlas import channel_column
+
+        h = self.hyper if self.family in ("theory", "mixture") else None
+        if h is None or not hasattr(h, "uses_extra_channels") or not h.uses_extra_channels():
+            return None
+
+        def col(name: str) -> np.ndarray:
+            if name in ("split_1", "split_2"):
+                return self.overlaps[:, :, int(name[-1]) - 1]
+            if not getattr(self, "overlaps_extra", None):
+                raise ValueError(f"the prior asks for the anatomy channel {name!r} but the cache has no extra "
+                                 "channels; rebuild it with scripts/build_prior_cache.py --augment <cache>")
+            return channel_column(self.overlaps_extra, name)
+
+        sb = h.s_b_source or (h.d_source if int(h.s_b_column) == 0 else h.s_source)
+        view = np.stack([col(h.d_source), col(h.s_source), col(sb)], axis=2).astype(np.float32)
+        log.info("theory anatomy view: D <- %s, S_A <- %s, S_B <- %s", h.d_source, h.s_source, sb)
+        return view
+
+    def _theory_ov(self) -> np.ndarray:
+        return self.overlaps if getattr(self, "overlaps_theory", None) is None else self.overlaps_theory
 
     @classmethod
     def from_cache(cls, atlas: FunctionalAtlas, cache_path: str, **kw):
@@ -254,10 +299,11 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
         if self.context_pool == "all":
             return None
         if family == "giles":
-            idx = [self.atlas.networks.index(n) for n in dgp.networks]
-            hit = (self.overlaps[:, idx, :] > dgp.threshold).any(axis=(1, 2))
+            ov = self._giles_ov(dgp)
+            idx = [dgp.atlas.networks.index(n) for n in dgp.networks]
+            hit = (ov[:, idx, :] > dgp.threshold).any(axis=(1, 2))
         else:
-            hit = dgp.raw_scores(self.overlaps)[0] > 0.0
+            hit = dgp.raw_scores(self._theory_ov())[0] > 0.0
         return np.flatnonzero(hit)
 
     def _indices_from(self, pool: Optional[np.ndarray], n: int) -> np.ndarray:
@@ -289,10 +335,32 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
 
             # the D and S scales are fixed on the whole pool, so the ground
             # truth of a process does not depend on the batch it is sampled in
-            return InterSynthTheoryDGP(self.atlas, self.rng, self.hyper).calibrate(self.overlaps)
+            return InterSynthTheoryDGP(self.atlas, self.rng, self.hyper).calibrate(self._theory_ov())
         from .neuro_prior import NeuroPriorDGP
 
-        return NeuroPriorDGP(self.atlas, self.rng, self.hyper if self.family == "giles" else self.hyper_giles)
+        h = self.hyper if self.family == "giles" else self.hyper_giles
+        if float(getattr(h, "random_partitions", 0.0) or 0.0) > 0 and self.rng.uniform() < float(h.random_partitions):
+            # route C: the process's networks are random partitions of the
+            # cache's anatomical atoms, never the benchmark's own halves
+            from .partitions import VirtualAtlas, atom_table, draw_virtual_networks
+
+            if self._atoms is None:
+                self._atoms = atom_table(self.overlaps, self.overlaps_extra)
+            labels, table = self._atoms
+            k = int(self.rng.integers(h.n_networks[0], h.n_networks[1] + 1))
+            vov, desc = draw_virtual_networks(self.rng, labels, table, k, atoms_per_side=h.atoms_per_side)
+            atlas = VirtualAtlas(vov, self.centroids)
+            dgp = NeuroPriorDGP(atlas, self.rng, h, networks=list(atlas.networks))
+            dgp.virtual_overlaps = vov
+            dgp.virtual_desc = desc
+            return dgp
+        return NeuroPriorDGP(self.atlas, self.rng, h)
+
+    def _giles_ov(self, dgp) -> np.ndarray:
+        """The [m, K, 2] overlaps a virtual-trial process reads: the cache's
+        atlas halves, or the process's own virtual networks."""
+        v = getattr(dgp, "virtual_overlaps", None)
+        return self.overlaps if v is None else v
 
     def _one(self, n_context: int, drawn=None) -> Dict[str, np.ndarray]:
         from .intersynth_theory import make_theory_dataset
@@ -308,17 +376,31 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
                 # length from the rest of the slice, with replacement
                 perm = sl[self.rng.permutation(len(sl))]
                 qi, rest = perm[: self.n_query], perm[self.n_query:]
-                ci = rest[self.rng.integers(0, len(rest), size=n_context)]
+                if self.context_replace:
+                    ci = rest[self.rng.integers(0, len(rest), size=n_context)]
+                else:
+                    # distinct lesions first; a slice shorter than the context is
+                    # topped up with replacement so every item of a batch has
+                    # the same length (audit of 27 Oct: a short slice broke the
+                    # batch stacking)
+                    ci = rest[: n_context]
+                    if len(ci) < n_context:
+                        ci = np.concatenate([ci, rest[self.rng.integers(0, len(rest), size=n_context - len(ci))]])
             Xc, Xq = self.X[ci], self.X[qi]
+            if self.standardize == "context":
+                mu, sd = Xc.mean(0, keepdims=True), Xc.std(0, keepdims=True) + 1e-6
+                Xc, Xq = (Xc - mu) / sd, (Xq - mu) / sd
             if self.augment:
                 R = self._rotation(); Xc, Xq = Xc @ R, Xq @ R
             if fam == "theory":
-                data = make_theory_dataset(dgp, self.overlaps[ci], self.centroids[ci], Xc,
-                                           self.overlaps[qi], self.centroids[qi], Xq, self.rng)
+                ov_t = self._theory_ov()
+                data = make_theory_dataset(dgp, ov_t[ci], self.centroids[ci], Xc,
+                                           ov_t[qi], self.centroids[qi], Xq, self.rng)
                 U = None
             else:
-                data = make_prior_dataset(dgp, self.overlaps[ci], self.centroids[ci], self.volumes[ci], Xc,
-                                          self.overlaps[qi], self.centroids[qi], self.volumes[qi], Xq, self.rng)
+                ov_g = self._giles_ov(dgp)
+                data = make_prior_dataset(dgp, ov_g[ci], self.centroids[ci], self.volumes[ci], Xc,
+                                          ov_g[qi], self.centroids[qi], self.volumes[qi], Xq, self.rng)
                 U = data["u_ctx"][:, None] if dgp.bias_type == "agnostic" else None
             n_slice = int(self.m if sl is None else len(sl))
             if verify_identifiability(data["Tc"], data["Xc"], None, None, U=U):

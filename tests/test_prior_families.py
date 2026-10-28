@@ -217,3 +217,12 @@ def test_probe_cohort_drops_the_hyper_fields_the_other_family_lacks(tmp_path):
     theory = _cohort(cfg, "theory", 30, 10, 1)
     assert theory.hyper.two_arms == 1.0 and theory.hyper.effect_scale == (0.2, 1.0)
 
+
+
+def test_no_replacement_context_keeps_batch_shape_on_short_slices(atlas, pool):
+    """context_replace=False with a slice shorter than the context: distinct
+    lesions first, topped up with replacement, so the batch stacks."""
+    coh = NeuroPriorCohort(atlas, pool, seed=0, n_context=200, n_query=4, family="theory",
+                           context_pool="susceptible", context_replace=False, augment=False, min_slice=12)
+    b = coh.sample_batch(3)
+    assert b["Xc"].shape[:2] == (3, 200) and b["Yc"].shape == (3, 200)

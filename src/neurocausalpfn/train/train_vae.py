@@ -227,7 +227,7 @@ def run_vae(cfg: Dict):
 
     start_epoch, best_val = 0, float("inf")
     if cfg.get("resume") and os.path.exists(cfg["resume"]):
-        ckpt = torch.load(cfg["resume"], map_location=device)
+        ckpt = torch.load(cfg["resume"], map_location=device, weights_only=False)
         model.load_state_dict(ckpt["state_dict"])
         opt.load_state_dict(ckpt["opt"])
         start_epoch = ckpt.get("epoch", -1) + 1

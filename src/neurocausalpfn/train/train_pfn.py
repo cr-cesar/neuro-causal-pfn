@@ -157,7 +157,13 @@ def parse_hyper_opts(text: str) -> Dict:
         key, _, val = item.partition("=")
         if not key or not val:
             raise ValueError(f"bad hyper option {item!r}: expected key=value")
-        out[key] = [float(x) for x in val.split(":")] if ":" in val else float(val)
+        if ":" in val:
+            out[key] = [float(x) for x in val.split(":")]
+        else:
+            try:
+                out[key] = float(val)
+            except ValueError:          # a channel name, e.g. d_source=network
+                out[key] = val
     return out
 
 
@@ -192,11 +198,14 @@ def _hyper_for(cfg: Dict, ranges: Dict):
     """Hyper-prior of the configured family with ``ranges`` overriding the
     defaults; for the mixture these are the theory ranges (the ones the
     curriculum stages narrow)."""
+    from ..prior.generic_mix import split_generic_hyper
+
     pr = cfg.get("prior", {})
     if pr.get("family", "theory") in ("theory", "mixture"):
         from ..prior.intersynth_theory import TheoryHyperPrior as _Hyper
     else:
         from ..prior.neuro_prior import HyperPrior as _Hyper
+    ranges, _generic = split_generic_hyper(ranges)   # generic_* options belong to the wrapper, not the family
     return _Hyper(**_as_ranges(ranges))
 
 
@@ -290,15 +299,35 @@ def _build_prior(cfg: Dict, seed_offset: int = 0):
             # sampling over the whole pool
             kw = dict(seed=seed, n_context=p["context_max"], n_query=p["n_query"], hyper=hyper,
                       augment=bool(pr.get("augment", True)), family=family,
-                      context_pool=pr.get("context_pool", "susceptible"))
+                      context_pool=pr.get("context_pool", "susceptible"),
+                      context_replace=bool(pr.get("context_replace", True)),
+                      standardize=pr.get("standardize", "pool"))
             if family == "mixture":
                 kw["hyper_giles"] = HyperPrior(**_as_ranges(pr.get("hyper_giles", {})))
                 kw["family_weights"] = tuple(pr.get("family_weights", (0.5, 0.5)))
-            if pr.get("cache"):
-                # real anatomy and latents, precomputed by scripts/build_prior_cache.py
-                prior = NeuroPriorCohort.from_cache(atlas, pr["cache"], **kw)
+            # generic_weight > 0: a share of the processes get a simple effect
+            # in latent space (sparse linear, or three groups with a null
+            # share), the function class the anatomy family lacks (23 Oct)
+            from ..prior.generic_mix import split_generic_hyper, wrap_generic
+            from ..prior.multi_cache import build_multi_cache
+
+            _, generic = split_generic_hyper(pr.get("hyper", {}))
+            caches = pr.get("cache")
+            if caches:
+                # real anatomy and latents, precomputed by scripts/build_prior_cache.py;
+                # a list is a multi-encoder pool (prior/multi_cache.py): one cohort
+                # per cache, drawn per batch, the first cache the anchor
+                paths = [caches] if isinstance(caches, str) else list(caches)
+                cohorts = []
+                for i, path in enumerate(paths):
+                    s = seed + 7919 * i
+                    cohort = NeuroPriorCohort.from_cache(atlas, path, **dict(kw, seed=s))
+                    cohorts.append(wrap_generic(cohort, generic, seed=s))
+                prior = build_multi_cache(cohorts, pr, seed)
             else:
-                prior = NeuroPriorCohort(atlas, pool, **kw)
+                prior = wrap_generic(NeuroPriorCohort(atlas, pool, **kw), generic, seed=seed)
+            if hasattr(prior, "describe") and (generic.get("generic_weight") or isinstance(caches, (list, tuple))):
+                log.info("prior: %s", prior.describe())
             return prior, prior.d_x, True
         prior = NeuroPriorInterSynth(atlas, pool, seed=seed,
                                      n_context=p["context_max"], n_query=p["n_query"],
@@ -338,7 +367,9 @@ def run_pfn(cfg: Dict):
             if getattr(prior_obj, "family", None) == "mixture":
                 from ..prior.neuro_prior import HyperPrior
 
-                prior_obj.hyper_giles = HyperPrior(**_as_ranges(st.get("hyper_giles", {})))
+                # the stage narrows the configured virtual-trial ranges too (audit of 27 Oct)
+                prior_obj.hyper_giles = HyperPrior(**_as_ranges({**cfg["prior"].get("hyper_giles", {}),
+                                                                 **st.get("hyper_giles", {})}))
             log.info("hyper-prior stage %d from iter %d: %s%s", k, it + 1, prior_obj.hyper,
                      f" + {prior_obj.hyper_giles}" if getattr(prior_obj, "family", None) == "mixture" else "")
             stage = k

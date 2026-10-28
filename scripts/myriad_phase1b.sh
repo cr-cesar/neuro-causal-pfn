@@ -8,6 +8,12 @@
 #   bash scripts/myriad_phase1b.sh ensemble E1 E5   # seed ensemble (3 seeds concatenated fold by fold) of finished per-fold reps, LR/ET + CausalPFN
 #   bash scripts/myriad_phase1b.sh repair            # resubmit published-budget folds that died (time limit after a slow start) + their scoring
 #   bash scripts/myriad_phase1b.sh perfold E1 E3 E11b    # published-budget (32-epoch) per-fold training into PUB_ROOT, independent jobs, scoring chained
+#   REP=outputs_perfold_pub/E1/E1/seed0/folds TAG=e1 FOLDS="0 1" PRIOR_FAMILY=theory bash scripts/myriad_phase1b.sh phase2pf   # one PFN per fold on that fold's UCLH training side
+#   CONTEXT_MAX=3000 (training context; default 1024 with susceptible sampling) and AUGMENT=0 (no latent rotation) apply to phase2, e12 and phase2pf
+#   D_MODEL=512 N_LAYERS=12 ITERS=60000 (stage 3, scale) apply to phase2 like CONTEXT_MAX
+#   TRAIN_HRT=8:0:0 shortens the GPU training job's wall-clock request (default 36 h; before a
+#   cluster drain only jobs that fit before the outage start)
+#   ONLY="E4[25+25] E6[fusion_mode=both] E7b" bash scripts/myriad_phase1b.sh perfold E4 E6 E7b   # only those variants
 #   POOL_IMAGES=<disco dir> bash scripts/myriad_phase1b.sh pool   # pool latents with the published-budget E1 (fold-0 encoder), one GPU job
 #   PRIOR_FAMILY=<theory|giles|mixture> TAG=<tag> [POOL_IMAGES=<dir> POOL_LATENTS=<npz> HOLD_JID=<job>] bash scripts/myriad_phase1b.sh phase2   # [cache ->] reduced PFN (GPU) -> scored on E1 per-fold (published budget)
 #   bash scripts/myriad_phase1b.sh probe [pfn.pt ...]   # CPU probe: does a checkpoint read the treatment, and on which prior family is it accurate
@@ -190,9 +196,14 @@ PY
     activate
     cd "$PERFOLD"
     eids="${*:-E3 E11b}"
-    python -m ncpfold.plan --eids $eids --seeds "$SEEDS" --budget published
-    python -m ncpfold.plan --eids $eids --seeds "$SEEDS" --budget published --emit-qsub --independent \
-        --h-rt 1:30:0 --groups "$PF_GROUPS" --out-root "$PUB_ROOT" > /tmp/perfold_submit_$$.sh
+    # H_RT: wall-clock per fold job (default 1:30:0, enough for one-channel
+    # folds at ~0.5 h; two-channel folds measure ~0.9 h, use 3:0:0).
+    # ONLY="E4[25+25] E6[fusion_mode=both] E7b" keeps those variants (label,
+    # eid:run or eid); read into an array so the brackets are never globbed
+    only=(); [ -z "${ONLY:-}" ] || { read -ra only <<< "$ONLY"; only=(--only "${only[@]}"); }
+    python -m ncpfold.plan --eids $eids --seeds "$SEEDS" --budget published "${only[@]}"
+    python -m ncpfold.plan --eids $eids --seeds "$SEEDS" --budget published "${only[@]}" --emit-qsub --independent \
+        --h-rt "${H_RT:-1:30:0}" --groups "$PF_GROUPS" --out-root "$PUB_ROOT" > /tmp/perfold_submit_$$.sh
     declare -A HOLD
     while read -r line; do
       [[ "$line" =~ ^qsub ]] || continue
@@ -278,8 +289,8 @@ PY
     # TAG, family and architecture do not share a checkpoint
     tag="${TAG:-pilot}"; run="${tag}-${fam}${ctxsuf}${archsuf}${VARIANT_TAG:+-$VARIANT_TAG}"; out="outputs/pfn_reduced_${run}"
     ensure_cache "$tag"
-    tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" PRIOR_HYPER="${PRIOR_HYPER:-}" LR_SCHEDULE="${LR_SCHEDULE:-constant}" BATCH="${BATCH:-}" qsub -terse -N pfn-$run ${hold[@]+"${hold[@]}"} \
-         -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="${SEED:-0}",ARCH="${ARCH:-tabicl}",FAMILY="$fam",FAMILY_WEIGHTS,PRIOR_HYPER,LR_SCHEDULE,BATCH,CONTEXT_POOL="$ctx" \
+    tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" PRIOR_HYPER="${PRIOR_HYPER:-}" LR_SCHEDULE="${LR_SCHEDULE:-constant}" BATCH="${BATCH:-}" CONTEXT_MAX="${CONTEXT_MAX:-}" AUGMENT="${AUGMENT:-}" CONTEXT_REPLACE="${CONTEXT_REPLACE:-}" STANDARDIZE="${STANDARDIZE:-}" D_MODEL="${D_MODEL:-}" N_LAYERS="${N_LAYERS:-}" qsub -terse -N pfn-$run -l h_rt="${TRAIN_HRT:-36:0:0}" ${hold[@]+"${hold[@]}"} \
+         -v CACHE="$cache",OUT="$out",ITERS="${ITERS:-20000}",SEED="${SEED:-0}",ARCH="${ARCH:-tabicl}",FAMILY="$fam",FAMILY_WEIGHTS,PRIOR_HYPER,LR_SCHEDULE,BATCH,CONTEXT_MAX,AUGMENT,CONTEXT_REPLACE,STANDARDIZE,D_MODEL,N_LAYERS,CONTEXT_POOL="$ctx" \
          scripts/train_pfn_myriad.qsub.sh)
     cd "$PERFOLD"
     # the checkpoint is scored on the headline encoder's per-fold latents: E1
@@ -309,6 +320,55 @@ PY
            qsub/perfold_score.qsub.sh)
       echo "pfnscore $run: $sj (log sc-pfn-$run.o$sj) -> $PERFOLD/outputs_perfold_pfn/$run/leaderboard.csv"
     done
+    ;;
+
+  phase2pf)
+    # Per-fold pools (Phase 2, tab "latents and UCLH", options A'/B'): PFN k
+    # pre-trains on the training side of fold k of REP, encoded by fold k's
+    # own encoder (UCLH only; EXTRA_CACHE + EXTRA_LATENTS append a second
+    # cohort such as KCH), and is scored on fold k's test patients only. One
+    # CPU job builds the pools, one GPU job per fold trains, one CPU job
+    # scores every fold with its own checkpoint. FOLDS (default all ten)
+    # selects the folds (B': "0 1"); SEED defaults to the representation's;
+    # the prior defaults to the headroom variant (PRIOR_HYPER overrides).
+    #   REP=outputs_perfold_pub/E1/E1/seed0/folds TAG=e1 FOLDS="0 1" bash scripts/myriad_phase1b.sh phase2pf
+    need_family
+    cd "$MAIN"
+    rep="${REP:?set REP to a per-fold representation folder, relative to $PERFOLD}"
+    repdir="$PERFOLD/$rep"; [ -f "$repdir/meta.json" ] || { echo "no per-fold representation at $repdir"; exit 2; }
+    tag="${TAG:?set TAG (names the run)}"; folds="${FOLDS:-0 1 2 3 4 5 6 7 8 9}"
+    seed="${SEED:-$(python -c "import json; print(json.load(open('$repdir/meta.json'))['seed'])")}"
+    cohort_cache="${COHORT_CACHE:-outputs/prior_cache/uclh_disco_x.npz}"
+    [ -s "$cohort_cache" ] || { echo "no cohort anatomy cache $cohort_cache (scripts/build_prior_cache_myriad.qsub.sh)"; exit 2; }
+    hyper="${PRIOR_HYPER-two_arms=1 effect_scale=0.2:1 d_source=network s_source=genetics_1 s_b_source=genetics_2 effect_headroom=1}"
+    archsuf=""; [ "${ARCH:-linear}" = linear ] || archsuf="-${ARCH}"
+    # POOL=extra: the pool is the EXTRA cohort alone with fold k's latents
+    # (the KCH benchmark pool decided on 19 Oct); run names carry -xonly
+    xsuf=""; [ -z "${EXTRA_CACHE:-}" ] || { xsuf="-x"; [ "${POOL:-}" = extra ] && xsuf="-xonly"; }
+    extra_only=""; [ "${POOL:-}" = extra ] && extra_only=1
+    run="${tag}-${fam}${ctxsuf}${archsuf}${VARIANT_TAG:+-$VARIANT_TAG}${xsuf}_s$seed"
+    pools="outputs/prior_cache/fold_pools/${run}"
+    cj=$(FOLDS="$folds" EXTRA_CACHE="${EXTRA_CACHE:-}" EXTRA_LATENTS="${EXTRA_LATENTS:-}" EXTRA_ONLY="$extra_only" qsub -terse -N pools-$tag \
+         -v CACHE="$cohort_cache",FOLD_DIR="$repdir",OUT_DIR="$pools",FOLDS,EXTRA_CACHE,EXTRA_LATENTS,EXTRA_ONLY scripts/fold_pools_myriad.qsub.sh)
+    echo "phase2pf $run: pools $cj -> $pools (folds $folds; prior: $hyper)"
+    tjs=""
+    for k in $folds; do
+      out="outputs/pfn_pf_${run}/fold$k"
+      tj=$(FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}" PRIOR_HYPER="$hyper" GILES_HYPER="${GILES_HYPER:-}" LR_SCHEDULE="${LR_SCHEDULE:-constant}" BATCH="${BATCH:-}" CONTEXT_MAX="${CONTEXT_MAX:-}" AUGMENT="${AUGMENT:-}" CONTEXT_REPLACE="${CONTEXT_REPLACE:-}" STANDARDIZE="${STANDARDIZE:-}" D_MODEL="${D_MODEL:-}" N_LAYERS="${N_LAYERS:-}" \
+           qsub -terse -N pf$k-$tag -l h_rt="${TRAIN_HRT:-36:0:0}" -hold_jid "$cj" \
+           -v CACHE="$pools/fold$k.npz",OUT="$out",ITERS="${ITERS:-20000}",SEED="$seed",ARCH="${ARCH:-linear}",FAMILY="$fam",FAMILY_WEIGHTS,PRIOR_HYPER,GILES_HYPER,LR_SCHEDULE,BATCH,CONTEXT_MAX,AUGMENT,CONTEXT_REPLACE,STANDARDIZE,D_MODEL,N_LAYERS,CONTEXT_POOL="$ctx" \
+           scripts/train_pfn_myriad.qsub.sh)
+      tjs="${tjs:+$tjs,}$tj"
+      echo "  fold $k: pfn $tj -> $out/pfn.pt"
+    done
+    cd "$PERFOLD"
+    # SCORE_DATA_DIR / SCORE_MODALITY: the trials the folds are scored on
+    # (default the per-fold repo's data; the BCB pipeline passes data_bcb)
+    sj=$(REPS="$rep" PFN_CONTEXT_CAP="${PFN_CONTEXT_CAP:-0}" ONLY_FOLDS="$folds" DATA_DIR="${SCORE_DATA_DIR:-data/Full data}" MODALITY="${SCORE_MODALITY:-receptor}" \
+         qsub -terse -N sc-pf-$tag -hold_jid "$tjs" -l h_rt=6:0:0 -l mem=16G \
+         -v REPS,PFN_CONTEXT_CAP,ONLY_FOLDS,DATA_DIR,MODALITY,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS="$MAIN/outputs/pfn_pf_${run}/fold{fold}/pfn.pt",ONLY_ESTIMATORS=1,OUT="${SCORE_OUT:-outputs_perfold_pfn/pf_$run}" \
+         qsub/perfold_score.qsub.sh)
+    echo "  scoring $sj (each fold with its own checkpoint, full context) -> $PERFOLD/outputs_perfold_pfn/pf_$run/leaderboard.csv"
     ;;
 
   probe)
@@ -428,10 +488,13 @@ PY
       [ -f "$lb/leaderboard.md" ] && cp "$lb/leaderboard.md" "$out/leaderboard_$(basename "$lb").md"
     done
     PERFOLD="$PERFOLD" python scripts/snapshot_aggregates.py "$out"
-    # PFN timing lines (iteration, context length, loss, wall-clock) of every PFN log
+    # PFN timing lines (iteration, context length, loss, wall-clock) of every PFN
+    # log, with the prior options the run was trained with (anatomy sources,
+    # two arms, effect headroom) from the config the job prints first
     for f in pfn-*.o*; do
       [ -f "$f" ] || continue
-      echo "== $f"; grep -E "parameters|iter [0-9]+/|checkpoint saved" "$f" | awk 'NR<=3 || /iter (100|1000|5000|10000|15000|20000)\//'
+      echo "== $f"; grep -E '^node: |parameters|iter [0-9]+/|"(two_arms|d_source|s_source|s_b_source|effect_headroom)":' "$f" \
+        | awk '/^node: / || /parameters/ || /"(two_arms|d_source|s_source|s_b_source|effect_headroom)":/ || /iter (1|100|1000|5000|10000|15000|20000)\//'
     done > "$out/pfn_timing.txt" 2>/dev/null || true
     ls "$out"
     # The clone stays on the local results-snapshot branch (main + status commits);
@@ -446,16 +509,20 @@ PY
     # <root>_<scenario>_t4, same folds and test set as the ideal cell.
     cd "$PERFOLD"
     sc="${SCENARIO:-location_bias}"; root="${ROOT:-$PUB_ROOT}"
+    # MODALITY=genetics scores the same latents on the gene-expression split of
+    # the atlas (the virtual trial is a different trial per split); a non-default
+    # split gets its own output roots so it never overwrites the receptor cells
+    mod="${MODALITY:-receptor}"; modsuf=""; [ "$mod" = receptor ] || modsuf="_${mod}"
     for eid in "${@:-E1}"; do
       for reps in "$root/$eid"/*/seed*/folds; do
         [ -d "$reps" ] || { echo "skip $eid: no folds under $root/$eid"; continue; }
         n=$(ls "$reps"/fold*.npz 2>/dev/null | wc -l || true); [ "$n" -eq 10 ] || { echo "skip $reps ($n folds)"; continue; }
         s=${reps%/folds}; s=${s##*/seed}
-        j1=$(REPS="$reps" qsub -terse -N sc-${sc:0:3}-${eid,,}s$s -l h_rt=6:0:0 -l mem=8G \
-             -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,WITH_VOLUME=1,SCENARIO="$sc",OUT="${root}_${sc}" qsub/perfold_score.qsub.sh)
-        j2=$(REPS="$reps" qsub -terse -N t4-${sc:0:3}-${eid,,}s$s -l h_rt=6:0:0 -l mem=8G \
-             -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS=causalpfn,ONLY_ESTIMATORS=1,SCENARIO="$sc",OUT="${root}_${sc}_t4" qsub/perfold_score.qsub.sh)
-        echo "$sc $eid seed$s: LR/ET $j1 -> ${root}_${sc}; CausalPFN $j2 -> ${root}_${sc}_t4"
+        j1=$(REPS="$reps" qsub -terse -N sc-${sc:0:3}${modsuf:1:3}-${eid,,}s$s -l h_rt=6:0:0 -l mem=8G \
+             -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,WITH_VOLUME=1,SCENARIO="$sc",MODALITY="$mod",OUT="${root}_${sc}${modsuf}" qsub/perfold_score.qsub.sh)
+        j2=$(REPS="$reps" qsub -terse -N t4-${sc:0:3}${modsuf:1:3}-${eid,,}s$s -l h_rt=6:0:0 -l mem=8G \
+             -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,ESTIMATORS=causalpfn,ONLY_ESTIMATORS=1,SCENARIO="$sc",MODALITY="$mod",OUT="${root}_${sc}${modsuf}_t4" qsub/perfold_score.qsub.sh)
+        echo "$sc $mod $eid seed$s: LR/ET $j1 -> ${root}_${sc}${modsuf}; CausalPFN $j2 -> ${root}_${sc}${modsuf}_t4"
       done
     done
     ;;

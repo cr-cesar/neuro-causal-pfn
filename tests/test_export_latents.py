@@ -132,3 +132,24 @@ def test_default_name_from_runner_layout():
     name = ex.default_name(
         "outputs/experiments/E2/E2[w_dice=0.5]/seed0/disco/vae_disconnectome.pt")
     assert name == "E2_E2_w_dice=0.5_seed0_disco.npz"
+
+
+def test_which_image_dir_finds_the_directory_the_latents_came_from(tmp_path):
+    from scripts.which_image_dir import main as which
+
+    ckpt = _save_ckpt(tmp_path)
+    img_dir, files = _save_images(tmp_path)
+    # a second directory with the same file names but other maps
+    other = os.path.join(tmp_path, "other")
+    os.makedirs(other)
+    rng = np.random.default_rng(1)
+    for f in files:
+        nib.save(nib.Nifti1Image(rng.random(RES).astype(np.float32), np.eye(4)),
+                 os.path.join(other, os.path.basename(f)))
+    model, rep, res = ex.load_frozen_vae(ckpt)
+    Z = ex.export_latents(model, rep, res, files)
+    lat = os.path.join(tmp_path, "lat.npz")
+    np.savez(lat, Z=Z, files=np.array([os.path.basename(f) for f in files]))
+    out = which(["--latents", lat, "--checkpoint", ckpt, "--candidates", img_dir, other, "--limit", "4"])
+    assert out[img_dir]["max_abs_diff"] < 1e-5
+    assert out[other]["max_abs_diff"] > 1e-3

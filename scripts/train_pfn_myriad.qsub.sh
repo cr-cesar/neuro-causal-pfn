@@ -26,11 +26,20 @@ set -euo pipefail
 # holding on it (-hold_jid) stay queued instead of starting on missing inputs
 trap 'exit 100' ERR
 
-module load python3/3.11
-source ~/venvs/neuro/bin/activate
+# outside Myriad (scripts/run_jobs.sh on another machine) there is no module
+# system; VENV names the environment to use
+command -v module >/dev/null 2>&1 && module load python3/3.11
+source "${VENV:-$HOME/venvs/neuro}/bin/activate"
+# audit F25: the same config and seed ran 2.4x slower on another node, so
+# every job states where it ran
+echo "node: $(hostname -s) gpu: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || echo none) job: ${JOB_ID:-?}"
 
 CACHE="${CACHE:?set CACHE to the npz from scripts/build_prior_cache.py}"
-[ -s "$CACHE" ] || { echo "no prior cache $CACHE (the cache job failed?)" >&2; exit 100; }
+# several caches, space-separated, are a multi-encoder pool (prior/multi_cache.py):
+# one cohort per cache, drawn per batch; the first is the anchor and keeps the
+# CACHE_ANCHOR_WEIGHT share of the batches (default: uniform)
+for c in $CACHE; do [ -s "$c" ] || { echo "no prior cache $c (the cache job failed?)" >&2; exit 100; }; done
+CACHE_ANCHOR_WEIGHT="${CACHE_ANCHOR_WEIGHT:-}"
 OUT="${OUT:-outputs/pfn_reduced}"
 ITERS="${ITERS:-20000}"
 SEED="${SEED:-0}"
@@ -40,8 +49,16 @@ FAMILY="${FAMILY:-}"        # theory | giles | mixture (empty = theory)
 FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}"
 CONTEXT_POOL="${CONTEXT_POOL:-susceptible}"
 PRIOR_HYPER="${PRIOR_HYPER:-}"
+GILES_HYPER="${GILES_HYPER:-}"      # virtual-trial family ranges of the mixture, e.g. "threshold=0.01:0.2 p_te=0.5:1"
 LR_SCHEDULE="${LR_SCHEDULE:-constant}"   # constant | cosine (warmup 2 % then cosine decay to 0.1 lr)
-BATCH="${BATCH:-}"                        # batch size override (default: the config's)    # theory prior extensions, e.g. "two_arms=1 effect_scale=0.2:1 binary_outcome=0.5"
+BATCH="${BATCH:-}"                        # batch size override (default: the config's)
+CONTEXT_MIN="${CONTEXT_MIN:-}"            # shortest training context of the curriculum (default: the config's, 256); T7 of 28 Oct
+CONTEXT_MAX="${CONTEXT_MAX:-}"            # training context override, e.g. 3000 (default: the family's cap, 1024 with susceptible sampling)
+AUGMENT="${AUGMENT:-}"                    # 0 disables the random rotation of the pool latents (H5 of the Phase-2 audit)
+CONTEXT_REPLACE="${CONTEXT_REPLACE:-}"    # 0 draws distinct lesions per context, capped at the slice (audit of 19 Oct, point 1)
+STANDARDIZE="${STANDARDIZE:-}"
+D_MODEL="${D_MODEL:-}"                    # model width override (reduced config: 256; stage 3 of the Phase-2 programme: 512)
+N_LAYERS="${N_LAYERS:-}"                  # depth override (reduced config: 6; 512-wide runs use 12)            # context: standardise each training context with its own statistics, as scoring does (point 2)    # theory prior extensions, e.g. "two_arms=1 effect_scale=0.2:1 binary_outcome=0.5"
 
 python - <<PY
 import json
@@ -54,8 +71,19 @@ cfg["out_dir"] = "$OUT"; cfg["seed"] = int("$SEED")
 cfg["pfn"]["iters"] = int("$ITERS"); cfg["pfn"]["arch"] = "$ARCH"
 cfg["pfn"]["lr_schedule"] = "$LR_SCHEDULE"
 if "$BATCH": cfg["pfn"]["batch_size"] = int("$BATCH")
-cfg["prior"]["cache"] = "$CACHE"; cfg["prior"]["atlas_dir"] = "data/atlases"
+if "$CONTEXT_MIN": cfg["pfn"]["context_min"] = int("$CONTEXT_MIN")
+if "$CONTEXT_MAX": cfg["pfn"]["context_max"] = int("$CONTEXT_MAX")
+if "$AUGMENT": cfg["prior"]["augment"] = bool(int("$AUGMENT"))
+if "$CONTEXT_REPLACE": cfg["prior"]["context_replace"] = bool(int("$CONTEXT_REPLACE"))
+if "$STANDARDIZE": cfg["prior"]["standardize"] = "$STANDARDIZE"
+if "$D_MODEL": cfg["pfn"]["d_model"] = int("$D_MODEL")
+if "$N_LAYERS": cfg["pfn"]["n_layers"] = int("$N_LAYERS")
+caches = "$CACHE".split()
+cfg["prior"]["cache"] = caches[0] if len(caches) == 1 else caches
+if "$CACHE_ANCHOR_WEIGHT": cfg["prior"]["cache_anchor_weight"] = float("$CACHE_ANCHOR_WEIGHT")
+cfg["prior"]["atlas_dir"] = "data/atlases"
 cfg["prior"]["hyper"] = {**cfg["prior"].get("hyper", {}), **parse_hyper_opts("$PRIOR_HYPER")}
+if "$GILES_HYPER": cfg["prior"]["hyper_giles"] = {**cfg["prior"].get("hyper_giles", {}), **parse_hyper_opts("$GILES_HYPER")}
 print(json.dumps(cfg, indent=1, default=str))
 model, history = run_pfn(cfg)
 json.dump(history, open("$OUT/history.json", "w"))
