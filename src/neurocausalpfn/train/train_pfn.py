@@ -305,19 +305,28 @@ def _build_prior(cfg: Dict, seed_offset: int = 0):
             if family == "mixture":
                 kw["hyper_giles"] = HyperPrior(**_as_ranges(pr.get("hyper_giles", {})))
                 kw["family_weights"] = tuple(pr.get("family_weights", (0.5, 0.5)))
-            if pr.get("cache"):
-                # real anatomy and latents, precomputed by scripts/build_prior_cache.py
-                prior = NeuroPriorCohort.from_cache(atlas, pr["cache"], **kw)
-            else:
-                prior = NeuroPriorCohort(atlas, pool, **kw)
             # generic_weight > 0: a share of the processes get a simple effect
             # in latent space (sparse linear, or three groups with a null
             # share), the function class the anatomy family lacks (23 Oct)
             from ..prior.generic_mix import split_generic_hyper, wrap_generic
+            from ..prior.multi_cache import build_multi_cache
 
             _, generic = split_generic_hyper(pr.get("hyper", {}))
-            prior = wrap_generic(prior, generic, seed=seed)
-            if hasattr(prior, "describe") and generic.get("generic_weight"):
+            caches = pr.get("cache")
+            if caches:
+                # real anatomy and latents, precomputed by scripts/build_prior_cache.py;
+                # a list is a multi-encoder pool (prior/multi_cache.py): one cohort
+                # per cache, drawn per batch, the first cache the anchor
+                paths = [caches] if isinstance(caches, str) else list(caches)
+                cohorts = []
+                for i, path in enumerate(paths):
+                    s = seed + 7919 * i
+                    cohort = NeuroPriorCohort.from_cache(atlas, path, **dict(kw, seed=s))
+                    cohorts.append(wrap_generic(cohort, generic, seed=s))
+                prior = build_multi_cache(cohorts, pr, seed)
+            else:
+                prior = wrap_generic(NeuroPriorCohort(atlas, pool, **kw), generic, seed=seed)
+            if hasattr(prior, "describe") and (generic.get("generic_weight") or isinstance(caches, (list, tuple))):
                 log.info("prior: %s", prior.describe())
             return prior, prior.d_x, True
         prior = NeuroPriorInterSynth(atlas, pool, seed=seed,

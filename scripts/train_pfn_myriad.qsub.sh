@@ -35,7 +35,11 @@ source "${VENV:-$HOME/venvs/neuro}/bin/activate"
 echo "node: $(hostname -s) gpu: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || echo none) job: ${JOB_ID:-?}"
 
 CACHE="${CACHE:?set CACHE to the npz from scripts/build_prior_cache.py}"
-[ -s "$CACHE" ] || { echo "no prior cache $CACHE (the cache job failed?)" >&2; exit 100; }
+# several caches, space-separated, are a multi-encoder pool (prior/multi_cache.py):
+# one cohort per cache, drawn per batch; the first is the anchor and keeps the
+# CACHE_ANCHOR_WEIGHT share of the batches (default: uniform)
+for c in $CACHE; do [ -s "$c" ] || { echo "no prior cache $c (the cache job failed?)" >&2; exit 100; }; done
+CACHE_ANCHOR_WEIGHT="${CACHE_ANCHOR_WEIGHT:-}"
 OUT="${OUT:-outputs/pfn_reduced}"
 ITERS="${ITERS:-20000}"
 SEED="${SEED:-0}"
@@ -72,7 +76,10 @@ if "$CONTEXT_REPLACE": cfg["prior"]["context_replace"] = bool(int("$CONTEXT_REPL
 if "$STANDARDIZE": cfg["prior"]["standardize"] = "$STANDARDIZE"
 if "$D_MODEL": cfg["pfn"]["d_model"] = int("$D_MODEL")
 if "$N_LAYERS": cfg["pfn"]["n_layers"] = int("$N_LAYERS")
-cfg["prior"]["cache"] = "$CACHE"; cfg["prior"]["atlas_dir"] = "data/atlases"
+caches = "$CACHE".split()
+cfg["prior"]["cache"] = caches[0] if len(caches) == 1 else caches
+if "$CACHE_ANCHOR_WEIGHT": cfg["prior"]["cache_anchor_weight"] = float("$CACHE_ANCHOR_WEIGHT")
+cfg["prior"]["atlas_dir"] = "data/atlases"
 cfg["prior"]["hyper"] = {**cfg["prior"].get("hyper", {}), **parse_hyper_opts("$PRIOR_HYPER")}
 if "$GILES_HYPER": cfg["prior"]["hyper_giles"] = {**cfg["prior"].get("hyper_giles", {}), **parse_hyper_opts("$GILES_HYPER")}
 print(json.dumps(cfg, indent=1, default=str))
