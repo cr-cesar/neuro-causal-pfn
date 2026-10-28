@@ -7,8 +7,10 @@
 #   CACHE=outputs/prior_cache/kch_e1_32d_x.npz OUT=outputs/pfn_reduced_demo SEED=0 ARCH=linear \
 #     PRIOR_HYPER="two_arms=1 effect_scale=0.2:1 effect_headroom=1" scripts/train_pfn_myriad.qsub.sh
 #
-# A job whose OUT/pfn.pt already exists is skipped (so the list can be rerun
-# after an interruption); a failed job is logged and the next one starts.
+# A job whose OUT/pfn.pt already exists from the same line (OUT/.jobline) is
+# skipped, so the list can be rerun after an interruption; a checkpoint left
+# by a different line is reported as a failure, never reused. A failed job is
+# logged and the next one starts.
 # Logs go to logs/<n>_<name>.log, the name taken from a JOBNAME=... token
 # when the line has one, else from OUT. VENV names the Python environment
 # (default .venv in the repository). The jobs run in the repository holding
@@ -32,10 +34,17 @@ while IFS= read -r line || [ -n "$line" ]; do
     jobname=$(printf '%s\n' "$line" | sed -nE 's/(^|.*[[:space:]])JOBNAME=([^[:space:]]+).*/\2/p')
     name="${jobname:-$(basename "${out:-job$n}")}"
     if [ -n "$out" ] && [ -s "$out/pfn.pt" ]; then
-        echo "[$n] skip, done already: $out/pfn.pt"; skipped=$((skipped + 1)); continue
+        # 28 Oct review: skip only a job that ran with this very line; a
+        # checkpoint left by a different line is not this job's result
+        if [ -f "$out/.jobline" ] && [ "$(cat "$out/.jobline")" = "$line" ]; then
+            echo "[$n] skip, done already: $out/pfn.pt"; skipped=$((skipped + 1)); continue
+        fi
+        echo "[$n] FAILED $name: $out/pfn.pt exists from a different job line (move it away to rerun)"
+        failed=$((failed + 1)); continue
     fi
     echo "[$n] $(date +%H:%M) start $name"
     if bash -c "$line" > "logs/${n}_${name}.log" 2>&1; then
+        [ -n "$out" ] && [ -d "$out" ] && printf '%s' "$line" > "$out/.jobline"
         echo "[$n] $(date +%H:%M) ok    $name"; ok=$((ok + 1))
     else
         echo "[$n] $(date +%H:%M) FAILED $name (see logs/${n}_${name}.log)"; failed=$((failed + 1))

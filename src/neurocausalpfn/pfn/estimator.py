@@ -102,6 +102,7 @@ class PFNEstimator:
 
         ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
         self.cfg: Dict = ckpt["cfg"]
+        self.provenance: Optional[Dict] = ckpt.get("provenance")   # code and launch, from 28 Oct on
         state = ckpt["state_dict"]
         # d_x is recovered from the saved weights: the context embedding of the
         # linear model (d_x + 2 inputs) or the column table of the TabICL one

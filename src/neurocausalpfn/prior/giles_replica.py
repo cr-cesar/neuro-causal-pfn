@@ -578,6 +578,20 @@ def group_folds(files: Sequence[str], groups: Dict[str, Tuple[str, int]],
     return folds
 
 
+def straddling_groups(files: Sequence[str], groups: Dict[str, Tuple[str, int]], folds) -> int:
+    """Number of (fold, group) pairs where a tested image's group also has an
+    image on the training side of that fold. Zero under ``strict``; under
+    ``giles`` it counts the groups whose earliest image is tested while a
+    repeat trains (28 Oct review: the logs now state it). Counts only."""
+    names = [os.path.basename(f) for f in files]
+    grp = [groups.get(nm, (f"__solo__{nm}", 0))[0] for nm in names]
+    n = 0
+    for tr, te in folds:
+        train_groups = {grp[i] for i in tr}
+        n += sum(grp[i] in train_groups for i in te)
+    return n
+
+
 def evaluate_representation(Z: np.ndarray, labels_df, pairs: Dict[int, RoiPair],
                             scenario: Dict, n_folds: int = 10,
                             deficits: Optional[Sequence[int]] = None,

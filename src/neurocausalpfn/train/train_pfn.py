@@ -34,8 +34,12 @@ log = get_logger()
 def build_model(cfg: Dict, d_x: int):
     """Builds the Stage 2 transformer according to the requested architecture:
     'linear' (row-wise projection) or 'tabicl' (column-wise attention and then
-    row-wise)."""
+    row-wise). ``head_lo`` / ``head_hi`` set the range of the outcome bins
+    (default [0, 1], every checkpoint before 28 Oct): with the gaussian target
+    of width sigma, a range ending at 1 cannot put its mean at 1, which the
+    ideal cell's outcomes need; [-0.05, 1.05] can."""
     p = cfg["pfn"]
+    rng_kw = dict(lo=float(p.get("head_lo", 0.0)), hi=float(p.get("head_hi", 1.0)))
     if p.get("arch", "linear") == "tabicl":
         if int(p.get("tabicl_version", 0)) < 2:
             # checkpoints written before the TabICL re-implementation
@@ -44,16 +48,40 @@ def build_model(cfg: Dict, d_x: int):
             return NeuroCausalPFNTabICLv0(
                 d_x=d_x, d_model=p["d_model"], n_row_layers=p["n_layers"],
                 n_col_layers=p.get("n_col_layers", 2), n_heads=p["n_heads"],
-                n_bins=p["n_bins"], sigma=p["sigma"])
+                n_bins=p["n_bins"], sigma=p["sigma"], **rng_kw)
         from ..pfn.tabicl_model import NeuroCausalPFNTabICL
 
         return NeuroCausalPFNTabICL(
             d_x=d_x, embed_dim=p.get("embed_dim", 128), n_col_layers=p.get("n_col_layers", 3),
             n_row_layers=p.get("n_row_layers", 3), n_icl_layers=p["n_layers"], n_heads=p["n_heads"],
-            n_cls=p.get("n_cls", 4), n_inds=p.get("n_inds", 128), n_bins=p["n_bins"], sigma=p["sigma"])
+            n_cls=p.get("n_cls", 4), n_inds=p.get("n_inds", 128), n_bins=p["n_bins"], sigma=p["sigma"],
+            **rng_kw)
     return NeuroCausalPFN(
         d_x=d_x, d_model=p["d_model"], n_layers=p["n_layers"], n_heads=p["n_heads"],
-        n_bins=p["n_bins"], sigma=p["sigma"])
+        n_bins=p["n_bins"], sigma=p["sigma"], **rng_kw)
+
+
+def pfn_loss(model, batch: Dict, p: Dict):
+    """Training loss of one batch. Default: the histogram loss of each query
+    at its own drawn arm (the target is the true expected outcome mu_q).
+    ``p["both_arms"]``: every query is scored at both arms, against mu0 and
+    mu1, in one pass (queries attend only to the context, so stacking the two
+    copies is exact). ``p["cate_weight"]`` > 0 (with both_arms) adds that
+    weight times the squared error of the predicted effect, the difference of
+    the two predicted means, against mu1 - mu0: the quantity PEHE scores."""
+    if not p.get("both_arms"):
+        logits = model(batch["Xc"], batch["Tc"], batch["Yc"], batch["Xq"], batch["Tq"])
+        return model.head.loss(logits, batch["mu_q"])
+    Xq = batch["Xq"]; nq = Xq.shape[1]
+    t0, t1 = torch.zeros_like(batch["Tq"]), torch.ones_like(batch["Tq"])
+    logits = model(batch["Xc"], batch["Tc"], batch["Yc"], torch.cat([Xq, Xq], dim=1), torch.cat([t0, t1], dim=1))
+    loss = model.head.loss(logits, torch.cat([batch["mu0"], batch["mu1"]], dim=1))
+    lam = float(p.get("cate_weight", 0.0) or 0.0)
+    if lam > 0:
+        m = model.head.expect(logits.float())
+        cate = m[:, nq:] - m[:, :nq]
+        loss = loss + lam * ((cate - (batch["mu1"] - batch["mu0"])) ** 2).mean()
+    return loss
 
 
 def prototype_config() -> Dict:
@@ -380,8 +408,7 @@ def run_pfn(cfg: Dict):
             batch_np = prior.sample_batch(p["batch_size"])
         batch = to_tensors(batch_np, device=device)
         with autocast_ctx(device, amp):
-            logits = model(batch["Xc"], batch["Tc"], batch["Yc"], batch["Xq"], batch["Tq"])
-            loss = model.head.loss(logits, batch["mu_q"])
+            loss = pfn_loss(model, batch, p)
         lr_now = lr_at(it)
         for group in opt.param_groups:
             group["lr"] = lr_now
@@ -393,8 +420,17 @@ def run_pfn(cfg: Dict):
 
     os.makedirs(cfg["out_dir"], exist_ok=True)
     ckpt = os.path.join(cfg["out_dir"], "pfn.pt")
-    torch.save({"state_dict": model.state_dict(), "cfg": cfg}, ckpt)
-    log.info("checkpoint saved to %s", ckpt)
+    # 28 Oct review: the checkpoint now says which code and launch built it
+    from .launch_cfg import provenance
+
+    prov = provenance()
+    torch.save({"state_dict": model.state_dict(), "cfg": cfg, "provenance": prov}, ckpt)
+    import json
+
+    with open(os.path.join(cfg["out_dir"], "provenance.json"), "w") as f:
+        json.dump(prov, f, indent=1, default=str)
+    log.info("checkpoint saved to %s (code %s%s)", ckpt, prov.get("git_commit"),
+             " dirty" if prov.get("git_dirty") else "")
     return model, history
 
 

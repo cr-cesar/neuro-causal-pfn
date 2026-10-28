@@ -40,6 +40,11 @@ class CEPOHead(nn.Module):
         log_q = F.log_softmax(logits, dim=-1)
         return -(self.target_hist(mu) * log_q).sum(dim=-1).mean()
 
+    def expect(self, logits: torch.Tensor) -> torch.Tensor:
+        """Mean of the predicted distribution, differentiable (for losses on
+        the effect, the difference of two means)."""
+        return (F.softmax(logits, dim=-1) * self.centers).sum(dim=-1)
+
     @torch.no_grad()
     def mean(self, logits: torch.Tensor) -> torch.Tensor:
-        return (F.softmax(logits, dim=-1) * self.centers).sum(dim=-1)
+        return self.expect(logits)

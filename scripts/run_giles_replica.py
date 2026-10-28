@@ -367,11 +367,12 @@ def main():
 
     folds = None
     if args.groups:
-        folds = gr.group_folds(files, gr.load_group_table(args.groups),
-                               n_folds=args.folds, mode=args.group_mode)
+        table = gr.load_group_table(args.groups)
+        folds = gr.group_folds(files, table, n_folds=args.folds, mode=args.group_mode)
         n_te = sum(len(te) for _, te in folds)
         print(f"group-aware folds ({args.group_mode}): {n_te} tested images, "
-              f"{len(files) - n_te} later acquisitions train-only")
+              f"{len(files) - n_te} later acquisitions train-only, "
+              f"{gr.straddling_groups(files, table, folds)} tested images whose group also trains in their fold")
 
     os.makedirs(args.out, exist_ok=True)
     import pandas as pd
@@ -383,6 +384,12 @@ def main():
         gr.register_estimator("pfn", est)
         classifiers = ["pfn"] if args.only_pfn else classifiers + ["pfn"]
         print(f"PFN estimator: {args.pfn_ckpt} (d_x {est.d_x}, device {est.device})")
+        # 28 Oct review: the scoring switches are not in the checkpoint, so the log keeps them
+        from neurocausalpfn.train.launch_cfg import SCORING_VARS
+        prov = est.provenance or {}
+        print("PFN scoring settings: " + (", ".join(f"{k}={os.environ[k]}" for k in SCORING_VARS
+                                                    if os.environ.get(k)) or "defaults")
+              + f"; checkpoint code {prov.get('git_commit', 'not recorded')}")
     if args.causalpfn or args.only_causalpfn:
         from neurocausalpfn.pfn.estimator import CausalPFNEstimator
 
