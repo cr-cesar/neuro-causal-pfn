@@ -1,0 +1,7 @@
+split,representation,uclh_2828,uclh_1207_random,kch_1207,uclh_144_random_3draws,isles_144,note
+receptor,E1_perfold_bcb,0.311 / 0.817,0.391 / 0.731,0.386 / 0.726,0.444 / 0.548,0.396 / 0.602,PEHE paper / balanced accuracy; LR/ET best cell; E1 mean of 3 seeds; UCLH random columns use the mean of the 10 fold encoders (9 of 10 saw the patient)
+receptor,nmf50_perfold,0.336 / 0.756,pending,0.371 / 0.727,0.459 / 0.530,0.405 / 0.596,
+receptor,volume,0.533 / 0.503,pending,0.559 / 0.500,0.520 / 0.520,0.455 / 0.500,
+genetics,E1_perfold_bcb,0.280 / 0.912,0.360 / 0.844,0.378 / 0.856,0.478 / 0.739,0.393 / 0.782,
+genetics,nmf50_perfold,0.320 / 0.858,0.341 / 0.839,0.365 / 0.848,0.503 / 0.704,0.383 / 0.817,
+genetics,volume,0.636 / 0.554,0.641 / 0.531,0.666 / 0.532,0.655 / 0.511,0.548 / 0.525,
