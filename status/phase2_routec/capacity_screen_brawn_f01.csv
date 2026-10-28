@@ -1,0 +1,5 @@
+variant,machine,split,pehe_paper,pehe_code,n_deficits,folds,test_set
+cap-tere,brawn,receptor,0.378,0.226,16,0 1,extras (never-tested)
+cap-tere,brawn,genetics,0.350,0.242,16,0 1,extras (never-tested)
+cap-all,brawn,receptor,0.388,0.238,16,0 1,extras (never-tested)
+cap-all,brawn,genetics,0.402,0.260,16,0 1,extras (never-tested)

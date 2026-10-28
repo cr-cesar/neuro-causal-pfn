@@ -1,0 +1,9 @@
+variant,machine,split,pehe_paper,pehe_code,n_deficits,folds,test_set
+thr03-base,siena,receptor,0.361,0.225,16,0 1,extras (never-tested)
+thr03-base,siena,genetics,0.338,0.241,16,0 1,extras (never-tested)
+cap-60k,siena,receptor,0.360,0.219,16,0 1,extras (never-tested)
+cap-60k,siena,genetics,0.314,0.233,16,0 1,extras (never-tested)
+cap-w512x12,siena,receptor,0.382,0.235,16,0 1,extras (never-tested)
+cap-w512x12,siena,genetics,0.363,0.254,16,0 1,extras (never-tested)
+cap-tabicl,siena,receptor,0.444,0.253,16,0 1,extras (never-tested)
+cap-tabicl,siena,genetics,0.513,0.295,16,0 1,extras (never-tested)
