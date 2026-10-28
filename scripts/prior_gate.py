@@ -97,7 +97,7 @@ def check_expect(cfg: Dict, expects: List[str]) -> List[str]:
     flat, errors = _flat(cfg), []
     for item in expects:
         key, _, want = item.partition("=")
-        have = flat.get(key, "<unset>")
+        have = flat.get(key, "UNSET")    # a key the cfg does not set; expect it with key=UNSET
         try:
             w = [float(x) for x in want.split(":")]
             h = [float(x) for x in (have if isinstance(have, (list, tuple)) else [have])]

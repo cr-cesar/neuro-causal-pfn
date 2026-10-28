@@ -18,6 +18,10 @@
 #
 #   GATE_ONLY=1 bash scripts/audit_20261028/tm_launch.sh
 #   bash scripts/audit_20261028/tm_launch.sh
+#
+# OBJECTIVE=old (ablation of 29 Oct) keeps only the prior: G4c's target, head,
+# 64 queries and context ramp 256 to 3,000, so TM-prior against G4c isolates
+# the prior.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 dirty=$(git status --porcelain --untracked-files=no | wc -l)
@@ -25,26 +29,34 @@ echo "code_commit=$(git rev-parse HEAD) cambios_sin_commit=$dirty"
 [ "$dirty" -eq 0 ] || { echo "uncommitted changes: refusing to train" >&2; exit 1; }
 export PYTHONPATH="$PWD/src"
 # anything left over from an earlier launch must not reach this one
-unset CACHE_ANCHOR_WEIGHT ITERS VARIANT BATCH AUGMENT CONTEXT_REPLACE STANDARDIZE D_MODEL N_LAYERS
+unset CACHE_ANCHOR_WEIGHT ITERS VARIANT BATCH AUGMENT CONTEXT_REPLACE STANDARDIZE D_MODEL N_LAYERS \
+    BOTH_ARMS CATE_WEIGHT HEAD_LO HEAD_HI N_QUERY CURRICULUM CONTEXT_MIN
 command -v module >/dev/null 2>&1 && module load python3/3.11
 source "${VENV:-$HOME/venvs/neuro}/bin/activate"
+OBJECTIVE="${OBJECTIVE:-new}"
+case "$OBJECTIVE" in new|old) ;; *) echo "OBJECTIVE must be new or old" >&2; exit 1 ;; esac
+tag=$([ "$OBJECTIVE" = old ] && echo TMprior || echo TM)
 # SEED (default 0, G4c's) can be set for a second training of the same package
 export SEED="${SEED:-0}"
-export JOBNAME="${JOBNAME:-TM-f0-s$SEED}"
+export JOBNAME="${JOBNAME:-$tag-f0-s$SEED}"
 export CACHE="${CACHE:-$HOME/p2_bcb/pools/kch_s0/fold0.npz}"
-export OUT="${OUT:-$HOME/p2_bcb/pfn_screen/TM/fold0}"
+export OUT="${OUT:-$HOME/p2_bcb/pfn_screen/$tag/fold0}"
 export FAMILY_WEIGHTS="0 1" ARCH=linear FAMILY=mixture
 export GILES_HYPER="random_partitions=1 threshold=0.03:0.08 p_te=0.9:1 p_re=0:0.05 label_noise=0:0 bias=0:0 bias_weights=1:0:0"
 export PRIOR_HYPER="gamma=0:0 generic_weight=0.9 generic_kinds=trial+trial_mlp+trial2+trial2_mlp+linear+step generic_null=0.3:0.7 generic_clean=0.85 generic_kind_weights=2:2:2:2:1:1 generic_te=0.75:1 generic_re=0:0.25 generic_scale=0.3:1 generic_noclip=1 generic_binary=1"
 export LR_SCHEDULE=constant CONTEXT_POOL=susceptible CONTEXT_MAX=3000 OMP_NUM_THREADS=4
-export BOTH_ARMS=1 CATE_WEIGHT=0.5 HEAD_LO=-0.05 HEAD_HI=1.05 N_QUERY=256 CURRICULUM=loguniform CONTEXT_MIN=128
+if [ "$OBJECTIVE" = new ]; then
+    export BOTH_ARMS=1 CATE_WEIGHT=0.5 HEAD_LO=-0.05 HEAD_HI=1.05 N_QUERY=256 CURRICULUM=loguniform CONTEXT_MIN=128
+    objective_expect="pfn.both_arms=True pfn.head_lo=-0.05 pfn.head_hi=1.05 pfn.n_query=256 pfn.curriculum=loguniform pfn.context_min=128"
+else
+    objective_expect="pfn.both_arms=UNSET pfn.head_lo=UNSET pfn.n_query=64 pfn.curriculum=UNSET pfn.context_min=256"
+fi
 [ -s "$CACHE" ] || { echo "no cache $CACHE" >&2; exit 1; }
 [ -d data/atlases ] || { echo "no atlas at data/atlases" >&2; exit 1; }
 mkdir -p "$OUT"
+# shellcheck disable=SC2086
 python scripts/prior_gate.py --batches 50 --contexts 128 512 3000 --out "$OUT/prior_gate.csv" \
     --expect prior.family=mixture prior.family_weights=0:1 prior.hyper.generic_weight=0.9 \
-             prior.hyper_giles.bias=0:0 prior.hyper_giles.random_partitions=1 \
-             pfn.both_arms=True pfn.head_lo=-0.05 pfn.head_hi=1.05 pfn.n_query=256 pfn.context_max=3000 \
-             pfn.curriculum=loguniform pfn.context_min=128
+             prior.hyper_giles.bias=0:0 prior.hyper_giles.random_partitions=1 pfn.context_max=3000 $objective_expect
 [ "${GATE_ONLY:-0}" = "1" ] && { echo "GATE_ONLY: not training"; exit 0; }
 bash scripts/train_pfn_myriad.qsub.sh
