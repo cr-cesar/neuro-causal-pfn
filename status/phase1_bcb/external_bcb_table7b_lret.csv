@@ -5,3 +5,9 @@ A_disconnectome,receptor,volume,0.533 / 0.503,0.534 / 0.501,0.559 / 0.500,0.520 
 A_disconnectome,genetics,E1_perfold_bcb,0.280 / 0.912,0.360 / 0.844,0.378 / 0.856,0.478 / 0.739,0.393 / 0.782,
 A_disconnectome,genetics,nmf50_perfold,0.320 / 0.858,0.341 / 0.839,0.365 / 0.848,0.503 / 0.704,0.383 / 0.817,
 A_disconnectome,genetics,volume,0.636 / 0.554,0.641 / 0.531,0.666 / 0.532,0.655 / 0.511,0.548 / 0.525,
+B_lesion,receptor,E1_perfold_lesion_encoder,pending,pending,pending,–,pending,lesion task (deficits from masks); volume and NMF on masks; UCLH 144: only 0-3 deficits reach the minimum n with 144 masks (as in Table 7)
+B_lesion,receptor,nmf50_perfold,0.482 / 0.756,pending,pending,–,pending,UCLH 2828 from status/phase1_bcb/e0_baselines.csv (lesion condition)
+B_lesion,receptor,volume,0.630 / 0.500,pending,pending,–,pending,
+B_lesion,genetics,E1_perfold_lesion_encoder,pending,pending,pending,–,pending,
+B_lesion,genetics,nmf50_perfold,0.422 / 0.883,pending,pending,–,pending,
+B_lesion,genetics,volume,0.730 / 0.535,pending,pending,–,pending,
