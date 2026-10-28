@@ -16,23 +16,11 @@ import sys
 
 import numpy as np
 
-from neurocausalpfn.train.train_pfn import _as_ranges, _build_prior, parse_hyper_opts, reduced_config, with_family
+from neurocausalpfn.train.launch_cfg import cfg_from_env
+from neurocausalpfn.train.train_pfn import _as_ranges, _build_prior
 
-
-def build_cfg_from_env():
-    env = os.environ.get
-    fam = env("FAMILY", "") or "theory"
-    w = [float(x) for x in env("FAMILY_WEIGHTS", "").split()] or None
-    cfg = with_family(reduced_config(), fam, w, env("CONTEXT_POOL", "susceptible"))
-    cfg["seed"] = int(env("SEED", "0"))
-    if env("CONTEXT_MAX"):
-        cfg["pfn"]["context_max"] = int(env("CONTEXT_MAX"))
-    cfg["prior"]["cache"] = env("CACHE", "")
-    cfg["prior"]["atlas_dir"] = "data/atlases"
-    cfg["prior"]["hyper"] = {**cfg["prior"].get("hyper", {}), **parse_hyper_opts(env("PRIOR_HYPER", ""))}
-    if env("GILES_HYPER"):
-        cfg["prior"]["hyper_giles"] = {**cfg["prior"].get("hyper_giles", {}), **parse_hyper_opts(env("GILES_HYPER"))}
-    return cfg
+# the training script's own builder (28 Oct review: this file had a copy)
+build_cfg_from_env = cfg_from_env
 
 
 def check_config(cfg):
@@ -52,6 +40,11 @@ def check_config(cfg):
         errors.append(f"giles bias types {types}: only 'axis' gives P(T=1) = 0.5 at bias 0")
     if tuple(ht.gamma) != (0.0, 0.0):
         errors.append(f"theory gamma range {ht.gamma}, expected (0, 0)")
+    # 28 Oct review, point 8: the two values G4c and G5 share were printed, not required
+    if float(hg.random_partitions) != 1.0:
+        errors.append(f"giles random_partitions {hg.random_partitions}, expected 1 (G4c's)")
+    if float(cfg["prior"]["hyper"].get("generic_weight", 0.0) or 0.0) != 0.5:
+        errors.append(f"generic_weight {cfg['prior']['hyper'].get('generic_weight')}, expected 0.5 (G4c's)")
     print(f"giles: bias {tuple(hg.bias)}, types {types}, p_te {tuple(hg.p_te)}, p_re {tuple(hg.p_re)}, "
           f"label_noise {tuple(hg.label_noise)}, random_partitions {hg.random_partitions}")
     print(f"theory: gamma {tuple(ht.gamma)}; family {cfg['prior'].get('family')}, "
@@ -91,7 +84,8 @@ def main():
     # G5 differs from G4c (C1 on this code) only in the allocation: no other
     # override of the training script may be set
     left = [k for k in ("CACHE_ANCHOR_WEIGHT", "ITERS", "VARIANT", "BATCH", "CONTEXT_MIN", "AUGMENT",
-                        "CONTEXT_REPLACE", "STANDARDIZE", "D_MODEL", "N_LAYERS") if os.environ.get(k)]
+                        "CONTEXT_REPLACE", "STANDARDIZE", "D_MODEL", "N_LAYERS",
+                        "BOTH_ARMS", "CATE_WEIGHT", "HEAD_LO", "HEAD_HI", "N_QUERY") if os.environ.get(k)]
     if left:
         errors.append(f"environment overrides set: {left}")
     expected = {"FAMILY": "mixture", "FAMILY_WEIGHTS": "0.5 0.5", "SEED": "0", "ARCH": "linear",

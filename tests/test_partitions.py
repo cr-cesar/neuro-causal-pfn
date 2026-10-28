@@ -21,7 +21,10 @@ def test_atoms_and_virtual_networks_avoid_benchmark_pairs():
     assert table.shape == (m, 2 * K + K + 2 * K) and len(labels) == table.shape[1]
     assert ("primary", 0, 0) in labels and ("network", 2, -1) in labels and ("genetics", 3, 1) in labels
     assert is_benchmark_pair([0], [1], labels) and not is_benchmark_pair([0], [2], labels)
-    assert not is_benchmark_pair([0, 2], [1], labels)                       # a union is not the benchmark pair
+    # a union that holds one half against the other half still is the benchmark
+    # pair (the side hits wherever the half is hit; guard fixed in PR #90)
+    assert is_benchmark_pair([0, 2], [1], labels)
+    assert not is_benchmark_pair([0, 2], [labels.index(("network", 2, -1))], labels)
     vov, desc = draw_virtual_networks(rng, labels, table, n_networks=3, atoms_per_side=(1, 2))
     assert vov.shape == (m, 3, 2) and len(desc) == 3
     for d in desc:

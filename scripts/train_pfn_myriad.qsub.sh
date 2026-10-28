@@ -60,31 +60,23 @@ STANDARDIZE="${STANDARDIZE:-}"
 D_MODEL="${D_MODEL:-}"                    # model width override (reduced config: 256; stage 3 of the Phase-2 programme: 512)
 N_LAYERS="${N_LAYERS:-}"                  # depth override (reduced config: 6; 512-wide runs use 12)            # context: standardise each training context with its own statistics, as scoring does (point 2)    # theory prior extensions, e.g. "two_arms=1 effect_scale=0.2:1 binary_outcome=0.5"
 
-python - <<PY
-import json
-from neurocausalpfn.train.train_pfn import e12_config, parse_hyper_opts, reduced_config, run_pfn, with_family
-fam = "$FAMILY" or "theory"
-w = [float(x) for x in "$FAMILY_WEIGHTS".split()] or None
-cp = "$CONTEXT_POOL"
-cfg = e12_config("$VARIANT", fam, w, cp) if "$VARIANT" else with_family(reduced_config(), fam, w, cp)
-cfg["out_dir"] = "$OUT"; cfg["seed"] = int("$SEED")
-cfg["pfn"]["iters"] = int("$ITERS"); cfg["pfn"]["arch"] = "$ARCH"
-cfg["pfn"]["lr_schedule"] = "$LR_SCHEDULE"
-if "$BATCH": cfg["pfn"]["batch_size"] = int("$BATCH")
-if "$CONTEXT_MIN": cfg["pfn"]["context_min"] = int("$CONTEXT_MIN")
-if "$CONTEXT_MAX": cfg["pfn"]["context_max"] = int("$CONTEXT_MAX")
-if "$AUGMENT": cfg["prior"]["augment"] = bool(int("$AUGMENT"))
-if "$CONTEXT_REPLACE": cfg["prior"]["context_replace"] = bool(int("$CONTEXT_REPLACE"))
-if "$STANDARDIZE": cfg["prior"]["standardize"] = "$STANDARDIZE"
-if "$D_MODEL": cfg["pfn"]["d_model"] = int("$D_MODEL")
-if "$N_LAYERS": cfg["pfn"]["n_layers"] = int("$N_LAYERS")
-caches = "$CACHE".split()
-cfg["prior"]["cache"] = caches[0] if len(caches) == 1 else caches
-if "$CACHE_ANCHOR_WEIGHT": cfg["prior"]["cache_anchor_weight"] = float("$CACHE_ANCHOR_WEIGHT")
-cfg["prior"]["atlas_dir"] = "data/atlases"
-cfg["prior"]["hyper"] = {**cfg["prior"].get("hyper", {}), **parse_hyper_opts("$PRIOR_HYPER")}
-if "$GILES_HYPER": cfg["prior"]["hyper_giles"] = {**cfg["prior"].get("hyper_giles", {}), **parse_hyper_opts("$GILES_HYPER")}
+BOTH_ARMS="${BOTH_ARMS:-}"                # 1: score every training query at both arms (28 Oct)
+CATE_WEIGHT="${CATE_WEIGHT:-}"            # with BOTH_ARMS: weight of the squared error of the predicted effect
+HEAD_LO="${HEAD_LO:-}"                    # outcome-bin range of the head (default 0 to 1; 28 Oct: -0.05 to 1.05)
+HEAD_HI="${HEAD_HI:-}"
+N_QUERY="${N_QUERY:-}"                    # queries per training process (default: the config's, 64)
+
+# the cfg is built by neurocausalpfn.train.launch_cfg.cfg_from_env, the same
+# function the pre-launch checks and the prior gate use (28 Oct review)
+export CACHE CACHE_ANCHOR_WEIGHT OUT ITERS SEED ARCH VARIANT FAMILY FAMILY_WEIGHTS CONTEXT_POOL PRIOR_HYPER \
+    GILES_HYPER LR_SCHEDULE BATCH CONTEXT_MIN CONTEXT_MAX AUGMENT CONTEXT_REPLACE STANDARDIZE D_MODEL N_LAYERS \
+    BOTH_ARMS CATE_WEIGHT HEAD_LO HEAD_HI N_QUERY
+python - <<'PY'
+import json, os
+from neurocausalpfn.train.launch_cfg import cfg_from_env
+from neurocausalpfn.train.train_pfn import run_pfn
+cfg = cfg_from_env()
 print(json.dumps(cfg, indent=1, default=str))
 model, history = run_pfn(cfg)
-json.dump(history, open("$OUT/history.json", "w"))
+json.dump(history, open(os.path.join(os.environ["OUT"], "history.json"), "w"))
 PY
