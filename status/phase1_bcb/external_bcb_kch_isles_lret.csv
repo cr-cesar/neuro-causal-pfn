@@ -1,0 +1,13 @@
+cohort,split,representation,estimator,n_seeds,pehe_paper,pehe_paper_seed_sd,balacc,balacc_seed_sd,n_deficits,maps
+KCH,receptor,E1_mean10_3seeds,"LR/ET (best LR/ET cell, as Table 7)",3,0.3862,0.0035,0.7256,0.0086,16,BCBtoolkit
+KCH,receptor,nmf50_perfold,"LR/ET (best LR/ET cell, as Table 7)",1,0.3712,,0.7275,,16,BCBtoolkit
+KCH,receptor,volume,"LR/ET (best LR/ET cell, as Table 7)",1,0.5594,,0.5,,16,BCBtoolkit
+KCH,genetics,E1_mean10_3seeds,"LR/ET (best LR/ET cell, as Table 7)",3,0.3782,0.0042,0.856,0.005,16,BCBtoolkit
+KCH,genetics,nmf50_perfold,"LR/ET (best LR/ET cell, as Table 7)",1,0.3645,,0.8483,,16,BCBtoolkit
+KCH,genetics,volume,"LR/ET (best LR/ET cell, as Table 7)",1,0.6657,,0.5317,,16,BCBtoolkit
+ISLES,receptor,E1_mean10_3seeds,"LR/ET (best LR/ET cell, as Table 7)",3,0.3961,0.003,0.6022,0.0099,15,BCBtoolkit
+ISLES,receptor,nmf50_perfold,"LR/ET (best LR/ET cell, as Table 7)",1,0.4053,,0.5962,,15,BCBtoolkit
+ISLES,receptor,volume,"LR/ET (best LR/ET cell, as Table 7)",1,0.4545,,0.5,,15,BCBtoolkit
+ISLES,genetics,E1_mean10_3seeds,"LR/ET (best LR/ET cell, as Table 7)",3,0.3927,0.0022,0.7817,0.0151,15,BCBtoolkit
+ISLES,genetics,nmf50_perfold,"LR/ET (best LR/ET cell, as Table 7)",1,0.3829,,0.8174,,15,BCBtoolkit
+ISLES,genetics,volume,"LR/ET (best LR/ET cell, as Table 7)",1,0.5484,,0.5247,,15,BCBtoolkit
