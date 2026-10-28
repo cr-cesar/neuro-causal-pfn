@@ -64,11 +64,14 @@ def cfg_from_env(env: Optional[Mapping[str, str]] = None) -> Dict:
 
 
 def _git(*args) -> Optional[str]:
+    """Output of a git command in this file's checkout; None when git fails
+    (an empty output, e.g. the status of a clean tree, is "", not None)."""
     try:
-        return subprocess.run(["git", *args], capture_output=True, text=True, timeout=10,
-                              cwd=os.path.dirname(os.path.abspath(__file__))).stdout.strip() or None
+        r = subprocess.run(["git", *args], capture_output=True, text=True, timeout=10,
+                           cwd=os.path.dirname(os.path.abspath(__file__)))
     except (OSError, subprocess.SubprocessError):
         return None
+    return r.stdout.strip() if r.returncode == 0 else None
 
 
 def provenance(env: Optional[Mapping[str, str]] = None) -> Dict:
@@ -79,7 +82,7 @@ def provenance(env: Optional[Mapping[str, str]] = None) -> Dict:
 
     env = os.environ if env is None else env
     status = _git("status", "--porcelain", "--untracked-files=no")
-    return {"git_commit": _git("rev-parse", "HEAD"),
+    return {"git_commit": _git("rev-parse", "HEAD") or None,
             "git_dirty": None if status is None else bool(status),
             "launch_env": {k: env[k] for k in LAUNCH_VARS if env.get(k)},
             "host": platform.node(), "job_id": env.get("JOB_ID"),

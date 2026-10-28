@@ -182,6 +182,9 @@ def test_training_records_provenance_and_the_estimator_reads_it(tmp_path):
     assert all(math.isfinite(h["loss"]) for h in history)
     ck = torch.load(os.path.join(cfg["out_dir"], "pfn.pt"), map_location="cpu", weights_only=False)
     assert set(ck["provenance"]) >= {"git_commit", "git_dirty", "launch_env", "torch"}
+    # inside a git checkout the commit is recorded and dirtiness is a boolean, never None
+    if ck["provenance"]["git_commit"] is not None:
+        assert isinstance(ck["provenance"]["git_dirty"], bool)
     assert os.path.isfile(os.path.join(cfg["out_dir"], "provenance.json"))
     est = PFNEstimator(os.path.join(cfg["out_dir"], "pfn.pt"))
     assert est.provenance == ck["provenance"]

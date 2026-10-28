@@ -28,10 +28,12 @@ export PYTHONPATH="$PWD/src"
 unset CACHE_ANCHOR_WEIGHT ITERS VARIANT BATCH AUGMENT CONTEXT_REPLACE STANDARDIZE D_MODEL N_LAYERS
 command -v module >/dev/null 2>&1 && module load python3/3.11
 source "${VENV:-$HOME/venvs/neuro}/bin/activate"
-export JOBNAME="${JOBNAME:-TM-f0}"
+# SEED (default 0, G4c's) can be set for a second training of the same package
+export SEED="${SEED:-0}"
+export JOBNAME="${JOBNAME:-TM-f0-s$SEED}"
 export CACHE="${CACHE:-$HOME/p2_bcb/pools/kch_s0/fold0.npz}"
 export OUT="${OUT:-$HOME/p2_bcb/pfn_screen/TM/fold0}"
-export FAMILY_WEIGHTS="0 1" SEED=0 ARCH=linear FAMILY=mixture
+export FAMILY_WEIGHTS="0 1" ARCH=linear FAMILY=mixture
 export GILES_HYPER="random_partitions=1 threshold=0.03:0.08 p_te=0.9:1 p_re=0:0.05 label_noise=0:0 bias=0:0 bias_weights=1:0:0"
 export PRIOR_HYPER="gamma=0:0 generic_weight=0.9 generic_kinds=trial+trial_mlp+trial2+trial2_mlp+linear+step generic_null=0.3:0.7 generic_clean=0.85 generic_kind_weights=2:2:2:2:1:1 generic_te=0.75:1 generic_re=0:0.25 generic_scale=0.3:1 generic_noclip=1 generic_binary=1"
 export LR_SCHEDULE=constant CONTEXT_POOL=susceptible CONTEXT_MAX=3000 OMP_NUM_THREADS=4
