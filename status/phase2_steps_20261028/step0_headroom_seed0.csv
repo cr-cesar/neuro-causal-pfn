@@ -1,0 +1,5 @@
+set,split,n_deficits,frac_tau0_test,pehe_latent_hgb,pehe_latent_ridge,pehe_anatomy_hgb,probe_auc_w1,probe_auc_w0
+test_2828,receptor,16,0.545,0.338,0.366,0.024,0.972,0.960
+test_2828,genetics,16,0.455,0.321,0.357,0.019,0.981,0.975
+validation,receptor,16,0.538,0.339,0.374,0.023,0.972,0.960
+validation,genetics,16,0.450,0.326,0.357,0.024,0.980,0.974

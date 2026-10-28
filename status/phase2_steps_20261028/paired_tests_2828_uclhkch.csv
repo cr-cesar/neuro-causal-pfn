@@ -1,0 +1,9 @@
+comparison,split,n_deficits,mean_diff,ci_low,ci_high,p_t,p_wilcoxon,p_holm_t,p_holm_wilcoxon,note
+PFN_r7_UCLHKCH - ET_two,genetics,16,-0.0163,-0.0243,-0.0083,5.8e-4,1.3e-3,1.2e-3,2.6e-3,negative favours A; r7 mean of 3 seeds; Holm over 8 rows
+PFN_r7_UCLHKCH - ET_two,receptor,16,-0.0053,-0.0122,0.0017,0.128,0.193,0.128,0.193,
+PFN_r7_UCLHKCH - LR_two,genetics,16,0.0615,0.0502,0.0728,7.2e-9,3.1e-5,3.6e-8,2.4e-4,
+PFN_r7_UCLHKCH - LR_two,receptor,16,0.0596,0.0510,0.0682,2.5e-10,3.1e-5,1.8e-9,2.4e-4,
+TabPFN35_T - CausalPFN,genetics,16,-0.0113,-0.0152,-0.0073,2.2e-5,6.1e-5,8.7e-5,2.4e-4,identical to paired_tests_2828_with_et
+TabPFN35_T - CausalPFN,receptor,16,-0.0079,-0.0112,-0.0045,1.7e-4,4.3e-4,5.0e-4,1.3e-3,identical to paired_tests_2828_with_et
+TabPFN35_T - PFN_r7_UCLHKCH,genetics,16,-0.0831,-0.0952,-0.0711,2.6e-10,3.1e-5,1.8e-9,2.4e-4,
+TabPFN35_T - PFN_r7_UCLHKCH,receptor,16,-0.0797,-0.0900,-0.0695,4.7e-11,3.1e-5,3.8e-10,2.4e-4,
