@@ -109,6 +109,17 @@ class TheoryHyperPrior:
     shape_weights: Tuple[float, float, float] = (1.0, 0.0, 0.0)
     disc_frac: Tuple[float, float] = (0.2, 0.6)
     disc_effect_scale: Optional[Tuple[float, float]] = (0.5, 1.0)
+    # effect_quantile / effect_on_slice (audit of 28 Oct, H4): which quantile
+    #   of |CATE| the drawn effect target fixes, and over which lesions. The
+    #   default (``quantile`` over the whole pool) leaves the median |CATE| of
+    #   a process near 0.01, while the virtual trial has |CATE| = 1 for half
+    #   of each slice. effect_on_slice takes the quantile over the lesions the
+    #   process can affect (raw D > 0, the context pool of cohort._slice) that
+    #   carry a non-zero effect, so effect_quantile=0.5 effect_on_slice=1 maps
+    #   the median effect of the slice to the target. None / False keep the
+    #   design's calibration.
+    effect_quantile: Optional[float] = None
+    effect_on_slice: bool = False
 
     def uses_extra_channels(self) -> bool:
         return (self.d_source, self.s_source, self.s_b_source) != ("split_1", "split_2", "")
@@ -222,7 +233,14 @@ class InterSynthTheoryDGP:
             self.effect_factor = 1.0
             D, S = self.scores(overlaps_pool)
             raw = np.abs(self.beta * D * (S - self.scores_b(overlaps_pool)))
-            self.effect_factor = self.effect_target / max(float(np.quantile(raw, q)), 1e-6)
+            qe = getattr(self.hyper, "effect_quantile", None)
+            qe = q if qe is None else float(qe)
+            if bool(getattr(self.hyper, "effect_on_slice", False)):
+                # the lesions of the process's slice with an effect (cohort._slice)
+                hit = (self.raw_scores(overlaps_pool)[0] > 0.0) & (raw > 0.0)
+                if hit.any():
+                    raw = raw[hit]
+            self.effect_factor = self.effect_target / max(float(np.quantile(raw, qe)), 1e-6)
         if bool(getattr(self.hyper, "effect_headroom", False)) and self.beta > 0:
             # with S <= 1, mu0 + effect_factor * beta * S * D <= 1 for every D
             self.effect_factor = min(self.effect_factor, (1.0 - self.alpha) / self.beta)
@@ -307,6 +325,8 @@ class InterSynthTheoryDGP:
                 "two_arms": self.two_arms, "effect_factor": self.effect_factor, "binary": self.binary,
                 "shape": self.shape, "disc_frac": getattr(self, "disc_frac", None),
                 "effect_headroom": bool(getattr(self.hyper, "effect_headroom", False)),
+                "effect_quantile": getattr(self.hyper, "effect_quantile", None),
+                "effect_on_slice": bool(getattr(self.hyper, "effect_on_slice", False)),
                 "d_source": self.hyper.d_source, "s_source": self.hyper.s_source,
                 "s_b_source": self.hyper.s_b_source or f"s_b_column={self._col_b}"}
 
