@@ -1,0 +1,5 @@
+cache,content,n,q10,q25,q50,q75,q90,mean
+kch_s0/fold0.npz,KCH only (G4c/G5/TM pool),1207,4171,6430,10409,17090,27469,13469
+uclhkch_s0/fold0.npz,UCLH fold-0 training side + KCH (round-7 pool),5043,1580,3910,8143,16406,28549,12165
+caches/kch_bcb.npz,KCH all,1207,4171,6430,10409,17090,27469,13469
+caches/uclh_bcb.npz,UCLH all 4119 images,4119,1299,3247,7122,15959,29020,11778
