@@ -1,7 +1,7 @@
 model,slope_pool_norm,slope_ctx_norm,calibration_pool_norm,calibration_ctx_norm,mean_at_plus1_pool,mean_at_minus1_pool,val_pehe_receptor,val_pehe_genetics,final_loss,note
-r7_kch_s0_anchor,0.582,0.636,1.130,1.052,,,0.369,0.346,,fold0 bench ctx 3000
+r7_kch_s0_anchor,0.582,0.636,1.130,1.052,,,0.369,0.346,,fold0 bench ctx 3000; val_pehe = full validation (all pseudo-folds); fold-0 validation in screenings_ab_validation_fold0.csv
 r7_uclhkch_s0,0.602,0.628,1.123,1.075,0.64,-0.57,0.376,0.349,,
 C1,0.674,0.686,1.027,1.004,0.68,-0.66,0.361,0.332,3.88,
-A_multi_encoder_61caches_anchor0.5,0.661,0.662,1.024,1.022,0.65,-0.67,,,4.369,validation not scored
-B_C4_scale1:1_step+mlp_step_active2:50,0.654,0.667,1.039,1.012,0.64,-0.67,,,4.071,validation not scored
+A_multi_encoder_61caches_anchor0.5,0.661,0.662,1.024,1.022,0.65,-0.67,,,4.369,validation fold 0 in screenings_ab_validation_fold0.csv
+B_C4_scale1:1_step+mlp_step_active2:50,0.654,0.667,1.039,1.012,0.64,-0.67,,,4.071,validation fold 0 in screenings_ab_validation_fold0.csv
 LR_two_model,0.762,,0.908,,,,,,,
