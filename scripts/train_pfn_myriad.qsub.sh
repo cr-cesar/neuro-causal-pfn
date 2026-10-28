@@ -52,6 +52,7 @@ PRIOR_HYPER="${PRIOR_HYPER:-}"
 GILES_HYPER="${GILES_HYPER:-}"      # virtual-trial family ranges of the mixture, e.g. "threshold=0.01:0.2 p_te=0.5:1"
 LR_SCHEDULE="${LR_SCHEDULE:-constant}"   # constant | cosine (warmup 2 % then cosine decay to 0.1 lr)
 BATCH="${BATCH:-}"                        # batch size override (default: the config's)
+CONTEXT_MIN="${CONTEXT_MIN:-}"            # shortest training context of the curriculum (default: the config's, 256); T7 of 28 Oct
 CONTEXT_MAX="${CONTEXT_MAX:-}"            # training context override, e.g. 3000 (default: the family's cap, 1024 with susceptible sampling)
 AUGMENT="${AUGMENT:-}"                    # 0 disables the random rotation of the pool latents (H5 of the Phase-2 audit)
 CONTEXT_REPLACE="${CONTEXT_REPLACE:-}"    # 0 draws distinct lesions per context, capped at the slice (audit of 19 Oct, point 1)
@@ -70,6 +71,7 @@ cfg["out_dir"] = "$OUT"; cfg["seed"] = int("$SEED")
 cfg["pfn"]["iters"] = int("$ITERS"); cfg["pfn"]["arch"] = "$ARCH"
 cfg["pfn"]["lr_schedule"] = "$LR_SCHEDULE"
 if "$BATCH": cfg["pfn"]["batch_size"] = int("$BATCH")
+if "$CONTEXT_MIN": cfg["pfn"]["context_min"] = int("$CONTEXT_MIN")
 if "$CONTEXT_MAX": cfg["pfn"]["context_max"] = int("$CONTEXT_MAX")
 if "$AUGMENT": cfg["prior"]["augment"] = bool(int("$AUGMENT"))
 if "$CONTEXT_REPLACE": cfg["prior"]["context_replace"] = bool(int("$CONTEXT_REPLACE"))
