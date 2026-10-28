@@ -16,12 +16,16 @@ def main():
             if not key.startswith("giles_TE1_RE0_ctx"):
                 continue
             ctx = int(key.split("ctx")[-1])
+            kept = v.get("kept", {})            # distinct-context runs (T7): processes kept / drawn
             for std, r in v.items():
+                if "slope_pred_on_true" not in r:
+                    continue
                 rows.append({"model": label if std != "LR_two" else "LR_two", "ctx": ctx, "std": std,
                              "slope": r["slope_pred_on_true"], "calib": r["calib_slope_true_on_pred"],
                              "pehe": r["pehe"], "corr": r["corr"],
                              "mean_at_0": r.get("mean_pred_at_true+0"), "mean_at_+1": r.get("mean_pred_at_true+1"),
-                             "mean_at_-1": r.get("mean_pred_at_true-1")})
+                             "mean_at_-1": r.get("mean_pred_at_true-1"),
+                             "processes_kept": kept.get("processes_kept"), "processes_drawn": kept.get("processes_drawn")})
     t = pd.DataFrame(rows).drop_duplicates(["model", "ctx", "std"])
     t.to_csv(a.out, index=False); print(t.to_string(index=False))
 
