@@ -14,6 +14,12 @@ dirty=$(git status --porcelain --untracked-files=no | wc -l)
 echo "code_commit=$(git rev-parse HEAD) cambios_sin_commit=$dirty"
 [ "$dirty" -eq 0 ] || { echo "uncommitted changes: refusing to train" >&2; exit 1; }
 export PYTHONPATH="$PWD/src"
+# the training script reads these from the environment: anything left over
+# from an earlier run (e.g. CONTEXT_MIN=64 from G4) must not reach G5
+unset CACHE_ANCHOR_WEIGHT ITERS VARIANT BATCH CONTEXT_MIN AUGMENT CONTEXT_REPLACE STANDARDIZE D_MODEL N_LAYERS
+# the same Python environment as the training script, for the check below
+command -v module >/dev/null 2>&1 && module load python3/3.11
+source "${VENV:-$HOME/venvs/neuro}/bin/activate"
 export JOBNAME=G5-f0
 export CACHE="${CACHE:-$HOME/p2_bcb/pools/kch_s0/fold0.npz}"
 export OUT="${OUT:-$HOME/p2_bcb/pfn_screen/G5/fold0}"

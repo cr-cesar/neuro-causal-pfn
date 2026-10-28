@@ -88,6 +88,20 @@ def main():
     a = ap.parse_args()
     cfg = build_cfg_from_env()
     errors = check_config(cfg)
+    # G5 differs from G4c (C1 on this code) only in the allocation: no other
+    # override of the training script may be set
+    left = [k for k in ("CACHE_ANCHOR_WEIGHT", "ITERS", "VARIANT", "BATCH", "CONTEXT_MIN", "AUGMENT",
+                        "CONTEXT_REPLACE", "STANDARDIZE", "D_MODEL", "N_LAYERS") if os.environ.get(k)]
+    if left:
+        errors.append(f"environment overrides set: {left}")
+    expected = {"FAMILY": "mixture", "FAMILY_WEIGHTS": "0.5 0.5", "SEED": "0", "ARCH": "linear",
+                "LR_SCHEDULE": "constant", "CONTEXT_POOL": "susceptible", "CONTEXT_MAX": "3000"}
+    wrong = {k: os.environ.get(k) for k, v in expected.items() if os.environ.get(k) != v}
+    if wrong:
+        errors.append(f"launch settings differ from G4c: {wrong}")
+    print(f"context: min {cfg['pfn']['context_min']} max {cfg['pfn']['context_max']}, "
+          f"replace {cfg['prior'].get('context_replace', True)}, iters {cfg['pfn']['iters']}, "
+          f"batch {cfg['pfn']['batch_size']}, lr {cfg['pfn']['lr']}")
     if not errors and a.sample:
         errors += check_sample(cfg, a.sample)
     if errors:
