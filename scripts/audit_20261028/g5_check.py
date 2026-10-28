@@ -85,7 +85,7 @@ def main():
     # override of the training script may be set
     left = [k for k in ("CACHE_ANCHOR_WEIGHT", "ITERS", "VARIANT", "BATCH", "CONTEXT_MIN", "AUGMENT",
                         "CONTEXT_REPLACE", "STANDARDIZE", "D_MODEL", "N_LAYERS",
-                        "BOTH_ARMS", "CATE_WEIGHT", "HEAD_LO", "HEAD_HI", "N_QUERY") if os.environ.get(k)]
+                        "BOTH_ARMS", "CATE_WEIGHT", "HEAD_LO", "HEAD_HI", "N_QUERY", "CURRICULUM") if os.environ.get(k)]
     if left:
         errors.append(f"environment overrides set: {left}")
     expected = {"FAMILY": "mixture", "FAMILY_WEIGHTS": "0.5 0.5", "SEED": "0", "ARCH": "linear",

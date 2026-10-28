@@ -17,7 +17,7 @@ from typing import Dict, Mapping, Optional
 LAUNCH_VARS = ("CACHE", "CACHE_ANCHOR_WEIGHT", "OUT", "ITERS", "SEED", "ARCH", "VARIANT", "FAMILY",
                "FAMILY_WEIGHTS", "CONTEXT_POOL", "PRIOR_HYPER", "GILES_HYPER", "LR_SCHEDULE", "BATCH",
                "CONTEXT_MIN", "CONTEXT_MAX", "AUGMENT", "CONTEXT_REPLACE", "STANDARDIZE", "D_MODEL",
-               "N_LAYERS", "BOTH_ARMS", "CATE_WEIGHT", "HEAD_LO", "HEAD_HI", "N_QUERY")
+               "N_LAYERS", "BOTH_ARMS", "CATE_WEIGHT", "HEAD_LO", "HEAD_HI", "N_QUERY", "CURRICULUM")
 # scoring-time switches of pfn/estimator.py: not part of the checkpoint, so
 # the scoring logs record them (estimator.scoring_settings)
 SCORING_VARS = ("PFN_CONTEXT_CAP", "PFN_CONTEXT_SELECT", "PFN_CONTEXT_K", "PFN_CONTEXT_ARM_CAP",
@@ -42,6 +42,7 @@ def cfg_from_env(env: Optional[Mapping[str, str]] = None) -> Dict:
     if get("CONTEXT_MIN"): cfg["pfn"]["context_min"] = int(get("CONTEXT_MIN"))
     if get("CONTEXT_MAX"): cfg["pfn"]["context_max"] = int(get("CONTEXT_MAX"))
     if get("N_QUERY"): cfg["pfn"]["n_query"] = int(get("N_QUERY"))
+    if get("CURRICULUM"): cfg["pfn"]["curriculum"] = get("CURRICULUM")    # context | none | loguniform
     if get("AUGMENT"): cfg["prior"]["augment"] = bool(int(get("AUGMENT")))
     if get("CONTEXT_REPLACE"): cfg["prior"]["context_replace"] = bool(int(get("CONTEXT_REPLACE")))
     if get("STANDARDIZE"): cfg["prior"]["standardize"] = get("STANDARDIZE")

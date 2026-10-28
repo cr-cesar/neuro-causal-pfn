@@ -144,14 +144,29 @@ def reduced_config() -> Dict:
     }
 
 
+CURRICULA = ("context", "none", "loguniform")
+
+
 def _context_length(cfg: Dict, it: int) -> int:
     """Context length at iteration ``it``. ``cfg["pfn"]["curriculum"]``:
     ``"context"`` (default) grows the context linearly from context_min to
     context_max over the first half of training; ``"none"`` keeps it at
-    context_max from the start (the E12 ablation without curriculum)."""
+    context_max from the start (the E12 ablation without curriculum);
+    ``"loguniform"`` (28 Oct) draws every batch's length log-uniformly between
+    context_min and context_max for the whole run, so short and long contexts
+    are seen throughout (under "context", lengths below 1,500 of a 256-3,000
+    run appear only in its first quarter, while the trial's slices are a few
+    hundred patients). The draw depends only on the seed and the iteration."""
     p = cfg["pfn"]
-    if p.get("curriculum", "context") == "none":
+    kind = p.get("curriculum", "context")
+    if kind not in CURRICULA:
+        raise ValueError(f"unknown curriculum {kind!r}; choose from {CURRICULA}")
+    if kind == "none":
         return int(p["context_max"])
+    if kind == "loguniform":
+        lo, hi = np.log(int(p["context_min"])), np.log(int(p["context_max"]))
+        u = np.random.default_rng([int(cfg.get("seed", 0)), int(it), 28]).uniform()
+        return int(round(np.exp(lo + u * (hi - lo))))
     frac = min(1.0, (it + 1) / max(1, int(0.5 * p["iters"])))
     return int(p["context_min"] + frac * (p["context_max"] - p["context_min"]))
 

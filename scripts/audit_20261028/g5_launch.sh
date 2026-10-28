@@ -17,7 +17,7 @@ export PYTHONPATH="$PWD/src"
 # the training script reads these from the environment: anything left over
 # from an earlier run (e.g. CONTEXT_MIN=64 from G4) must not reach G5
 unset CACHE_ANCHOR_WEIGHT ITERS VARIANT BATCH CONTEXT_MIN AUGMENT CONTEXT_REPLACE STANDARDIZE D_MODEL N_LAYERS \
-    BOTH_ARMS CATE_WEIGHT HEAD_LO HEAD_HI N_QUERY
+    BOTH_ARMS CATE_WEIGHT HEAD_LO HEAD_HI N_QUERY CURRICULUM
 # the same Python environment as the training script, for the check below
 command -v module >/dev/null 2>&1 && module load python3/3.11
 source "${VENV:-$HOME/venvs/neuro}/bin/activate"
