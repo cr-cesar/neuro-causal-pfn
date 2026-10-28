@@ -33,29 +33,43 @@ def atom_table(overlaps: np.ndarray, extra: Optional[Dict[str, np.ndarray]] = No
             arrays[key.replace("overlaps_", "")] = arr
         elif arr.ndim == 2:
             arrays[key.replace("overlaps_", "")] = arr[:, :, None]
+    seen = set()
     for name, arr in arrays.items():
         for k in range(arr.shape[1]):
             for h in range(arr.shape[2]):
-                cols.append(arr[:, k, h])
+                col = arr[:, k, h]
+                # the primary overlaps repeat one split of the extra channels:
+                # an identical column is the same atom under another name, and
+                # keeping both would let the two halves of one benchmark network
+                # pass the guard under two channel names (audit of 28 Oct)
+                key = col.tobytes()
+                if key in seen:
+                    continue
+                seen.add(key)
+                cols.append(col)
                 labels.append((name, k, h if arr.shape[2] == 2 else -1))
     return labels, np.stack(cols, axis=1)
 
 
 def is_benchmark_pair(side_a: Sequence[int], side_b: Sequence[int], labels: Sequence[Atom]) -> bool:
-    """True when the two sides are exactly the two halves of one network of
-    one split: the benchmark's own partition."""
-    if len(side_a) != 1 or len(side_b) != 1:
-        return False
-    ca, ka, ha = labels[side_a[0]]
-    cb, kb, hb = labels[side_b[0]]
-    return ca == cb and ka == kb and {ha, hb} == {0, 1}
+    """True when one side holds one half of a network of one split and the
+    other side the other half: the benchmark's own partition, alone or inside
+    a union (a side that contains a half hits wherever that half is hit)."""
+    for i in side_a:
+        ca, ka, ha = labels[i]
+        for j in side_b:
+            cb, kb, hb = labels[j]
+            if ca == cb and ka == kb and {ha, hb} == {0, 1}:
+                return True
+    return False
 
 
 def draw_virtual_networks(rng: np.random.Generator, labels: Sequence[Atom], table: np.ndarray,
                           n_networks: int, atoms_per_side=(1, 2), max_tries: int = 100
                           ) -> Tuple[np.ndarray, List[Dict]]:
     """``n_networks`` virtual networks: each side a union of 1 to 2 atoms,
-    sides disjoint, never a benchmark pair. Returns the virtual overlaps
+    sides disjoint, never holding the two halves of a benchmark network
+    between them. Returns the virtual overlaps
     [m, n_networks, 2] and a description per network."""
     lo, hi = int(atoms_per_side[0]), int(atoms_per_side[1])
     n_atoms = table.shape[1]
