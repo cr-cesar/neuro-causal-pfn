@@ -290,3 +290,28 @@ def test_rotation_ensembling_averages_rotated_predictions(monkeypatch):
     monkeypatch.delenv("PFN_ROTATIONS"); monkeypatch.delenv("PFN_ARM_FLIP")
     e2 = _Est(); e2(Xtr, W, Y, Xte)
     assert len(e2.calls) == 1
+
+
+def test_causalpfn_stratifier_leaf_is_at_least_one_below_100_rows(monkeypatch):
+    """CausalPFN sets min_samples_leaf = int(n / 100), 0 below 100 rows; the
+    wrapper raises it to 1 there and leaves larger contexts untouched."""
+    import sys
+    import types
+
+    from neurocausalpfn.pfn.estimator import leaf_safe_weak_learner
+
+    seen = []
+    fake = types.ModuleType("causalpfn.causal_estimator")
+    fake.GradientBoostingRegressor = lambda **kw: seen.append(kw["min_samples_leaf"]) or kw
+    monkeypatch.setitem(sys.modules, "causalpfn", types.ModuleType("causalpfn"))
+    monkeypatch.setitem(sys.modules, "causalpfn.causal_estimator", fake)
+
+    def train(X, t, y):                    # the package's call, as in causal_estimator.py
+        return fake.GradientBoostingRegressor(n_estimators=100, max_depth=6,
+                                              min_samples_leaf=int(X.shape[0] / 100))
+
+    wrapped = leaf_safe_weak_learner(train)
+    for n in (40, 99, 100, 450):
+        wrapped(np.zeros((n, 3)), None, None)
+    assert seen == [1, 1, 1, 4]
+    assert fake.GradientBoostingRegressor is not None and "_regressor" not in fake.GradientBoostingRegressor.__name__
