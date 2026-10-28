@@ -47,6 +47,18 @@ class HyperPrior:
     threshold: Tuple[float, float] = (0.02, 0.10)     # overlap fraction that counts as a hit
     label_noise: Tuple[float, float] = (0.0, 0.05)    # probability of flipping an observed outcome
     both_hit_value: float = 0.5                       # paper's y_true when both subnetworks are hit
+    # route C (27 Oct): share of processes whose networks are random
+    # partitions built from the cache's anatomical atoms (prior/partitions.py)
+    # instead of the atlas's own halves, and the atoms per side of those
+    random_partitions: float = 0.0
+    atoms_per_side: Tuple[float, float] = (1, 2)
+    # share of processes with the paper's coupling of the two effects,
+    # RE = 1 - TE (its grid: (1, 0), (0.75, 0.25), (0.5, 0.5), (0.25, 0.75))
+    te_re_coupled: float = 0.0
+    # share of processes whose context outcomes are the response probability
+    # itself instead of a Bernoulli draw (the factorial's "all-or-none effect,
+    # continuous outcome" cell)
+    continuous_outcome: float = 0.0
 
     def contains_giles(self, TE: float, RE: float, BIAS: float, BIASTYPE: str) -> bool:
         """True when a paper scenario is a possible draw of this hyper-prior."""
@@ -92,6 +104,9 @@ class NeuroPriorDGP:
         self.optimal_for_A: Dict[int, int] = {n: int(o) for n, o in zip(self.networks, optimal_for_A)}
         self.p_te = float(rng.uniform(*h.p_te)) if p_te is None else float(p_te)
         self.p_re = float(rng.uniform(*h.p_re)) if p_re is None else float(p_re)
+        if p_re is None and float(getattr(h, "te_re_coupled", 0.0) or 0.0) > 0 \
+                and rng.uniform() < float(h.te_re_coupled):
+            self.p_re = 1.0 - self.p_te
         self.bias = float(rng.uniform(*h.bias)) if bias is None else float(bias)
         if bias_type is None:
             w = np.asarray(h.bias_weights, dtype=float)[: len(h.bias_types)]
@@ -103,6 +118,8 @@ class NeuroPriorDGP:
         self.label_noise = float(rng.uniform(*h.label_noise)) if label_noise is None else float(label_noise)
         self.severity_sign = int(rng.choice([-1, 1])) if severity_sign is None else int(severity_sign)
         self.both_hit_value = h.both_hit_value
+        self.continuous = bool(float(getattr(h, "continuous_outcome", 0.0) or 0.0) > 0
+                               and rng.uniform() < float(h.continuous_outcome))
 
     # ------------------------------------------------------------------ paper
     @classmethod
@@ -188,7 +205,9 @@ class NeuroPriorDGP:
     def describe(self) -> Dict:
         return {"networks": list(self.networks), "optimal_for_A": dict(self.optimal_for_A),
                 "p_te": self.p_te, "p_re": self.p_re, "bias": self.bias, "bias_type": self.bias_type,
-                "threshold": self.threshold, "label_noise": self.label_noise}
+                "threshold": self.threshold, "label_noise": self.label_noise,
+                "outcome": "continuous" if getattr(self, "continuous", False) else "binary",
+                "partitions": "random" if getattr(self, "virtual_overlaps", None) is not None else "atlas"}
 
 
 def make_prior_dataset(dgp: NeuroPriorDGP,
@@ -205,8 +224,11 @@ def make_prior_dataset(dgp: NeuroPriorDGP,
     e = dgp.propensity(cent_ctx, vol_ctx, nets_c, s_c)
     Tc = (rng.uniform(size=len(s_c)) < e).astype(np.float64)
     mu_c = np.array([dgp.mu(nets_c[i], s_c[i], int(Tc[i])) for i in range(len(s_c))])
-    Yc = (rng.uniform(size=len(s_c)) < mu_c).astype(np.float64)
-    if dgp.label_noise > 0:
+    if getattr(dgp, "continuous", False):
+        Yc = mu_c.astype(np.float64)                      # the probability itself, no draw
+    else:
+        Yc = (rng.uniform(size=len(s_c)) < mu_c).astype(np.float64)
+    if dgp.label_noise > 0 and not getattr(dgp, "continuous", False):
         flip = rng.uniform(size=len(Yc)) < dgp.label_noise
         Yc = np.where(flip, 1.0 - Yc, Yc)
 

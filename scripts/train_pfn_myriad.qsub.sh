@@ -45,6 +45,7 @@ FAMILY="${FAMILY:-}"        # theory | giles | mixture (empty = theory)
 FAMILY_WEIGHTS="${FAMILY_WEIGHTS:-}"
 CONTEXT_POOL="${CONTEXT_POOL:-susceptible}"
 PRIOR_HYPER="${PRIOR_HYPER:-}"
+GILES_HYPER="${GILES_HYPER:-}"      # virtual-trial family ranges of the mixture, e.g. "threshold=0.01:0.2 p_te=0.5:1"
 LR_SCHEDULE="${LR_SCHEDULE:-constant}"   # constant | cosine (warmup 2 % then cosine decay to 0.1 lr)
 BATCH="${BATCH:-}"                        # batch size override (default: the config's)
 CONTEXT_MAX="${CONTEXT_MAX:-}"            # training context override, e.g. 3000 (default: the family's cap, 1024 with susceptible sampling)
@@ -73,6 +74,7 @@ if "$D_MODEL": cfg["pfn"]["d_model"] = int("$D_MODEL")
 if "$N_LAYERS": cfg["pfn"]["n_layers"] = int("$N_LAYERS")
 cfg["prior"]["cache"] = "$CACHE"; cfg["prior"]["atlas_dir"] = "data/atlases"
 cfg["prior"]["hyper"] = {**cfg["prior"].get("hyper", {}), **parse_hyper_opts("$PRIOR_HYPER")}
+if "$GILES_HYPER": cfg["prior"]["hyper_giles"] = {**cfg["prior"].get("hyper_giles", {}), **parse_hyper_opts("$GILES_HYPER")}
 print(json.dumps(cfg, indent=1, default=str))
 model, history = run_pfn(cfg)
 json.dump(history, open("$OUT/history.json", "w"))

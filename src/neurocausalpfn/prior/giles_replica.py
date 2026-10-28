@@ -77,6 +77,15 @@ for _b in (0.25, 0.5, 0.75, 0.95):
     HEADLINE_SCENARIOS[f"location_bias_{int(round(_b * 100)):03d}"] = {
         "TE": 1.0, "RE": 0.0, "BIAS": float(_b), "BIASTYPE": "observed"}
 del _b
+# the paper's noisy cells (27 Oct): lower treatment efficacy with spontaneous
+# recovery, TE + RE = 1 as in its grid, randomised allocation. The true effect
+# stays y_true in {0, 0.5, 1} (tau in {-1, 0, +1}) in the paper's code and
+# here: these cells measure robustness to noisy outcomes, not calibration to
+# the smaller identifiable effect TE * (1 - RE).
+for _te in (0.75, 0.5, 0.25):
+    HEADLINE_SCENARIOS[f"noisy_te{int(round(_te * 100)):03d}"] = {
+        "TE": float(_te), "RE": float(round(1.0 - _te, 2)), "BIAS": 0.0, "BIASTYPE": "observed"}
+del _te
 
 
 # --------------------------------------------------------------------------- #

@@ -96,12 +96,49 @@ def make_tabpfn(device: Optional[str] = None, n_estimators="auto", seed: int = 0
     from tabpfn.settings import settings
 
     dev = _device(device)
-    clf = TabPFNClassifier(device=dev, n_estimators=n_estimators, random_state=seed,
-                           ignore_pretraining_limits=True)
+    kw = dict(device=dev, n_estimators=n_estimators, random_state=seed, ignore_pretraining_limits=True)
+    # TABPFN_MODEL_PATH: a checkpoint written by scripts/finetune_tabpfn_prior.py
+    # (route A); the member is then the neuro fine-tuned model, scored on the
+    # same path as the untuned one
+    model_path = os.environ.get("TABPFN_MODEL_PATH")
+    if model_path:
+        kw["model_path"] = model_path
+    # TABPFN_N_ESTIMATORS: the ensemble size at scoring, so a fine-tuned and
+    # an untuned member are compared with the same settings
+    if os.environ.get("TABPFN_N_ESTIMATORS", "").strip():
+        kw["n_estimators"] = int(os.environ["TABPFN_N_ESTIMATORS"])
+    clf = TabPFNClassifier(**kw)
     version = settings.tabpfn.model_version
-    return LoggedClassifier("tabpfn", clf, {"version": _version("tabpfn"),
-                                            "model": getattr(version, "value", str(version)),
-                                            "device": dev})
+    label = os.path.basename(os.path.dirname(model_path.rstrip("/"))) + "/" + os.path.basename(model_path) \
+        if model_path else getattr(version, "value", str(version))
+    return LoggedClassifier("tabpfn", clf, {"version": _version("tabpfn"), "model": label, "device": dev,
+                                            "n_estimators": kw["n_estimators"]})
+
+
+def make_tabpfn_ft(device: Optional[str] = None, n_estimators=None, seed: int = 0) -> LoggedClassifier:
+    """Route B: TabPFN fine-tuned briefly on each slice's own training
+    patients before predicting (Prior Labs' per-dataset fine-tuning; arXiv
+    2506.08982). Every ``fit`` starts from the base weights again, so slices
+    never share information. Knobs: TABPFN_FT_EPOCHS (default 5),
+    TABPFN_FT_TIME_LIMIT seconds (default 60), TABPFN_FT_LR (default 1e-5);
+    TABPFN_MODEL_PATH sets the starting checkpoint."""
+    from tabpfn.finetuning import FinetunedTabPFNClassifier
+
+    dev = _device(device)
+    epochs = int(os.environ.get("TABPFN_FT_EPOCHS", "5"))
+    time_limit = int(os.environ.get("TABPFN_FT_TIME_LIMIT", "60"))
+    lr = float(os.environ.get("TABPFN_FT_LR", "1e-5"))
+    extra = {}
+    if os.environ.get("TABPFN_MODEL_PATH"):
+        extra["model_path"] = os.environ["TABPFN_MODEL_PATH"]
+    clf = FinetunedTabPFNClassifier(device=dev, epochs=epochs, time_limit=time_limit, learning_rate=lr,
+                                    validation_split_ratio=0.1, early_stopping=True, random_state=seed,
+                                    n_estimators_finetune=2, n_estimators_validation=2,
+                                    n_estimators_final_inference=4, save_checkpoint_interval=None,
+                                    extra_classifier_kwargs=extra or None)
+    return LoggedClassifier("tabpfn_ft", clf, {"version": _version("tabpfn"),
+                                               "model": f"per-slice fine-tune, {epochs} epochs, {time_limit} s",
+                                               "device": dev})
 
 
 def make_tabicl(device: Optional[str] = None, n_estimators: int = 8, seed: int = 0) -> LoggedClassifier:
@@ -113,7 +150,7 @@ def make_tabicl(device: Optional[str] = None, n_estimators: int = 8, seed: int =
                                             "model": str(clf.checkpoint_version), "device": dev})
 
 
-PANEL = {"tabpfn": make_tabpfn, "tabicl": make_tabicl}
+PANEL = {"tabpfn": make_tabpfn, "tabicl": make_tabicl, "tabpfn_ft": make_tabpfn_ft}
 
 
 def warm_up_fit(clf: LoggedClassifier, d: int = 4, n: int = 40, seed: int = 0) -> float:

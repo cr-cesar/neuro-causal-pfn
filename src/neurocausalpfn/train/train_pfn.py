@@ -358,7 +358,9 @@ def run_pfn(cfg: Dict):
             if getattr(prior_obj, "family", None) == "mixture":
                 from ..prior.neuro_prior import HyperPrior
 
-                prior_obj.hyper_giles = HyperPrior(**_as_ranges(st.get("hyper_giles", {})))
+                # the stage narrows the configured virtual-trial ranges too (audit of 27 Oct)
+                prior_obj.hyper_giles = HyperPrior(**_as_ranges({**cfg["prior"].get("hyper_giles", {}),
+                                                                 **st.get("hyper_giles", {})}))
             log.info("hyper-prior stage %d from iter %d: %s%s", k, it + 1, prior_obj.hyper,
                      f" + {prior_obj.hyper_giles}" if getattr(prior_obj, "family", None) == "mixture" else "")
             stage = k

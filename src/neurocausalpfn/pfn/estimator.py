@@ -154,12 +154,43 @@ class PFNEstimator:
         if self.standardize:
             mu, sd = Xtr.mean(0, keepdims=True), Xtr.std(0, keepdims=True) + 1e-6
             Xtr, Xte = (Xtr - mu) / sd, (Xte - mu) / sd
-        Xc = torch.as_tensor(Xtr, device=self.device)[None]
+        # rotation ensembling at prediction time (27 Oct, diagnostic 1b): the
+        # model was trained under random latent rotations and predicts from
+        # one; PFN_ROTATIONS=K averages K random orthogonal rotations (plus the
+        # identity), PFN_ARM_FLIP=1 also averages with the arms swapped
+        n_rot = int(os.environ.get("PFN_ROTATIONS", "0") or 0)
+        flip = os.environ.get("PFN_ARM_FLIP", "").strip() in ("1", "true", "yes")
+        if n_rot > 0 or flip:
+            rng = np.random.default_rng(int(os.environ.get("PFN_ROTATIONS_SEED", "0") or 0))
+            mats = [np.eye(Xtr.shape[1], dtype=np.float32)]
+            for _ in range(n_rot):
+                q, r = np.linalg.qr(rng.normal(size=(Xtr.shape[1], Xtr.shape[1])))
+                mats.append((q * np.sign(np.diag(r))[None, :]).astype(np.float32))
+            W = np.asarray(W, dtype=np.float32)
+            acc1, acc0, n = 0.0, 0.0, 0
+            for R in mats:
+                for swap in ((False, True) if flip else (False,)):
+                    Wv = 1.0 - W if swap else W
+                    a, b = self._predict(Xtr @ R, Wv, Y, Xte @ R)
+                    if swap:
+                        a, b = b, a
+                    acc1, acc0, n = acc1 + a, acc0 + b, n + 1
+            return np.clip(acc1 / n, 0, 1), np.clip(acc0 / n, 0, 1)
+        return self._predict(Xtr, W, Y, Xte)
+
+    def _predict(self, Xtr, W, Y, Xte):
+        """Potential outcomes of the queries from one (already standardised) context."""
+        import torch
+
+        from .inference import predict_cate
+
+        Xc = torch.as_tensor(np.ascontiguousarray(Xtr, dtype=np.float32), device=self.device)[None]
         Tc = torch.as_tensor(np.asarray(W, dtype=np.float32), device=self.device)[None]
         Yc = torch.as_tensor(np.asarray(Y, dtype=np.float32), device=self.device)[None]
         p1, p0 = [], []
         for start in range(0, len(Xte), self.max_queries):      # queries never attend to each other
-            Xq = torch.as_tensor(Xte[start:start + self.max_queries], device=self.device)[None]
+            Xq = torch.as_tensor(np.ascontiguousarray(Xte[start:start + self.max_queries], dtype=np.float32),
+                                 device=self.device)[None]
             out = predict_cate(self.model, Xc, Tc, Yc, Xq)
             p1.append(out["mu1"][0].float().cpu().numpy()); p0.append(out["mu0"][0].float().cpu().numpy())
         return np.clip(np.concatenate(p1), 0, 1), np.clip(np.concatenate(p0), 0, 1)
