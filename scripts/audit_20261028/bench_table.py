@@ -20,7 +20,7 @@ def main():
             for std, r in v.items():
                 if "slope_pred_on_true" not in r:
                     continue
-                rows.append({"model": label if std != "LR_two" else "LR_two", "ctx": ctx, "std": std,
+                rows.append({"model": label if std != "LR_two" else f"LR_two[{label}]", "ctx": ctx, "std": std,
                              "slope": r["slope_pred_on_true"], "calib": r["calib_slope_true_on_pred"],
                              "pehe": r["pehe"], "corr": r["corr"],
                              "mean_at_0": r.get("mean_pred_at_true+0"), "mean_at_+1": r.get("mean_pred_at_true+1"),
