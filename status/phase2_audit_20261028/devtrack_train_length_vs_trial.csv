@@ -1,0 +1,7 @@
+run,prior,iters,lr_schedule,n_ctx_final,loss_final_window,loss_window,pehe_paper_s0,pehe_paper_s1,pehe_paper_s2,pehe_paper_mean,source_loss,source_pehe
+kch_e1_32d_x-theory-linear-2arms-scale-genwide-project-head,theory+genwide,20000,constant,1024,4.134,last 2000 iters (s0),0.3935,0.3443,0.3810,0.3729,Myriad outputs/pfn_reduced_<run>-s0/history.json,status/pfn_rounds_summary_20261026.csv
+kch_e1_32d_x-theory-linear-2arms-scale-genwide-60k-project-head,theory+genwide,60000,constant,1024,3.852,iters 58000-60000 (s0); s1 3.883,0.4601,0.4308,0.4212,0.4374,Myriad history.json,status/pfn_rounds_summary_20261026.csv
+kch_e1_32d_x-theory-2arms-scale-genwide-cos-b16-project-head,theory+genwide (not linear),20000,cosine 2e-4 to 2e-5,1024,4.003,iters 18000-20000 (s0),0.4367,0.4235,0.6080,0.4894,Myriad history.json,status/pfn_rounds_summary_20261026.csv
+kch_e1_32d_x-theory-linear-2arms-scale-genwide-ctx3000-project-head,theory+genwide,20000,constant,3000,4.032,iters 18000-20000 (s0); s1 4.046,0.3549,0.3566,0.3698,0.3604,Myriad history.json,status/pfn_rounds_summary_20261026.csv
+kch_e1_32d_x-theory-linear-2arms-scale-project-head,theory (no genwide),20000,constant,1024,3.970,last 2000 iters (s0),0.3838,0.3799,0.3871,0.3836,Myriad history.json,status/pfn_rounds_summary_20261026.csv
+kch_e1_32d_x-theory-linear-2arms-scale-project-head-w256-60k,theory (no genwide),60000,constant,1024,3.887,last 2000 iters (s0),0.3869,,,0.3869,Myriad history.json,status/pfn_rounds_summary_20261026.csv
