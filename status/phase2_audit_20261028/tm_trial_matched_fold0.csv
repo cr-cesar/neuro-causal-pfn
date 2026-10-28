@@ -1,0 +1,5 @@
+model,code_commit,giles_bias,giles_bias_types,theory_gamma,val_pehe_receptor,val_balacc_receptor,val_pehe_genetics,val_balacc_genetics,bench128_slope,bench128_calib,bench128_pehe,bench128_corr,bench256_slope,bench256_calib,bench256_pehe,bench256_corr,note
+G4c,8b2b104,0-1,axis/severity/agnostic 0.6/0.3/0.1,0-1,0.368,0.899,0.345,0.902,0.674,0.911,0.439,0.784,0.709,0.904,0.415,0.801,control: C1 on the new code
+G5,a8bab3c,0,axis only,0,0.366,0.771,0.317,0.966,0.632,0.956,0.441,0.778,0.652,0.983,0.411,0.801,randomised allocation as in the scored trial (BIAS=0)
+TM,33bd6c3,0,axis only,theory off,0.392,0.820,0.363,0.913,0.610,1.026,0.429,0.791,0.626,1.029,0.409,0.802,"trial-matched prior: generic 0.9 (72 % trial kinds), giles 0.1 randomised; both arms + CATE loss; head -0.05..1.05; 256 queries; context log-uniform 128-3000"
+LR_two,,,,,0.298,0.884,0.278,0.953,0.690,0.931,0.420,0.802,0.708,0.952,0.392,0.821,same folds and contexts
