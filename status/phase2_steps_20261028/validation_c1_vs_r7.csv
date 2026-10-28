@@ -1,0 +1,7 @@
+estimator,pehe_receptor,balacc_receptor,pehe_genetics,balacc_genetics,pehe_mean,set
+"C1 (clean cell, pool KCH, 10 pseudo-folds)",0.3610,0.8920,0.3320,0.9340,0.3465,"validation (1,291 never-tested images, pseudo-folds by patient), E1 seed0, context 3000"
+"Round 7 (pool UCLH-train + KCH), uclhkch-s0",0.3760,0.8840,0.3490,0.9360,0.3625,"validation (1,291 never-tested images, pseudo-folds by patient), E1 seed0, context 3000"
+"Round 7 variant (pool KCH), kch-s0",0.3690,0.9050,0.3460,0.9300,0.3575,"validation (1,291 never-tested images, pseudo-folds by patient), E1 seed0, context 3000"
+LR two-model,0.3100,0.9020,0.2730,0.9450,0.2915,"validation (1,291 never-tested images, pseudo-folds by patient), E1 seed0, context 3000"
+CausalPFN,0.2980,0.8980,0.2730,0.9470,0.2855,"validation (1,291 never-tested images, pseudo-folds by patient), E1 seed0, context 3000"
+TabPFN v3.5 one-model,0.2830,0.9200,0.2530,0.9530,0.2680,"validation (1,291 never-tested images, pseudo-folds by patient), E1 seed0, context 3000"

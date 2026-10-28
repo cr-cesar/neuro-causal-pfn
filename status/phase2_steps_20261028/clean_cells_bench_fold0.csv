@@ -1,0 +1,16 @@
+cell,fold,context,slope_pool_norm,slope_context_norm,scenario,calibration_pool_norm
+C1,0,512,0.666,0.669,giles TE=1 RE=0,1.026
+C1,0,1024,0.67,0.678,giles TE=1 RE=0,1.01
+C1,0,3000,0.674,0.686,giles TE=1 RE=0,1.027
+C2,0,512,0.634,0.659,giles TE=1 RE=0,1.07
+C2,0,1024,0.634,0.657,giles TE=1 RE=0,1.059
+C2,0,3000,0.63,0.656,giles TE=1 RE=0,1.079
+C3,0,512,0.582,0.585,giles TE=1 RE=0,1.126
+C3,0,1024,0.589,0.59,giles TE=1 RE=0,1.114
+C3,0,3000,0.597,0.601,giles TE=1 RE=0,1.126
+Round 7 variant (kch-s0),0,512,0.575,0.627,giles TE=1 RE=0,1.123
+Round 7 variant (kch-s0),0,1024,0.577,0.628,giles TE=1 RE=0,1.116
+Round 7 variant (kch-s0),0,3000,0.582,0.636,giles TE=1 RE=0,1.13
+LR two-model,0,512,0.745,,giles TE=1 RE=0,0.94
+LR two-model,0,1024,0.76,,giles TE=1 RE=0,0.919
+LR two-model,0,3000,0.762,,giles TE=1 RE=0,0.908

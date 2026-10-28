@@ -1,0 +1,5 @@
+split,checkpoint,pehe_without,pehe_with,gain,balacc_without,balacc_with,rule_gain,adopted
+receptor,uclhkch-s0,0.376,0.365,0.011,0.884,0.909,0.02,False
+genetics,uclhkch-s0,0.349,0.339,0.01,0.936,0.949,0.02,False
+receptor,kch-s0 (variant),,,0.016,,,0.02,False
+genetics,kch-s0 (variant),,,0.018,,,0.02,False
