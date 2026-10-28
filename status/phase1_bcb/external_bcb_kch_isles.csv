@@ -1,0 +1,7 @@
+cohort,n_patients,n_deficits,maps,representation,n_seeds,pehe_paper_receptor,pehe_paper_genetics,pehe_paper_mean,pehe_paper_mean_sd,balacc_receptor,balacc_genetics,balacc_mean,balacc_mean_sd,estimator_receptor,estimator_genetics
+KCH,1207,16,bcb,volume,1,0.5523,0.6613,0.6068,,0.5276,0.5604,0.544,,causalpfn,causalpfn
+KCH,1207,16,bcb,nmf50_perfold,1,0.3769,0.3589,0.3679,,0.7304,0.8647,0.7976,,causalpfn,causalpfn
+KCH,1207,16,bcb,E1_mean10_3seeds,3,0.3667,0.3534,0.36,0.0029,0.7645,0.8687,0.8166,0.0112,causalpfn,causalpfn
+ISLES,144,15,bcb,volume,1,0.4722,0.5614,0.5168,,0.4651,0.5907,0.5279,,causalpfn,causalpfn
+ISLES,144,15,bcb,nmf50_perfold,1,0.4053,0.3829,0.3941,,0.5962,0.8174,0.7068,,logistic_regression,logistic_regression
+ISLES,144,15,bcb,E1_mean10_3seeds,3,0.3961,0.3856,0.3909,0.0019,0.6022,0.7386,0.6704,0.0049,logistic_regression,causalpfn
