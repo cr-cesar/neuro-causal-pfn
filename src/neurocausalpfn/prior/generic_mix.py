@@ -136,6 +136,16 @@ class GenericEffectMixture:
     def hyper(self, value):
         self.base.hyper = value
 
+    # the mixture's virtual-trial ranges, which a curriculum stage also sets:
+    # without the setter the stage's value stayed on the wrapper
+    @property
+    def hyper_giles(self):
+        return self.base.hyper_giles
+
+    @hyper_giles.setter
+    def hyper_giles(self, value):
+        self.base.hyper_giles = value
+
     def describe(self) -> str:
         return (f"generic effect processes: weight {self.weight:.2f}, kinds {'+'.join(self.kinds)}, "
                 f"effect size {self.scale[0]:.2f}-{self.scale[1]:.2f}, null share {self.null[0]:.2f}-{self.null[1]:.2f}, "
