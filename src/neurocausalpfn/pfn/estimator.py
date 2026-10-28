@@ -243,9 +243,9 @@ def leaf_safe_weak_learner(train):
     the slices of a small external cohort. The stratifier only picks
     neighbours when the context exceeds ``max_context_length``, so below 100
     rows it never shapes a prediction; from 100 rows up nothing changes."""
-    import causalpfn.causal_estimator as ce
-
     def _train(X, t, y):
+        import causalpfn.causal_estimator as ce
+
         original = ce.GradientBoostingRegressor
 
         def _regressor(**kw):
@@ -294,7 +294,8 @@ class CausalPFNEstimator:
         self.est = CATEEstimator(device=self.device, model_path=model_path, cache_dir=cache_dir,
                                  max_context_length=max_context_length, max_query_length=max_context_length,
                                  num_neighbours=num_neighbours, calibrate=False, verbose=False)
-        self.est._train_weak_learner = leaf_safe_weak_learner(self.est._train_weak_learner)
+        if hasattr(self.est, "_train_weak_learner"):
+            self.est._train_weak_learner = leaf_safe_weak_learner(self.est._train_weak_learner)
         self._k = int(num_neighbours)
         self.name = "causalpfn"
         # F08 of the audit: CausalPFN compresses any representation wider than
