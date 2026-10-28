@@ -26,8 +26,10 @@ set -euo pipefail
 # holding on it (-hold_jid) stay queued instead of starting on missing inputs
 trap 'exit 100' ERR
 
-module load python3/3.11
-source ~/venvs/neuro/bin/activate
+# outside Myriad (scripts/run_jobs.sh on another machine) there is no module
+# system; VENV names the environment to use
+command -v module >/dev/null 2>&1 && module load python3/3.11
+source "${VENV:-$HOME/venvs/neuro}/bin/activate"
 # audit F25: the same config and seed ran 2.4x slower on another node, so
 # every job states where it ran
 echo "node: $(hostname -s) gpu: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 || echo none) job: ${JOB_ID:-?}"

@@ -198,11 +198,14 @@ def _hyper_for(cfg: Dict, ranges: Dict):
     """Hyper-prior of the configured family with ``ranges`` overriding the
     defaults; for the mixture these are the theory ranges (the ones the
     curriculum stages narrow)."""
+    from ..prior.generic_mix import split_generic_hyper
+
     pr = cfg.get("prior", {})
     if pr.get("family", "theory") in ("theory", "mixture"):
         from ..prior.intersynth_theory import TheoryHyperPrior as _Hyper
     else:
         from ..prior.neuro_prior import HyperPrior as _Hyper
+    ranges, _generic = split_generic_hyper(ranges)   # generic_* options belong to the wrapper, not the family
     return _Hyper(**_as_ranges(ranges))
 
 
@@ -307,6 +310,15 @@ def _build_prior(cfg: Dict, seed_offset: int = 0):
                 prior = NeuroPriorCohort.from_cache(atlas, pr["cache"], **kw)
             else:
                 prior = NeuroPriorCohort(atlas, pool, **kw)
+            # generic_weight > 0: a share of the processes get a simple effect
+            # in latent space (sparse linear, or three groups with a null
+            # share), the function class the anatomy family lacks (23 Oct)
+            from ..prior.generic_mix import split_generic_hyper, wrap_generic
+
+            _, generic = split_generic_hyper(pr.get("hyper", {}))
+            prior = wrap_generic(prior, generic, seed=seed)
+            if hasattr(prior, "describe") and generic.get("generic_weight"):
+                log.info("prior: %s", prior.describe())
             return prior, prior.d_x, True
         prior = NeuroPriorInterSynth(atlas, pool, seed=seed,
                                      n_context=p["context_max"], n_query=p["n_query"],

@@ -52,7 +52,7 @@ def main():
     args = ap.parse_args()
 
     model = load_vae(args.ckpt, device="cpu")
-    res = tuple(torch.load(args.ckpt, map_location="cpu")["cfg"]["data"]["resolution"])
+    res = tuple(torch.load(args.ckpt, map_location="cpu", weights_only=False)["cfg"]["data"]["resolution"])
     ds = LesionMaskDataset(root=lesion_root(args.tier), in_shape=res,
                            n_synth=args.n, seed=0, binarize=True)
     n = min(args.n, len(ds))

@@ -169,3 +169,19 @@ This yields the run `kch_e1_32d_x-theory-2arms-scale-bin05-s0`. It uses the exis
 - The two linear PEHE values are two scorings of the same linear checkpoint (seed 0), as confirmed by the project owner: 0.384 is the original scoring with the context limited to 1,024 rows (the one on the leaderboard I read); 0.379 is the scoring with the full context (`PFN_CONTEXT_CAP=0`, folder `outputs_perfold_iso/headroom_s0`), the one adopted since stage 0. The 0.41 slope and its decomposition columns come from that full-context scoring. The tabicl scoring read here used the default cap, so the like-for-like linear figure is 0.384.
 - No test shows that `tabicl` can fit a trivial prior to a low loss. The project owner agrees it does not exist; if the cause above is confirmed, that test enters together with the fix.
 - The cause of the scoring collapse is not proven; the ranking above is by evidence, and the CPU experiment is the step that separates causes 1 and 3.
+
+## Addendum, 20 Oct 20:xx
+
+CPU probe (job 1637, 40 processes of the checkpoint's own prior, context 1,024), mean correlation with the true CATE:
+
+| context outcomes | tabicl | linear | ExtraTrees |
+|---|---|---|---|
+| continuous | 0.736 | 0.804 | 0.738 |
+| Bernoulli(Y) | -0.013 | 0.453 | 0.438 |
+| deterministic Y > 0.5 | 0.126 | 0.395 | 0.490 |
+
+Cause 1 (the binary-outcome channel) is confirmed at probe level: with binary context outcomes the linear model and ExtraTrees keep a clearly positive correlation and tabicl collapses, also under the deterministic binarisation closest to the trial. The probe shows tabicl misreads binary outcomes; it does not show this is the only cause of the 0.525.
+
+GPU run queued: `kch_e1_32d_x-theory-2arms-scale-bin05-s0` (binary_outcome=0.5, job 1638, scoring 1639). Probe log: `binY-probe.o1637` (aggregate figures only).
+
+Note: the scheduler started failing after the GPU run was queued (the qmaster refused connections), so the state of jobs 1638 and 1639 was not checked.
