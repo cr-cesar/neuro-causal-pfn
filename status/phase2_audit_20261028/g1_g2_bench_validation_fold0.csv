@@ -1,0 +1,6 @@
+model,note,bench_slope,bench_calib,bench_corr,bench_pehe,bench_mean_tau0,bench_mean_tau_plus1,bench_mean_tau_minus1,val_pehe_receptor,val_balacc_receptor,val_pehe_genetics,val_balacc_genetics
+C1,reference (fold 0),0.674,1.027,0.832,0.396,-0.001,0.684,-0.664,0.353,0.901,0.320,0.924
+G2_T6b,family_weights 0.1:0.9 generic_weight 0.25,0.676,1.009,0.826,0.402,-0.020,0.672,-0.680,0.364,0.863,0.330,0.930
+G1_D4_DIAGFUGA,LEAKED DIAGNOSTIC (random_partitions=0: benchmark halves); not a result,0.640,1.073,0.829,0.401,-0.006,0.647,-0.634,0.375,0.767,0.341,0.931
+r7_uclhkch_s0,round 7 reference,,,,,,,,0.392,0.855,0.339,0.960
+LR_two,LR two-model same fold,0.762,0.908,0.832,0.399,-0.006,0.763,-0.762,0.298,0.884,0.278,0.953

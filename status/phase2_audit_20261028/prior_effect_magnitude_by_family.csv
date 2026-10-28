@@ -3,3 +3,4 @@ r7 uclhkch-s0 fold0 (theory + generic),theory only,0.5,400,64,0.111,0.013,0.400,
 C1 fold0 theory half,1:0,0.5,400,64,0.101,0.021,0.388,0.520,0.076,0.852,
 C1 fold0 giles half,0:1,0.5,400,64,0.509,0.377,0.740,0.287,0.444,0.736,
 real trial test 2828 (reference),,,16 deficits x 2 splits,,,,,0.455-0.545 (exact zeros),0.455-0.545 (|tau| = 1),,status/phase2_steps_20261028/step0_headroom_per_deficit.csv share_zero_test
+C1 fold0 giles only (generic_weight 0),0:1,0,400,64,0.856,0.921,0.927,0.247,0.753,0.753,siena verify_tau_by_family.py with generic_weight=0

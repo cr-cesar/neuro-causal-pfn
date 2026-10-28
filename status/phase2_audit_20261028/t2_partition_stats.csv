@@ -1,0 +1,6 @@
+metric,real_32_slices_q10,real_median,real_q90,c1_prior_giles_q10,c1_prior_median,c1_prior_q90,note
+share_null_among_susceptible,0.16,0.49,0.74,0.07,0.22,0.44,C1 prior: 400 giles processes without the generic part
+relative_side_size_patients,0.01,0.28,0.81,0.07,0.29,0.62,
+relative_side_size_voxels,0.13,0.50,0.92,0.18,0.43,0.72,
+side_overlap_voxel_dice,0,0,0,0,0,0.12,
+susceptible_per_process,123,287,689,376,797,1060,
