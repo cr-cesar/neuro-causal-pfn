@@ -14,7 +14,8 @@
 # fold whose checkpoint exists is skipped, so a rerun only does what is missing.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
-CACHE="${CACHE:?set CACHE to the per-fold anatomy cache, with {fold} in the path}"
+# (no literal braces inside the :? message: the first } would close the expansion)
+CACHE="${CACHE:?set CACHE to the per-fold anatomy cache path, with the fold placeholder}"
 OUT="${OUT:?set OUT to the output root}"
 [[ "$CACHE" == *"{fold}"* ]] || { echo "CACHE needs {fold} in the path" >&2; exit 1; }
 GILES_HYPER="${GILES_HYPER-random_partitions=1 threshold=0.03:0.08 p_te=0.5:1}"
