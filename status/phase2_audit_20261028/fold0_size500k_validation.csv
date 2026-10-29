@@ -1,0 +1,5 @@
+model,params,sims,train_host,train_commit,pehe_receptor,pehe_genetics,balacc_receptor,balacc_genetics,balacc_undefined_rec_gen,pehe_mean,balacc_mean,d_pehe_mean_vs_lin4p8M_500k,d_balacc_mean_vs_lin4p8M_500k,d_pehe_mean_vs_G4cobjU_80k,d_balacc_mean_vs_G4cobjU_80k
+lin4p8M_500k,4.83M,500k,siena,99a3d8c,0.324,0.283,0.893,0.96,7/2,0.3035,0.9265,0.0,0.0,-0.0475,0.0105
+lin21M_500k,21M (d384 x12),500k,goldbug,99a3d8c,0.343,0.287,0.929,0.978,7/2,0.315,0.9535,0.0115,0.027,-0.036,0.0375
+G4cobjU_80k,4.83M,80k,goldbug,c9ee578,0.372,0.33,0.903,0.929,7/2,0.351,0.916,0.0475,-0.0105,0.0,0.0
+G4cobj_i25000_100k,4.83M,100k,goldbug,7490e54,0.34,0.278,0.921,0.978,7/2,0.309,0.9495,0.0055,0.023,-0.042,0.0335
