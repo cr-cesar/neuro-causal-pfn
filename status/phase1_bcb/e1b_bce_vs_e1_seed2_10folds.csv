@@ -1,0 +1,7 @@
+model,seed,folds,split,classifier,learner,pehe_paper_mean,balacc_mean
+E1b,2,10,receptor,logistic_regression,two,0.31577685233652864,0.7998771125494807
+E1,2,10,receptor,logistic_regression,two,0.3111679570705213,0.8122021666360536
+E1b,2,10,genetics,logistic_regression,two,0.28664945332103076,0.9260704803910088
+E1,2,10,genetics,logistic_regression,two,0.28046652878300227,0.9346780498874905
+E1b,2,10,mean,logistic_regression,two,0.3012131528287797,0.8629737964702448
+E1,2,10,mean,logistic_regression,two,0.2958172429267667,0.8734401082617720
