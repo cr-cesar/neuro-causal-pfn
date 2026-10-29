@@ -1,0 +1,6 @@
+seed,split,n_cells,share_zero_test,pehe_latent_hgb,pehe_latent_ridge,pehe_latent_tabpfn_reg,pehe_latent_tabpfn_cls3,auc_probe_W1,auc_probe_W0
+1,genetics,160,0.4554,0.3218,0.3589,0.2284,0.2263,0.9806,0.9746
+2,genetics,160,0.4554,0.3241,0.3576,0.2292,0.2279,0.9815,0.9743
+1,receptor,160,0.5448,0.3417,0.3662,0.2608,0.2585,0.9709,0.9596
+2,receptor,160,0.5448,0.3418,0.3634,0.2589,0.2573,0.9723,0.9584
+# siena, per-fold 1fad63f, main 1cac8b4; E1 per-fold BCB, Giles et al., 2025 split (2,828); means over 160 deficit x fold cells. Seed 0 in b4_latent_ceiling_tabpfn_seed0_*.csv (brawn).
