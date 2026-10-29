@@ -1,0 +1,13 @@
+kind,model,split,n_folds,n_rows,pehe_mean,pehe_sd_folds,balacc_mean,n_rows_balacc_defined,n_deficits_balacc_defined_any_fold,n_deficits,diff_ci95_lo,diff_ci95_hi,gain_ge_threshold,rule_both_splits
+model,G4cobj_single_f0,receptor,9,144.0,0.3464,0.0358,0.8894,93.0,14.0,16.0,,,,
+model,G4cobj_single_f0,genetics,9,144.0,0.3172,0.0255,0.9392,124.0,16.0,16.0,,,,
+model,G4cobj,receptor,9,144.0,0.3454,0.0307,0.9032,93.0,14.0,16.0,,,,
+model,G4cobj,genetics,9,144.0,0.322,0.0276,0.9322,124.0,16.0,16.0,,,,
+model,G4c_single_f0,receptor,9,144.0,0.3769,0.0216,0.8988,93.0,14.0,16.0,,,,
+model,G4c_single_f0,genetics,9,144.0,0.3479,0.0273,0.9296,124.0,16.0,16.0,,,,
+model,G4c,receptor,9,144.0,0.3661,0.0319,0.9004,93.0,14.0,16.0,,,,
+model,G4c,genetics,9,144.0,0.3502,0.023,0.9337,124.0,16.0,16.0,,,,
+paired_diff,G4cobj_single_f0 - G4cobj,receptor,9,,0.001,0.0179,,,,,-0.0128,0.0148,False,fail
+paired_diff,G4cobj_single_f0 - G4cobj,genetics,9,,-0.0049,0.0133,,,,,-0.0151,0.0053,False,fail
+paired_diff,G4c_single_f0 - G4c,receptor,9,,0.0107,0.0181,,,,,-0.0032,0.0247,False,fail
+paired_diff,G4c_single_f0 - G4c,genetics,9,,-0.0023,0.0194,,,,,-0.0172,0.0126,False,fail
