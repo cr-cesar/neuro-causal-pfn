@@ -154,6 +154,24 @@ REGISTRY: List[Experiment] = [
               "(note 3). Rows E2 onward each introduce a single change.",
     ),
     Experiment(
+        # arm "Audit": outside the arms the chain runner walks (A to E), so the
+        # chain and its order are unchanged; it runs per-fold only
+        eid="E1b", arm="Audit", title="E1 with a Bernoulli disconnectome likelihood",
+        what_changes="disconnectome recon: MSE on the sigmoid -> BCE on the continuous map",
+        baseline="E1 (whose disconnectome encoder, unlike its description, "
+                 "trains with MSE; the lesion encoder is BCE)",
+        variant="E1 with the disconnectome VAE trained on the Bernoulli "
+                "likelihood (BCE with soft targets, no Dice); disconnectome "
+                "channel only, 50 latents, N(0,I) prior.",
+        tiers=("T4",), entry="vae",
+        params={"representation": "lesion", "backbone": "resnet",
+                "w_dice": 0.0, "fusion_mode": "disconnectome", "zdim": 50,
+                "use_ard": False, "disco_recon": "bce"},
+        notes="29 Oct audit against the reference code: the reference repository "
+              "has no VAE code, its paper text no likelihood; our E1 "
+              "description says BCE. Per-fold only.",
+    ),
+    Experiment(
         eid="E2", arm="A", title="Reconstruction loss",
         what_changes="recon -> BCE + Soft Dice (scan lambda_Dice)",
         baseline="E1: recon = BCE (objective BCE + beta*KL)",

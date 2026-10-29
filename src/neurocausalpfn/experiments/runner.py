@@ -109,6 +109,9 @@ def build_runs(exp: Experiment, mode: str, context: Dict) -> List[RunSpec]:
                 "d_lesion": scale_dim(mode, p.get("zdim", ctx_dims[0])),
                 "d_disco": scale_dim(mode, p.get("zdim", ctx_dims[1])),
             }
+            if p.get("disco_recon"):
+                # only when set, so the metadata of every earlier run is unchanged
+                meta["disco_recon"] = p["disco_recon"]
             label = _label(exp.eid, pt, meta)
             runs.append(RunSpec(label=label, kind="fusion_vae", meta=meta))
         return runs

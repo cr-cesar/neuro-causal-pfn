@@ -10,6 +10,7 @@
 #
 #   SEED=1 bash scripts/audit_20261028/g4c_launch.sh
 #   OBJECTIVE=new bash scripts/audit_20261028/g4c_launch.sh
+#   STD=context [OBJECTIVE=new] bash scripts/audit_20261028/g4c_launch.sh
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 dirty=$(git status --porcelain --untracked-files=no | wc -l)
@@ -27,6 +28,16 @@ source "${VENV:-$HOME/venvs/neuro}/bin/activate"
 OBJECTIVE="${OBJECTIVE:-old}"
 case "$OBJECTIVE" in new|old) ;; *) echo "OBJECTIVE must be new or old" >&2; exit 1 ;; esac
 tag=$([ "$OBJECTIVE" = new ] && echo G4cobj || echo G4c)
+# STD=context (29 Oct): each training context standardised with its own
+# statistics, as scoring standardises with the train slice's (default pool:
+# the pool's statistics, every run so far)
+STD="${STD:-pool}"
+case "$STD" in pool|context) ;; *) echo "STD must be pool or context" >&2; exit 1 ;; esac
+if [ "$STD" = context ]; then
+    export STANDARDIZE=context; tag="${tag}std"; std_expect="prior.standardize=context"
+else
+    std_expect="prior.standardize=UNSET"          # the cohort's default, pool
+fi
 export SEED="${SEED:-0}"
 export JOBNAME="${JOBNAME:-$tag-f0-s$SEED}"
 export CACHE="${CACHE:-$HOME/p2_bcb/pools/kch_s0/fold0.npz}"
@@ -52,5 +63,5 @@ python scripts/prior_gate.py --batches 5 --contexts 512 --require share_zero=0:1
     pos_share=0:1 ctx_binary=0:1 ctx_treated=0:1 \
     --expect prior.family=mixture prior.family_weights=0.5:0.5 prior.hyper.generic_weight=0.5 \
              prior.hyper_giles.random_partitions=1 pfn.context_max=3000 pfn.context_min=256 \
-             pfn.iters=20000 pfn.arch=linear pfn.n_query=64 pfn.curriculum=UNSET $objective_expect
+             pfn.iters=20000 pfn.arch=linear pfn.n_query=64 pfn.curriculum=UNSET $objective_expect $std_expect
 bash scripts/train_pfn_myriad.qsub.sh

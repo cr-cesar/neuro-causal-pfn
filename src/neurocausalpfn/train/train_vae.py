@@ -210,6 +210,15 @@ def run_vae(cfg: Dict):
         w_bce = float(cfg["vae"].get("w_bce", 1.0))
         w_dice = float(cfg["vae"].get("w_dice", 1.0))
         loss_fn = functools.partial(loss_fn, w_bce=w_bce, w_dice=w_dice)
+    elif representation == "disconnectome" and str(cfg["vae"].get("disco_recon", "mse")) == "bce":
+        # 29 Oct: the disconnectome VAE reconstructs with MSE on the sigmoid
+        # (a Gaussian of variance 0.5, which weighs the low values of a mostly
+        # near-zero map very little); "bce" uses the Bernoulli likelihood on
+        # the continuous map instead (BCE with soft targets, no Dice), the
+        # likelihood the E1 baseline describes. Default "mse", every run so far.
+        import functools
+        from ..vae.losses import vae_loss
+        loss_fn = functools.partial(vae_loss, w_bce=1.0, w_dice=0.0)
     n_clinical = dataset.clinical_dim() if use_daft else 0
 
     train_idx, val_idx = _split_indices(len(dataset), cfg["data"].get("val_frac", 0.1), cfg["seed"])

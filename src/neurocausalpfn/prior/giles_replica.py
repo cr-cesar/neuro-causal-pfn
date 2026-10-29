@@ -443,7 +443,10 @@ def _classifier(name: str):
     from sklearn.ensemble import ExtraTreesClassifier
     from sklearn.linear_model import LogisticRegression
     if name == "logistic_regression":
-        return LogisticRegression(max_iter=1000)
+        # the released code uses LogisticRegression() as is (sklearn's
+        # max_iter=100); this replica raised it to 1000. GILES_LR_MAX_ITER=100
+        # scores with the paper's setting (29 Oct check)
+        return LogisticRegression(max_iter=int(os.environ.get("GILES_LR_MAX_ITER", "1000") or 1000))
     if name == "extra_trees":
         return ExtraTreesClassifier()
     if name in CLASSIFIERS:

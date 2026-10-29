@@ -201,13 +201,25 @@ PY
     # ONLY="E4[25+25] E6[fusion_mode=both] E7b" keeps those variants (label,
     # eid:run or eid); read into an array so the brackets are never globbed
     only=(); [ -z "${ONLY:-}" ] || { read -ra only <<< "$ONLY"; only=(--only "${only[@]}"); }
+    # 29 Oct knobs (all optional; unset = the behaviour of every earlier run):
+    # PF_DATA_DIR  the tier folder of the maps (e.g. the BCBtoolkit export), for
+    #              the fold jobs and the scoring; default the per-fold repo's "data/Full data"
+    # PF_PYTHONPATH  the main package to import (a clean checkout's src), for this
+    #              script's own python calls, the fold jobs and the scoring
+    # PF_MODALITIES  splits to score, e.g. "receptor genetics" (default receptor);
+    #              a split other than receptor writes to <PUB_ROOT>_<split>
+    dd=(); [ -z "${PF_DATA_DIR:-}" ] || { dd=(--data-dir "$PF_DATA_DIR"); export DATA_DIR="$PF_DATA_DIR"; }
+    passv=""
+    [ -z "${PF_DATA_DIR:-}" ] || passv="$passv,DATA_DIR"
+    if [ -n "${PF_PYTHONPATH:-}" ]; then export PYTHONPATH="$PF_PYTHONPATH"; passv="$passv,PYTHONPATH"; fi
     python -m ncpfold.plan --eids $eids --seeds "$SEEDS" --budget published "${only[@]}"
     python -m ncpfold.plan --eids $eids --seeds "$SEEDS" --budget published "${only[@]}" --emit-qsub --independent \
-        --h-rt "${H_RT:-1:30:0}" --groups "$PF_GROUPS" --out-root "$PUB_ROOT" > /tmp/perfold_submit_$$.sh
+        --h-rt "${H_RT:-1:30:0}" --groups "$PF_GROUPS" --out-root "$PUB_ROOT" ${dd[@]+"${dd[@]}"} > /tmp/perfold_submit_$$.sh
     declare -A HOLD
     while read -r line; do
       [[ "$line" =~ ^qsub ]] || continue
       key=$(echo "$line" | sed -E 's/.*-v EID=([^,]+),RUN=([0-9]+),SEED=([0-9]+).*/\1 \2 \3/')
+      [ -z "${PF_PYTHONPATH:-}" ] || line="${line/ -v / -v PYTHONPATH,}"   # by name: qsub reads it from this environment
       jid=$(eval "$line" | cut -d. -f1)
       HOLD["$key"]="${HOLD[$key]:+${HOLD[$key]},}$jid"
     done < /tmp/perfold_submit_$$.sh
@@ -215,9 +227,12 @@ PY
       set -- $key; eid=$1; run=$2; seed=$3
       label=$(python -c "from ncpfold.catalogue import find_run; print(find_run('$eid', $run).label)")
       reps="$PUB_ROOT/$eid/$label/seed$seed/folds"
-      sj=$(REPS="$reps" qsub -terse -N sc-${eid,,}r${run}s$seed -hold_jid "${HOLD[$key]}" -l h_rt=3:0:0 \
-           -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,WITH_VOLUME=1,OUT=$PUB_ROOT qsub/perfold_score.qsub.sh)
-      echo "$eid run$run seed$seed: folds ${HOLD[$key]} -> scoring $sj"
+      for m in ${PF_MODALITIES:-receptor}; do
+        out="$PUB_ROOT"; [ "$m" = receptor ] || out="${PUB_ROOT}_$m"
+        sj=$(REPS="$reps" qsub -terse -N sc-${eid,,}r${run}s$seed-${m:0:3} -hold_jid "${HOLD[$key]}" -l h_rt=3:0:0 \
+             -v REPS${passv},GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,WITH_VOLUME=1,MODALITY=$m,OUT=$out qsub/perfold_score.qsub.sh)
+        echo "$eid run$run seed$seed: folds ${HOLD[$key]} -> scoring $m $sj"
+      done
     done
     rm -f /tmp/perfold_submit_$$.sh
     ;;
