@@ -115,3 +115,28 @@ def test_fine_tuned_members(fake_packages, monkeypatch, tmp_path):
     monkeypatch.setenv("TABPFN_N_ESTIMATORS", "4")
     same = panel.make_tabpfn(device="cpu")
     assert same.model.kw["n_estimators"] == 4 and same.info["n_estimators"] == 4
+
+
+def test_per_fold_tabpfn_follows_the_scorer_fold(fake_packages, monkeypatch, tmp_path):
+    """{fold} in TABPFN_MODEL_PATH: the member loads fold k's checkpoint when
+    the scorer is on fold k, warms up on fold 0's, and refuses a missing one."""
+    for k in (0, 1):
+        (tmp_path / f"fold{k}").mkdir()
+        (tmp_path / f"fold{k}" / "tabpfn_ft.pth").write_bytes(b"")
+    monkeypatch.setenv("TABPFN_MODEL_PATH", str(tmp_path / "fold{fold}" / "tabpfn_ft.pth"))
+    monkeypatch.setitem(panel.CURRENT_FOLD, "fold", -1)
+    clf = panel.make_tabpfn(device="cpu")
+    assert isinstance(clf, panel.PerFoldTabPFN)
+    panel.warm_up_fit(clf)
+    assert "fold0" in clf.model.kw["model_path"]
+    assert panel.CURRENT_FOLD["fold"] == -1
+    X, y = np.zeros((10, 3)), np.array([0, 1] * 5)
+    panel.CURRENT_FOLD["fold"] = 1
+    clf.fit(X, y)
+    assert "fold1" in clf.model.kw["model_path"]
+    panel.CURRENT_FOLD["fold"] = 2
+    with pytest.raises(FileNotFoundError):
+        clf.fit(X, y)
+    panel.CURRENT_FOLD["fold"] = -1
+    with pytest.raises(RuntimeError):
+        clf.fit(X, y)

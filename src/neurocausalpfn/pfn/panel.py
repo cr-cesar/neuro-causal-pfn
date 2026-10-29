@@ -33,6 +33,11 @@ import numpy as np
 
 REPORTED: Dict[str, dict] = {}
 
+# the fold being scored: the per-fold scorer (ncpfold.score) shares this dict
+# and sets it whenever it serves a fold's latents, so a member with one
+# checkpoint per fold ({fold} in TABPFN_MODEL_PATH) follows it
+CURRENT_FOLD: Dict[str, int] = {"fold": -1}
+
 
 def _device(device: Optional[str]) -> str:
     if device:
@@ -89,6 +94,34 @@ class LoggedClassifier:
         return out
 
 
+class PerFoldTabPFN(LoggedClassifier):
+    """TabPFN with one fine-tuned checkpoint per fold (route A per fold): the
+    checkpoint of fold k was tuned on a prior built from a pool without fold
+    k's test patients, and scores fold k only. ``{fold}`` in the path is
+    filled with ``CURRENT_FOLD`` at every fit; the classifier is rebuilt when
+    the fold changes."""
+
+    def __init__(self, pattern: str, kw: dict, info: dict):
+        super().__init__("tabpfn", None, info)
+        self.pattern, self.kw, self.fold = pattern, dict(kw), None
+
+    def path(self, fold: int) -> str:
+        return self.pattern.replace("{fold}", str(fold))
+
+    def fit(self, X, y):
+        k = CURRENT_FOLD["fold"]
+        if k < 0:
+            raise RuntimeError("per-fold TabPFN fitted before the scorer served any fold")
+        if k != self.fold:
+            from tabpfn import TabPFNClassifier
+
+            path = self.path(k)
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"no TabPFN checkpoint for fold {k}: {path}")
+            self.model, self.fold = TabPFNClassifier(**dict(self.kw, model_path=path)), k
+        return super().fit(X, y)
+
+
 def make_tabpfn(device: Optional[str] = None, n_estimators="auto", seed: int = 0) -> LoggedClassifier:
     # keep the built model in memory across the replica's refits (off by default)
     os.environ.setdefault("TABPFN_MODEL_CACHE_SIZE", "2")
@@ -99,20 +132,22 @@ def make_tabpfn(device: Optional[str] = None, n_estimators="auto", seed: int = 0
     kw = dict(device=dev, n_estimators=n_estimators, random_state=seed, ignore_pretraining_limits=True)
     # TABPFN_MODEL_PATH: a checkpoint written by scripts/finetune_tabpfn_prior.py
     # (route A); the member is then the neuro fine-tuned model, scored on the
-    # same path as the untuned one
+    # same path as the untuned one; with {fold} in the path, one checkpoint
+    # per fold (PerFoldTabPFN)
     model_path = os.environ.get("TABPFN_MODEL_PATH")
-    if model_path:
-        kw["model_path"] = model_path
     # TABPFN_N_ESTIMATORS: the ensemble size at scoring, so a fine-tuned and
     # an untuned member are compared with the same settings
     if os.environ.get("TABPFN_N_ESTIMATORS", "").strip():
         kw["n_estimators"] = int(os.environ["TABPFN_N_ESTIMATORS"])
-    clf = TabPFNClassifier(**kw)
     version = settings.tabpfn.model_version
     label = os.path.basename(os.path.dirname(model_path.rstrip("/"))) + "/" + os.path.basename(model_path) \
         if model_path else getattr(version, "value", str(version))
-    return LoggedClassifier("tabpfn", clf, {"version": _version("tabpfn"), "model": label, "device": dev,
-                                            "n_estimators": kw["n_estimators"]})
+    info = {"version": _version("tabpfn"), "model": label, "device": dev, "n_estimators": kw["n_estimators"]}
+    if model_path and "{fold}" in model_path:
+        return PerFoldTabPFN(model_path, kw, info)
+    if model_path:
+        kw["model_path"] = model_path
+    return LoggedClassifier("tabpfn", TabPFNClassifier(**kw), info)
 
 
 def make_tabpfn_ft(device: Optional[str] = None, n_estimators=None, seed: int = 0) -> LoggedClassifier:
@@ -161,7 +196,15 @@ def warm_up_fit(clf: LoggedClassifier, d: int = 4, n: int = 40, seed: int = 0) -
     X = rng.normal(size=(n, d)).astype(np.float32)
     y = (X[:, 0] + 0.5 * rng.normal(size=n) > 0).astype(int)
     t = time.time()
-    p = clf.fit(X, y).predict_proba(X[:8])
+    # a per-fold member warms up on fold 0's checkpoint, so a missing file
+    # fails now; the scorer sets the real fold before the first real fit
+    before = CURRENT_FOLD["fold"]
+    if isinstance(clf, PerFoldTabPFN) and before < 0:
+        CURRENT_FOLD["fold"] = 0
+    try:
+        p = clf.fit(X, y).predict_proba(X[:8])
+    finally:
+        CURRENT_FOLD["fold"] = before
     if p.shape != (8, 2) or not np.all(np.isfinite(p)):
         raise RuntimeError(f"{clf.name}: warm-up prediction has shape {p.shape}")
     REPORTED.pop(clf.name, None)                  # the real first fit reports the real width
