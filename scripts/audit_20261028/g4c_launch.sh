@@ -46,6 +46,12 @@ if [ "$STD" = context ]; then
 else
     std_expect="prior.standardize=UNSET"          # the cohort's default, pool
 fi
+# ALLOC=g5 (29 Oct): G5's two allocation changes on top of this launch
+# (virtual trials P(T=1) = 0.5, theory family without confounding), so that
+# they can be combined with OBJECTIVE=new; default g4c, G4c's own
+ALLOC="${ALLOC:-g4c}"
+case "$ALLOC" in g4c|g5) ;; *) echo "ALLOC must be g4c or g5" >&2; exit 1 ;; esac
+[ "$ALLOC" = g4c ] || tag="${tag}g5"
 export SEED="${SEED:-0}"
 export JOBNAME="${JOBNAME:-$tag-f0-s$SEED}"
 export CACHE="${CACHE:-$HOME/p2_bcb/pools/kch_s0/fold0.npz}"
@@ -59,6 +65,9 @@ fi
 export FAMILY_WEIGHTS="0.5 0.5" ARCH=linear FAMILY=mixture
 export GILES_HYPER="random_partitions=1 threshold=0.03:0.08 p_te=0.9:1 p_re=0:0.05 label_noise=0:0"
 export PRIOR_HYPER="two_arms=1 effect_scale=0.2:1 d_source=network s_source=genetics_1 s_b_source=genetics_2 effect_headroom=1 generic_weight=0.5 binary_outcome=1 generic_binary=1"
+if [ "$ALLOC" = g5 ]; then
+    GILES_HYPER="$GILES_HYPER bias=0:0 bias_weights=1:0:0"; PRIOR_HYPER="$PRIOR_HYPER gamma=0:0"
+fi
 export LR_SCHEDULE=constant CONTEXT_POOL=susceptible CONTEXT_MAX=3000 OMP_NUM_THREADS=4
 [ -s "$CACHE" ] || { echo "no cache $CACHE" >&2; exit 1; }
 [ -d data/atlases ] || { echo "no atlas at data/atlases" >&2; exit 1; }
