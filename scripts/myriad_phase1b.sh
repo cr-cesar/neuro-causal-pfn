@@ -200,7 +200,7 @@ PY
     # folds at ~0.5 h; two-channel folds measure ~0.9 h, use 3:0:0).
     # ONLY="E4[25+25] E6[fusion_mode=both] E7b" keeps those variants (label,
     # eid:run or eid); read into an array so the brackets are never globbed
-    only=(); [ -z "${ONLY:-}" ] || { read -ra only <<< "$ONLY"; only=(--only "${only[@]}"); }
+    only=(); [ -z "${ONLY:-}" ] || { read -ra only <<< "$ONLY"; only=(--only ${only[@]+"${only[@]}"}); }
     # 29 Oct knobs (all optional; unset = the behaviour of every earlier run):
     # PF_DATA_DIR  the tier folder of the maps (e.g. the BCBtoolkit export), for
     #              the fold jobs and the scoring; default the per-fold repo's "data/Full data"
@@ -212,8 +212,8 @@ PY
     passv=""
     [ -z "${PF_DATA_DIR:-}" ] || passv="$passv,DATA_DIR"
     if [ -n "${PF_PYTHONPATH:-}" ]; then export PYTHONPATH="$PF_PYTHONPATH"; passv="$passv,PYTHONPATH"; fi
-    python -m ncpfold.plan --eids $eids --seeds "$SEEDS" --budget published "${only[@]}"
-    python -m ncpfold.plan --eids $eids --seeds "$SEEDS" --budget published "${only[@]}" --emit-qsub --independent \
+    python -m ncpfold.plan --eids $eids --seeds "$SEEDS" --budget published ${only[@]+"${only[@]}"}
+    python -m ncpfold.plan --eids $eids --seeds "$SEEDS" --budget published ${only[@]+"${only[@]}"} --emit-qsub --independent \
         --h-rt "${H_RT:-1:30:0}" --groups "$PF_GROUPS" --out-root "$PUB_ROOT" ${dd[@]+"${dd[@]}"} > /tmp/perfold_submit_$$.sh
     declare -A HOLD
     while read -r line; do
