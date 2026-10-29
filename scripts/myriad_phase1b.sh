@@ -245,8 +245,15 @@ PY
     # jobs cannot be altered (Myriad's JSV rejects qalter -l), hence the repair.
     activate
     cd "$PERFOLD"
+    # a root launched with the perfold knobs (PF_DATA_DIR, PF_PYTHONPATH,
+    # PF_MODALITIES) must be repaired with the same ones, or the resubmitted
+    # folds read the default maps and import the default package
+    dd=(); [ -z "${PF_DATA_DIR:-}" ] || { dd=(--data-dir "$PF_DATA_DIR"); export DATA_DIR="$PF_DATA_DIR"; }
+    passv=""
+    [ -z "${PF_DATA_DIR:-}" ] || passv="$passv,DATA_DIR"
+    if [ -n "${PF_PYTHONPATH:-}" ]; then export PYTHONPATH="$PF_PYTHONPATH"; passv="$passv,PYTHONPATH"; fi
     plan=$(python -m ncpfold.plan --eids ${*:-E1 E3 E11b} --seeds "$SEEDS" --budget published --emit-qsub --independent \
-           --h-rt 3:0:0 --groups "$PF_GROUPS" --out-root "$PUB_ROOT")
+           --h-rt 3:0:0 --groups "$PF_GROUPS" --out-root "$PUB_ROOT" ${dd[@]+"${dd[@]}"})
     # full job names: the plain qstat table truncates them to 10 characters, so
     # a fold-10 task (e11br2s2f10) would never match and be resubmitted
     queued=$(qstat -xml 2>/dev/null | sed -n 's/.*<JB_name>\([^<]*\)<\/JB_name>.*/\1/p')
@@ -254,35 +261,46 @@ PY
       [ -d "$d" ] || continue
       rel=${d#$PUB_ROOT/}; eid=${rel%%/*}
       label=$(basename "$(dirname "$(dirname "$d")")"); seed=${d%/folds}; seed=${seed##*/seed}
-      hold=""
+      hold=""; resub=""
       for k in $(seq 1 10); do
         [ -f "$d/fold$((k - 1)).npz" ] && continue
         line=$(printf '%s\n' "$plan" | grep -F -- "EID=$eid," | grep -F -- "SEED=$seed," | grep -F -- " -t $k " | grep -F -- "# $label")
         [ -n "$line" ] || { echo "no plan line for $eid $label seed$seed task $k"; continue; }
         name=$(echo "$line" | sed -E 's/.*-N ([^ ]+).*/\1/')
-        if printf '%s\n' "$queued" | grep -qx "$name"; then continue; fi    # still queued or running
+        # still queued or running: a new scoring waits for it too (by name)
+        if printf '%s\n' "$queued" | grep -qx "$name"; then hold="${hold:+$hold,}$name"; continue; fi
+        [ -z "${PF_PYTHONPATH:-}" ] || line="${line/ -v / -v PYTHONPATH,}"
         jid=$(eval "$line" | cut -d. -f1)
         echo "$eid $label seed$seed fold$((k - 1)): resubmitted as $jid (3 h limit)"
-        hold="${hold:+$hold,}$jid"
+        hold="${hold:+$hold,}$jid"; resub=1
       done
-      if [ -n "$hold" ]; then
-        sj=$(REPS="$d" qsub -terse -N sc-${eid,,}s$seed-r -hold_jid "$hold" -l h_rt=3:0:0 \
-             -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,WITH_VOLUME=1,OUT=$PUB_ROOT qsub/perfold_score.qsub.sh)
-        echo "  scoring $sj held on $hold"
+      if [ -n "$resub" ]; then
+        for m in ${PF_MODALITIES:-receptor}; do
+          out="$PUB_ROOT"; sfx=r; [ "$m" = receptor ] || { out="${PUB_ROOT}_$m"; sfx="r-${m:0:3}"; }
+          sj=$(REPS="$d" qsub -terse -N sc-${eid,,}s$seed-$sfx -hold_jid "$hold" -l h_rt=3:0:0 \
+               -v REPS${passv},GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,WITH_VOLUME=1,MODALITY=$m,OUT=$out qsub/perfold_score.qsub.sh)
+          echo "  scoring $m $sj held on $hold"
+        done
         continue
       fi
+      # folds still queued and none resubmitted: the chained scoring stands
+      [ -z "$hold" ] || continue
       # all ten folds present but no headline and no scoring queued: the
       # chained scoring failed (or was never submitted) -> score now
       # the replica folder is named after the channel (disconnectome-singles, ...)
-      n_head=$(ls "$PUB_ROOT/replica/$eid/${label//\//_}/seed$seed"/*-singles/replica_headline.csv 2>/dev/null | wc -l || true)
       n_npz=$(ls "$d"/fold*.npz 2>/dev/null | wc -l || true)
-      if [ "$n_npz" -eq 10 ] && [ "$n_head" -eq 0 ]; then
-        run_name=$(printf '%s\n' "$plan" | grep -F -- "EID=$eid," | grep -F -- "SEED=$seed," | grep -F -- " -t 1 " | grep -F -- "# $label" | sed -E 's/.*-N ([^ ]+)f1 .*/\1/')
-        if printf '%s\n' "$queued" | grep -qx "sc-$run_name" || printf '%s\n' "$queued" | grep -qx "sc-${eid,,}s$seed-r"; then continue; fi
-        sj=$(REPS="$d" qsub -terse -N sc-${eid,,}s$seed-r -l h_rt=3:0:0 \
-             -v REPS,GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,WITH_VOLUME=1,OUT=$PUB_ROOT qsub/perfold_score.qsub.sh)
-        echo "$eid $label seed$seed: 10 folds, no headline -> scoring $sj"
-      fi
+      [ "$n_npz" -eq 10 ] || continue
+      run_name=$(printf '%s\n' "$plan" | grep -F -- "EID=$eid," | grep -F -- "SEED=$seed," | grep -F -- " -t 1 " | grep -F -- "# $label" | sed -E 's/.*-N ([^ ]+)f1 .*/\1/')
+      for m in ${PF_MODALITIES:-receptor}; do
+        out="$PUB_ROOT"; sfx=r; [ "$m" = receptor ] || { out="${PUB_ROOT}_$m"; sfx="r-${m:0:3}"; }
+        n_head=$(ls "$out/replica/$eid/${label//\//_}/seed$seed"/*-singles/replica_headline.csv 2>/dev/null | wc -l || true)
+        [ "$n_head" -eq 0 ] || continue
+        # the perfold block names its scorings sc-<run>-<rec|gen>, older ones sc-<run>
+        if printf '%s\n' "$queued" | grep -qx -e "sc-$run_name" -e "sc-$run_name-${m:0:3}" -e "sc-${eid,,}s$seed-$sfx"; then continue; fi
+        sj=$(REPS="$d" qsub -terse -N sc-${eid,,}s$seed-$sfx -l h_rt=3:0:0 \
+             -v REPS${passv},GROUP_TABLE=$PF_GROUPS,TEST_SINGLES=1,WITH_VOLUME=1,MODALITY=$m,OUT=$out qsub/perfold_score.qsub.sh)
+        echo "$eid $label seed$seed: 10 folds, no $m headline -> scoring $sj"
+      done
     done
     ;;
 
