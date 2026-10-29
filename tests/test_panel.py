@@ -42,10 +42,18 @@ def fake_packages(monkeypatch):
     ti.TabICLClassifier = _FakeICL
     tpf = types.ModuleType("tabpfn.finetuning")
 
-    class _FakeFT(_FakeModel):
+    class _FakeFT:
+        """like tabpfn's FinetunedTabPFNClassifier: no classes_ of its own,
+        predictions and classes on finetuned_inference_classifier_"""
         def __init__(self, **kw):
-            super().__init__(**{k: v for k, v in kw.items() if k in ("device", "random_state")})
             self.kw = kw
+
+        def fit(self, X, y):
+            self.finetuned_inference_classifier_ = _FakeModel().fit(X, y)
+            return self
+
+        def predict_proba(self, X):
+            return self.finetuned_inference_classifier_.predict_proba(X)
 
     tpf.FinetunedTabPFNClassifier = _FakeFT
     monkeypatch.setitem(sys.modules, "tabpfn.finetuning", tpf)
@@ -109,6 +117,9 @@ def test_fine_tuned_members(fake_packages, monkeypatch, tmp_path):
     ft = made["tabpfn_ft"].model
     assert ft.kw["epochs"] == 3 and ft.kw["time_limit"] == 30 and ft.kw["extra_classifier_kwargs"] == {"model_path": str(ck)}
     assert "per-slice fine-tune, 3 epochs, 30 s" == made["tabpfn_ft"].info["model"]
+    # the class-1 column is found on the inner classifier (reversed order there)
+    X, y = np.zeros((4, 2)), np.array([1, 1, 1, 0])
+    assert np.allclose(made["tabpfn_ft"].fit(X, y).predict_proba(X)[:, 1], 0.75)
     monkeypatch.delenv("TABPFN_MODEL_PATH")
     plain = panel.make_tabpfn(device="cpu")
     assert "model_path" not in plain.model.kw and plain.info["model"] == "v3.5"
@@ -140,3 +151,18 @@ def test_per_fold_tabpfn_follows_the_scorer_fold(fake_packages, monkeypatch, tmp
     panel.CURRENT_FOLD["fold"] = -1
     with pytest.raises(RuntimeError):
         clf.fit(X, y)
+
+
+def test_classes_fall_back_to_the_fit_labels():
+    """a wrapped model with no classes_ anywhere: the sorted labels of the fit"""
+    class _Bare:
+        def fit(self, X, y):
+            self.m = float(np.mean(y)); return self
+
+        def predict_proba(self, X):
+            return np.stack([np.full(len(X), 1 - self.m), np.full(len(X), self.m)], axis=1)
+
+    clf = panel.LoggedClassifier("bare", _Bare(), {"version": "0", "model": "m", "device": "cpu"})
+    X, y = np.zeros((4, 2)), np.array([1, 0, 0, 0])
+    p = clf.fit(X, y).predict_proba(X)
+    assert list(clf.classes_) == [0, 1] and np.allclose(p[:, 1], 0.25)

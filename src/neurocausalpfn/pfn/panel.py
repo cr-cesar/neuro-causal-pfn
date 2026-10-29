@@ -71,6 +71,7 @@ class LoggedClassifier:
         t = time.time()
         self.model.fit(np.asarray(X, dtype=np.float32), np.asarray(y))
         self.fit_seconds += time.time() - t
+        self.fit_classes = np.unique(np.asarray(y))
         self.n_fits += 1
         if self.name not in REPORTED:
             d = dict(self.info, d_in=int(np.shape(X)[1]), n_fit=int(len(X)))
@@ -81,7 +82,14 @@ class LoggedClassifier:
 
     @property
     def classes_(self):
-        return np.asarray(self.model.classes_)
+        # FinetunedTabPFNClassifier (route B) has no classes_ of its own: they
+        # sit on the inner classifier it predicts with; failing both, the
+        # sorted labels of the last fit (the sklearn column order)
+        for m in (self.model, getattr(self.model, "finetuned_inference_classifier_", None)):
+            c = getattr(m, "classes_", None)
+            if c is not None:
+                return np.asarray(c)
+        return self.fit_classes
 
     def predict_proba(self, X):
         p = np.asarray(self.model.predict_proba(np.asarray(X, dtype=np.float32)), dtype=float)
