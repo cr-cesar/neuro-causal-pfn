@@ -118,8 +118,17 @@ def test_fine_tuned_members(fake_packages, monkeypatch, tmp_path):
     assert ft.kw["epochs"] == 3 and ft.kw["time_limit"] == 30 and ft.kw["extra_classifier_kwargs"] == {"model_path": str(ck)}
     assert "per-slice fine-tune, 3 epochs, 30 s" == made["tabpfn_ft"].info["model"]
     # the class-1 column is found on the inner classifier (reversed order there)
-    X, y = np.zeros((4, 2)), np.array([1, 1, 1, 0])
-    assert np.allclose(made["tabpfn_ft"].fit(X, y).predict_proba(X)[:, 1], 0.75)
+    X, y = np.zeros((5, 2)), np.array([1, 1, 1, 0, 0])
+    assert np.allclose(made["tabpfn_ft"].fit(X, y).predict_proba(X)[:, 1], 0.6)
+    assert made["tabpfn_ft"].model is ft and made["tabpfn_ft"].n_untuned == 0
+    # a class with one case cannot be split for validation: untuned TabPFN,
+    # same starting checkpoint, counted
+    member = made["tabpfn_ft"]
+    p = member.fit(X, np.array([0, 0, 0, 0, 1])).predict_proba(X)
+    assert member.model is member.base and member.n_untuned == 1 and np.allclose(p[:, 1], 0.2)
+    assert member.base.kw["model_path"] == str(ck)
+    member.fit(X, y)
+    assert member.model is ft and member.n_untuned == 1
     monkeypatch.delenv("TABPFN_MODEL_PATH")
     plain = panel.make_tabpfn(device="cpu")
     assert "model_path" not in plain.model.kw and plain.info["model"] == "v3.5"

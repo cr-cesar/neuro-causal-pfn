@@ -130,6 +130,26 @@ class PerFoldTabPFN(LoggedClassifier):
         return super().fit(X, y)
 
 
+class PerSliceFineTune(LoggedClassifier):
+    """Route B: fine-tunes on each slice. FinetunedTabPFNClassifier holds out
+    a stratified validation split, impossible when a class has a single case
+    (a small two-model arm); such a slice is fitted with the untuned TabPFN
+    from the same starting weights instead, and counted in ``n_untuned``."""
+
+    def __init__(self, ft, base, info: dict):
+        super().__init__("tabpfn_ft", ft, info)
+        self.ft, self.base, self.n_untuned = ft, base, 0
+
+    def fit(self, X, y):
+        _, counts = np.unique(np.asarray(y), return_counts=True)
+        self.model = self.ft if counts.min() >= 2 else self.base
+        if self.model is self.base:
+            self.n_untuned += 1
+            print(f"tabpfn_ft: slice n={len(y)} has a class with {counts.min()} case(s); "
+                  f"untuned TabPFN used ({self.n_untuned} so far)", flush=True)
+        return super().fit(X, y)
+
+
 def make_tabpfn(device: Optional[str] = None, n_estimators="auto", seed: int = 0) -> LoggedClassifier:
     # keep the built model in memory across the replica's refits (off by default)
     os.environ.setdefault("TABPFN_MODEL_CACHE_SIZE", "2")
@@ -164,7 +184,9 @@ def make_tabpfn_ft(device: Optional[str] = None, n_estimators=None, seed: int = 
     2506.08982). Every ``fit`` starts from the base weights again, so slices
     never share information. Knobs: TABPFN_FT_EPOCHS (default 5),
     TABPFN_FT_TIME_LIMIT seconds (default 60), TABPFN_FT_LR (default 1e-5);
-    TABPFN_MODEL_PATH sets the starting checkpoint."""
+    TABPFN_MODEL_PATH sets the starting checkpoint. A slice too small for the
+    stratified validation split gets the untuned model (PerSliceFineTune)."""
+    from tabpfn import TabPFNClassifier
     from tabpfn.finetuning import FinetunedTabPFNClassifier
 
     dev = _device(device)
@@ -179,9 +201,12 @@ def make_tabpfn_ft(device: Optional[str] = None, n_estimators=None, seed: int = 
                                     n_estimators_finetune=2, n_estimators_validation=2,
                                     n_estimators_final_inference=4, save_checkpoint_interval=None,
                                     extra_classifier_kwargs=extra or None)
-    return LoggedClassifier("tabpfn_ft", clf, {"version": _version("tabpfn"),
-                                               "model": f"per-slice fine-tune, {epochs} epochs, {time_limit} s",
-                                               "device": dev})
+    # the fallback predicts like the fine-tuned one's final model, untuned
+    base = TabPFNClassifier(device=dev, n_estimators=4, random_state=seed, ignore_pretraining_limits=True,
+                            **extra)
+    return PerSliceFineTune(clf, base, {"version": _version("tabpfn"),
+                                        "model": f"per-slice fine-tune, {epochs} epochs, {time_limit} s",
+                                        "device": dev})
 
 
 def make_tabicl(device: Optional[str] = None, n_estimators: int = 8, seed: int = 0) -> LoggedClassifier:
