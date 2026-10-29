@@ -20,6 +20,11 @@ export PYTHONPATH="$PWD/src"
 # anything left over from an earlier launch must not reach this one
 unset CACHE_ANCHOR_WEIGHT ITERS VARIANT BATCH CONTEXT_MIN AUGMENT CONTEXT_REPLACE STANDARDIZE D_MODEL N_LAYERS \
     BOTH_ARMS CATE_WEIGHT HEAD_LO HEAD_HI N_QUERY CURRICULUM
+# RUN_ITERS (29 Oct): training steps, 4 simulated trials each (20000 = 80k
+# trials, G4c's); any other value is tagged in the run name (..._i25000)
+RUN_ITERS="${RUN_ITERS:-20000}"
+[[ "$RUN_ITERS" =~ ^[1-9][0-9]*$ ]] || { echo "RUN_ITERS must be a positive integer" >&2; exit 1; }
+[ "$RUN_ITERS" = 20000 ] || export ITERS="$RUN_ITERS"
 command -v module >/dev/null 2>&1 && module load python3/3.11
 source "${VENV:-$HOME/venvs/neuro}/bin/activate"
 # OBJECTIVE=new (ablation of 29 Oct): G4c's prior with TM's training target
@@ -52,6 +57,7 @@ fi
 ALLOC="${ALLOC:-g4c}"
 case "$ALLOC" in g4c|g5) ;; *) echo "ALLOC must be g4c or g5" >&2; exit 1 ;; esac
 [ "$ALLOC" = g4c ] || tag="${tag}g5"
+[ "$RUN_ITERS" = 20000 ] || tag="${tag}_i$RUN_ITERS"
 export SEED="${SEED:-0}"
 export JOBNAME="${JOBNAME:-$tag-f0-s$SEED}"
 export CACHE="${CACHE:-$HOME/p2_bcb/pools/kch_s0/fold0.npz}"
@@ -80,5 +86,5 @@ python scripts/prior_gate.py --batches 5 --contexts 512 --require share_zero=0:1
     pos_share=0:1 ctx_binary=0:1 ctx_treated=0:1 \
     --expect prior.family=mixture prior.family_weights=0.5:0.5 prior.hyper.generic_weight=0.5 \
              prior.hyper_giles.random_partitions=1 pfn.context_max=3000 pfn.context_min=256 \
-             pfn.iters=20000 pfn.arch=linear pfn.n_query=64 pfn.curriculum=UNSET $objective_expect $std_expect
+             pfn.iters=$RUN_ITERS pfn.arch=linear pfn.n_query=64 pfn.curriculum=UNSET $objective_expect $std_expect
 bash scripts/train_pfn_myriad.qsub.sh
