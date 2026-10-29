@@ -1,0 +1,7 @@
+model,code_commit,giles_bias,giles_bias_types,theory_gamma,val_pehe_receptor,val_balacc_receptor,val_pehe_genetics,val_balacc_genetics,bench128_slope,bench128_calib,bench128_pehe,bench128_corr,bench256_slope,bench256_calib,bench256_pehe,bench256_corr,note
+G4c,8b2b104,0-1,axis/severity/agnostic 0.6/0.3/0.1,0-1,0.368,0.899,0.345,0.902,0.674,0.911,0.439,0.784,0.709,0.904,0.415,0.801,control: C1 on the new code
+G4c_s1,2070a98,0-1,axis/severity/agnostic 0.6/0.3/0.1,0-1,0.365,0.947,0.339,0.917,0.679,0.926,0.429,0.793,0.694,0.933,0.409,0.805,G4c with seed 1: noise between two trainings on one code
+G4cobj,2070a98,0-1,axis/severity/agnostic 0.6/0.3/0.1,0-1,0.337,0.901,0.310,0.972,0.708,0.861,0.446,0.781,0.711,0.914,0.409,0.806,"G4c prior with TM objective: both arms + CATE loss, head -0.05..1.05; 64 queries, context 256-3000"
+G4cobjcw1,1cac8b4,0-1,axis/severity/agnostic 0.6/0.3/0.1,0-1,0.352,0.845,0.326,0.936,0.712,0.868,0.441,0.786,0.728,0.895,0.410,0.807,G4cobj with effect-term weight 1 (G4cobj: 0.5)
+G4cobjcw2,1cac8b4,0-1,axis/severity/agnostic 0.6/0.3/0.1,0-1,0.332,0.815,0.299,0.972,0.698,0.888,0.437,0.787,0.719,0.912,0.405,0.810,G4cobj with effect-term weight 2 (G4cobj: 0.5)
+LR_two,,,,,0.298,0.884,0.278,0.953,0.690,0.931,0.420,0.802,0.708,0.952,0.392,0.821,same folds and contexts
