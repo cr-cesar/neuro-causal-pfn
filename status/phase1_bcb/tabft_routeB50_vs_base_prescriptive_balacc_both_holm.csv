@@ -1,0 +1,3 @@
+split,label_a,label_b,n_deficits,n_excluded_nan,mean_a,mean_b,diff_mean,diff_ci_low,diff_ci_high,diff_sd,n_a_lower,n_b_lower,paired_t,paired_t_p,wilcoxon_w,wilcoxon_p,source,p_holm_t,p_holm_wilcoxon,holm_family_size
+both,TabPFN-FT-B50 one,TabPFN base one,15,1,0.8830199192245318,0.8816899434444999,0.0013299757800319,-0.0045675763238023,0.0072275278838661,0.0106496003589637,9,4,0.4836776849177474,0.6360923439908717,40.0,0.700703412251682,tabft_B50x10_both_one_prescriptive_balacc.csv,1.0,1.0,2
+both,TabPFN-FT-B50 two,TabPFN base two,15,1,0.8710528179521483,0.8711078872034275,-5.506925127906441e-05,-0.0168399236130081,0.0167297851104499,0.0303095229832065,9,5,-0.007036807976493,0.994484775217437,49.0,0.8260910288588201,tabft_B50x10_both_two_prescriptive_balacc.csv,1.0,1.0,2
