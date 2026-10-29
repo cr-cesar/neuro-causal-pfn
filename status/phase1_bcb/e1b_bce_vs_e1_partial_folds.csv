@@ -1,4 +1,4 @@
-# E1b (disconnectome VAE trained with BCE) against E1 (MSE) on the BCB maps, 32-epoch budget, group folds (giles), single-acquisition test patients, ideal scenario; only the folds E1b had finished on 29 Oct 08:00 (ncpfold.score --only-folds, perfold 54cb5ca, main 047a63a). Headline cell: logistic regression two-model. Early signal, not the 10-fold result.
+# E1b (disconnectome VAE trained with BCE) against E1 (MSE) on the BCB maps, 32-epoch budget, group folds (giles), single-acquisition test patients, ideal scenario; only the folds E1b had finished on 29 Oct 08:00 (ncpfold.score --only-folds, perfold 54cb5ca, main 047a63a). Rows: logistic regression two-model (headline cell of LR/ET), the fixed CausalPFN (in-context) and TabPFN v3.5 one-model (panel venv, CPU). Early signal, not the 10-fold result.
 model,seed,fold,split,n_deficits,classifier,learner,balacc_mean,pehe_paper_mean
 E1b,0,4,receptor,16,logistic_regression,two,0.8299,0.3134
 E1,0,4,receptor,16,logistic_regression,two,0.8514,0.3027
@@ -8,3 +8,19 @@ E1b,0,4,genetics,16,logistic_regression,two,0.9144,0.2725
 E1,0,4,genetics,16,logistic_regression,two,0.9126,0.2783
 E1b,1,0,genetics,16,logistic_regression,two,0.9199,0.3079
 E1,1,0,genetics,16,logistic_regression,two,0.9393,0.2943
+E1b,0,4,receptor,16,causalpfn,in_context,0.8364,0.3018
+E1,0,4,receptor,16,causalpfn,in_context,0.8481,0.3034
+E1b,1,0,receptor,16,causalpfn,in_context,0.8807,0.3140
+E1,1,0,receptor,16,causalpfn,in_context,0.7642,0.3054
+E1b,0,4,genetics,16,causalpfn,in_context,0.9324,0.2709
+E1,0,4,genetics,16,causalpfn,in_context,0.9331,0.2782
+E1b,1,0,genetics,16,causalpfn,in_context,0.9431,0.2930
+E1,1,0,genetics,16,causalpfn,in_context,0.9452,0.2839
+E1b,0,4,receptor,16,tabpfn,one,0.8690,0.2892
+E1,0,4,receptor,16,tabpfn,one,0.8709,0.2813
+E1b,1,0,receptor,16,tabpfn,one,0.8851,0.2962
+E1,1,0,receptor,16,tabpfn,one,0.8915,0.2857
+E1b,0,4,genetics,16,tabpfn,one,0.9282,0.2511
+E1,0,4,genetics,16,tabpfn,one,0.9250,0.2503
+E1b,1,0,genetics,16,tabpfn,one,0.9539,0.2721
+E1,1,0,genetics,16,tabpfn,one,0.9573,0.2665
