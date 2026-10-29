@@ -444,9 +444,9 @@ def _classifier(name: str):
     from sklearn.linear_model import LogisticRegression
     if name == "logistic_regression":
         # the released code uses LogisticRegression() as is (sklearn's
-        # max_iter=100); this replica raised it to 1000. GILES_LR_MAX_ITER=100
-        # scores with the paper's setting (29 Oct check)
-        return LogisticRegression(max_iter=int(os.environ.get("GILES_LR_MAX_ITER", "1000") or 1000))
+        # max_iter=100), and so does this replica from 29 Oct; every score
+        # before that used 1000, which GILES_LR_MAX_ITER=1000 reproduces
+        return LogisticRegression(max_iter=int(os.environ.get("GILES_LR_MAX_ITER", "100") or 100))
     if name == "extra_trees":
         return ExtraTreesClassifier()
     if name in CLASSIFIERS:

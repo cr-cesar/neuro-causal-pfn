@@ -24,9 +24,9 @@ def test_lr_max_iter_follows_the_environment(monkeypatch):
     from neurocausalpfn.prior.giles_replica import _classifier
 
     monkeypatch.delenv("GILES_LR_MAX_ITER", raising=False)
+    assert _classifier("logistic_regression").max_iter == 100     # the released code's sklearn default
+    monkeypatch.setenv("GILES_LR_MAX_ITER", "1000")               # every score before 29 Oct
     assert _classifier("logistic_regression").max_iter == 1000
-    monkeypatch.setenv("GILES_LR_MAX_ITER", "100")
-    assert _classifier("logistic_regression").max_iter == 100
 
 
 def test_disconnectome_vae_trains_with_bce_when_asked():
