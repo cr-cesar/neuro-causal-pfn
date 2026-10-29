@@ -1,0 +1,17 @@
+set,model,max_iter,split,n_seeds,pehe_paper,pehe_sd_seeds,balacc,n_folds,convergence_warnings_total
+benchmark_2828,LR_one,100,genetics,3,0.6161,0.0003,0.5,10,0
+benchmark_2828,LR_one,100,receptor,3,0.4603,0.0009,0.5,10,0
+benchmark_2828,LR_one,1000,genetics,3,0.6161,0.0003,0.5,10,0
+benchmark_2828,LR_one,1000,receptor,3,0.4603,0.0009,0.5,10,0
+benchmark_2828,LR_two,100,genetics,3,0.2797,0.0014,0.9353,10,0
+benchmark_2828,LR_two,100,receptor,3,0.3109,0.0018,0.8758,10,0
+benchmark_2828,LR_two,1000,genetics,3,0.2797,0.0014,0.9353,10,0
+benchmark_2828,LR_two,1000,receptor,3,0.3109,0.0018,0.8758,10,0
+validation_10f,LR_one,100,genetics,1,0.6273,,0.5,10,0
+validation_10f,LR_one,100,receptor,1,0.4641,,0.5,10,0
+validation_10f,LR_one,1000,genetics,1,0.6273,,0.5,10,0
+validation_10f,LR_one,1000,receptor,1,0.4641,,0.5,10,0
+validation_10f,LR_two,100,genetics,1,0.2731,,0.9455,10,0
+validation_10f,LR_two,100,receptor,1,0.3103,,0.9017,10,0
+validation_10f,LR_two,1000,genetics,1,0.2731,,0.9455,10,0
+validation_10f,LR_two,1000,receptor,1,0.3103,,0.9017,10,0
