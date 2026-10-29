@@ -1,0 +1,14 @@
+# TabPFN base vs route A (fine-tuned on the per-fold UCLH+KCH Neuro-Prior, 2000 steps) vs route B (per-slice fine-tune, 5 epochs / 60 s); fold 0 only, seed0 E1 latents, 32 rows per split; means as reported by the run (4 d.p.); route B receptor: 1 slice (n=314, a class with 1 case) fitted untuned; code c4e8e35 (A), 841c1f1 (B genetics), 2ef2020 (B receptor), scorer f38dac8
+route,split,learner,pehe_paper_mean,balacc_mean,score_seconds,finetune_seconds
+base,receptor,one,0.2828,0.9867,71,
+base,receptor,two,0.2873,0.9683,71,
+base,genetics,one,0.2565,0.9654,73,
+base,genetics,two,0.2695,0.9661,73,
+A,receptor,one,0.2895,0.9717,72,295
+A,receptor,two,0.2929,0.9383,72,295
+A,genetics,one,0.2603,0.9839,73,295
+A,genetics,two,0.2708,0.9577,73,295
+B,receptor,one,0.2800,0.9867,101,
+B,receptor,two,0.2866,0.9433,101,
+B,genetics,one,0.2578,0.9661,169,
+B,genetics,two,0.2686,0.9544,169,
