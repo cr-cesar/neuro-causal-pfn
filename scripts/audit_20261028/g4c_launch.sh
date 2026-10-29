@@ -9,7 +9,7 @@
 # and OUT can be overridden, the defaults are siena's.
 #
 #   SEED=1 bash scripts/audit_20261028/g4c_launch.sh
-#   OBJECTIVE=new bash scripts/audit_20261028/g4c_launch.sh
+#   OBJECTIVE=new [CATE_W=1] bash scripts/audit_20261028/g4c_launch.sh
 #   STD=context [OBJECTIVE=new] bash scripts/audit_20261028/g4c_launch.sh
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
@@ -28,6 +28,14 @@ source "${VENV:-$HOME/venvs/neuro}/bin/activate"
 OBJECTIVE="${OBJECTIVE:-old}"
 case "$OBJECTIVE" in new|old) ;; *) echo "OBJECTIVE must be new or old" >&2; exit 1 ;; esac
 tag=$([ "$OBJECTIVE" = new ] && echo G4cobj || echo G4c)
+# CATE_W (29 Oct, with OBJECTIVE=new): weight of the effect term; 0.5 is
+# G4cobj's, any other value is tagged in the run name (G4cobjcw1, ...)
+CATE_W="${CATE_W:-0.5}"
+[[ "$CATE_W" =~ ^[0-9]+(\.[0-9]+)?$ ]] || { echo "CATE_W must be a number" >&2; exit 1; }
+if [ "$CATE_W" != 0.5 ]; then
+    [ "$OBJECTIVE" = new ] || { echo "CATE_W needs OBJECTIVE=new" >&2; exit 1; }
+    tag="${tag}cw${CATE_W}"
+fi
 # STD=context (29 Oct): each training context standardised with its own
 # statistics, as scoring standardises with the train slice's (default pool:
 # the pool's statistics, every run so far)
@@ -43,8 +51,8 @@ export JOBNAME="${JOBNAME:-$tag-f0-s$SEED}"
 export CACHE="${CACHE:-$HOME/p2_bcb/pools/kch_s0/fold0.npz}"
 export OUT="${OUT:-$HOME/p2_bcb/pfn_screen/${tag}_s$SEED/fold0}"
 if [ "$OBJECTIVE" = new ]; then
-    export BOTH_ARMS=1 CATE_WEIGHT=0.5 HEAD_LO=-0.05 HEAD_HI=1.05
-    objective_expect="pfn.both_arms=True pfn.cate_weight=0.5 pfn.head_lo=-0.05 pfn.head_hi=1.05"
+    export BOTH_ARMS=1 CATE_WEIGHT="$CATE_W" HEAD_LO=-0.05 HEAD_HI=1.05
+    objective_expect="pfn.both_arms=True pfn.cate_weight=$CATE_W pfn.head_lo=-0.05 pfn.head_hi=1.05"
 else
     objective_expect="pfn.both_arms=UNSET pfn.head_lo=UNSET"
 fi
