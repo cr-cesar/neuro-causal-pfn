@@ -1,0 +1,23 @@
+kind,model,split,n_folds,n_rows,pehe_mean,pehe_sd_folds,balacc_mean,n_rows_balacc_defined,n_deficits_balacc_defined_any_fold,n_deficits,diff_ci95_lo,diff_ci95_hi,gain_ge_threshold,rule_both_splits
+model,C1,receptor,10,160.0,0.3606,0.0295,0.8924,102.0,14.0,16.0,,,,
+model,C1,genetics,10,160.0,0.3317,0.0217,0.9343,138.0,16.0,16.0,,,,
+model,G4c,receptor,10,160.0,0.3663,0.03,0.9003,102.0,14.0,16.0,,,,
+model,G4c,genetics,10,160.0,0.3497,0.0217,0.9304,138.0,16.0,16.0,,,,
+model,G5,receptor,10,160.0,0.3592,0.0339,0.855,102.0,14.0,16.0,,,,
+model,G5,genetics,10,160.0,0.3319,0.0228,0.9275,138.0,16.0,16.0,,,,
+model,G4cobj,receptor,10,160.0,0.3445,0.0291,0.903,102.0,14.0,16.0,,,,
+model,G4cobj,genetics,10,160.0,0.3208,0.0263,0.9362,138.0,16.0,16.0,,,,
+model,TabPFN_one,receptor,10,160.0,0.283,0.0166,0.9203,102.0,14.0,16.0,,,,
+model,TabPFN_one,genetics,10,160.0,0.2533,0.0313,0.9532,138.0,16.0,16.0,,,,
+model,LR_two_it100,receptor,10,160.0,0.3103,0.0223,0.9017,102.0,14.0,16.0,,,,
+model,LR_two_it100,genetics,10,160.0,0.2731,0.0403,0.9455,138.0,16.0,16.0,,,,
+model,LR_two_it1000,receptor,10,160.0,0.3103,0.0223,0.9017,102.0,14.0,16.0,,,,
+model,LR_two_it1000,genetics,10,160.0,0.2731,0.0403,0.9455,138.0,16.0,16.0,,,,
+paired_diff,G4cobj - G4c,receptor,10,,-0.0218,0.0107,,,,,-0.0295,-0.0141,True,pass
+paired_diff,G4cobj - G4c,genetics,10,,-0.0289,0.0128,,,,,-0.038,-0.0197,True,pass
+paired_diff,G4cobj - C1,receptor,10,,-0.016,0.0138,,,,,-0.0259,-0.0062,False,fail
+paired_diff,G4cobj - C1,genetics,10,,-0.0109,0.0176,,,,,-0.0235,0.0017,False,fail
+paired_diff,G4cobj - LR_two_it100,receptor,10,,0.0343,0.0172,,,,,0.022,0.0466,False,fail
+paired_diff,G4cobj - LR_two_it100,genetics,10,,0.0477,0.0228,,,,,0.0314,0.064,False,fail
+paired_diff,G4cobj - LR_two_it1000,receptor,10,,0.0343,0.0172,,,,,0.022,0.0466,False,fail
+paired_diff,G4cobj - LR_two_it1000,genetics,10,,0.0477,0.0228,,,,,0.0314,0.064,False,fail
