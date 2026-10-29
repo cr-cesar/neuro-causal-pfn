@@ -175,3 +175,18 @@ def test_classes_fall_back_to_the_fit_labels():
     X, y = np.zeros((4, 2)), np.array([1, 0, 0, 0])
     p = clf.fit(X, y).predict_proba(X)
     assert list(clf.classes_) == [0, 1] and np.allclose(p[:, 1], 0.25)
+
+
+def test_route_b_convergence_knobs(fake_packages, monkeypatch):
+    """a converging fine-tune: many epochs, no time limit, real patience,
+    log-loss as the validation metric (defined with one class)"""
+    for k, v in {"TABPFN_FT_EPOCHS": "50", "TABPFN_FT_TIME_LIMIT": "0", "TABPFN_FT_LR": "1e-4",
+                 "TABPFN_FT_PATIENCE": "5", "TABPFN_FT_METRIC": "log_loss", "TABPFN_FT_LOG": "1"}.items():
+        monkeypatch.setenv(k, v)
+    m = panel.make_tabpfn_ft(device="cpu")
+    kw = m.ft.kw
+    assert kw["epochs"] == 50 and kw["time_limit"] is None and kw["learning_rate"] == 1e-4
+    assert kw["early_stopping_patience"] == 5 and kw["eval_metric"] == "log_loss"
+    assert m.info["model"] == "per-slice fine-tune, 50 epochs, 0 s, lr 0.0001, patience 5, log_loss"
+    import logging
+    assert logging.getLogger("tabpfn").level == logging.INFO

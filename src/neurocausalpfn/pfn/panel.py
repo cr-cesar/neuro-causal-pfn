@@ -183,7 +183,10 @@ def make_tabpfn_ft(device: Optional[str] = None, n_estimators=None, seed: int = 
     patients before predicting (Prior Labs' per-dataset fine-tuning; arXiv
     2506.08982). Every ``fit`` starts from the base weights again, so slices
     never share information. Knobs: TABPFN_FT_EPOCHS (default 5),
-    TABPFN_FT_TIME_LIMIT seconds (default 60), TABPFN_FT_LR (default 1e-5);
+    TABPFN_FT_TIME_LIMIT seconds (default 60; 0 = none), TABPFN_FT_LR
+    (default 1e-5), TABPFN_FT_PATIENCE epochs without improvement before
+    stopping (default 8), TABPFN_FT_METRIC (roc_auc or log_loss, default
+    roc_auc), TABPFN_FT_LOG=1 prints tabpfn's per-epoch validation lines;
     TABPFN_MODEL_PATH sets the starting checkpoint. A slice too small for the
     stratified validation split gets the untuned model (PerSliceFineTune)."""
     from tabpfn import TabPFNClassifier
@@ -193,11 +196,19 @@ def make_tabpfn_ft(device: Optional[str] = None, n_estimators=None, seed: int = 
     epochs = int(os.environ.get("TABPFN_FT_EPOCHS", "5"))
     time_limit = int(os.environ.get("TABPFN_FT_TIME_LIMIT", "60"))
     lr = float(os.environ.get("TABPFN_FT_LR", "1e-5"))
+    patience = int(os.environ.get("TABPFN_FT_PATIENCE", "8"))
+    metric = os.environ.get("TABPFN_FT_METRIC", "roc_auc")
+    if os.environ.get("TABPFN_FT_LOG"):
+        import logging
+
+        logging.basicConfig(format="%(message)s")
+        logging.getLogger("tabpfn").setLevel(logging.INFO)
     extra = {}
     if os.environ.get("TABPFN_MODEL_PATH"):
         extra["model_path"] = os.environ["TABPFN_MODEL_PATH"]
-    clf = FinetunedTabPFNClassifier(device=dev, epochs=epochs, time_limit=time_limit, learning_rate=lr,
-                                    validation_split_ratio=0.1, early_stopping=True, random_state=seed,
+    clf = FinetunedTabPFNClassifier(device=dev, epochs=epochs, time_limit=time_limit or None, learning_rate=lr,
+                                    validation_split_ratio=0.1, early_stopping=True,
+                                    early_stopping_patience=patience, eval_metric=metric, random_state=seed,
                                     n_estimators_finetune=2, n_estimators_validation=2,
                                     n_estimators_final_inference=4, save_checkpoint_interval=None,
                                     extra_classifier_kwargs=extra or None)
@@ -205,7 +216,9 @@ def make_tabpfn_ft(device: Optional[str] = None, n_estimators=None, seed: int = 
     base = TabPFNClassifier(device=dev, n_estimators=4, random_state=seed, ignore_pretraining_limits=True,
                             **extra)
     return PerSliceFineTune(clf, base, {"version": _version("tabpfn"),
-                                        "model": f"per-slice fine-tune, {epochs} epochs, {time_limit} s",
+                                        "model": f"per-slice fine-tune, {epochs} epochs, {time_limit} s"
+                                                 + ("" if (patience, metric, lr) == (8, "roc_auc", 1e-5)
+                                                    else f", lr {lr:g}, patience {patience}, {metric}"),
                                         "device": dev})
 
 
