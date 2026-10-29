@@ -601,7 +601,8 @@ def evaluate_representation(Z: np.ndarray, labels_df, pairs: Dict[int, RoiPair],
                             classifiers: Sequence[str] = ("logistic_regression", "extra_trees"),
                             learners: Sequence[str] = ("one", "two"),
                             collect_sims: Optional[list] = None,
-                            folds: Optional[Sequence[Tuple[np.ndarray, np.ndarray]]] = None):
+                            folds: Optional[Sequence[Tuple[np.ndarray, np.ndarray]]] = None,
+                            fold_ids: Optional[Sequence[int]] = None):
     """Score a representation on the Giles scale.
 
     Z is [n, d], row-aligned with labels_df (one row per lesion file). For
@@ -623,7 +624,10 @@ def evaluate_representation(Z: np.ndarray, labels_df, pairs: Dict[int, RoiPair],
     raw simulations with outcomes can be exported.
 
     ``folds`` overrides the default image-level KFold with an explicit list of
-    (train_idx, test_idx) pairs, e.g. from :func:`group_folds`.
+    (train_idx, test_idx) pairs, e.g. from :func:`group_folds`. ``fold_ids``
+    names those folds when they are a subset of the full split (the scorer's
+    --only-folds): fold ``fold_ids[i]`` seeds its virtual trial and fills the
+    fold column as in the full run, instead of its position ``i``.
     """
     import pandas as pd
 
@@ -632,6 +636,9 @@ def evaluate_representation(Z: np.ndarray, labels_df, pairs: Dict[int, RoiPair],
     n = len(labels_df)
     if folds is None:
         folds = image_folds(n, n_folds)
+    fold_ids = list(range(len(folds))) if fold_ids is None else [int(k) for k in fold_ids]
+    if len(fold_ids) != len(folds):
+        raise ValueError(f"{len(fold_ids)} fold ids for {len(folds)} folds")
     # equity on the paper scale: cohort-level volume quartile of every image
     strata_all = (volume_strata(labels_df["vol"], labels_df["vol"])
                   if "vol" in labels_df.columns else None)
@@ -640,9 +647,9 @@ def evaluate_representation(Z: np.ndarray, labels_df, pairs: Dict[int, RoiPair],
     # job killed at its time limit shows how far it got
     progress = any(c in ESTIMATORS or c in CLASSIFIERS for c in classifiers)
     t_start = time.time()
-    for k, (tr_idx, te_idx) in enumerate(folds):
-        if progress and k:
-            print(f"  fold {k}/{len(folds)} done, {time.time() - t_start:.0f} s elapsed", flush=True)
+    for i, (k, (tr_idx, te_idx)) in enumerate(zip(fold_ids, folds)):
+        if progress and i:
+            print(f"  fold {i}/{len(folds)} done, {time.time() - t_start:.0f} s elapsed", flush=True)
         df_tr, df_te = labels_df.iloc[tr_idx], labels_df.iloc[te_idx]
         if callable(Z):
             Z_tr_all, Z_te_all = Z(tr_idx, te_idx)

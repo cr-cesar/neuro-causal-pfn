@@ -221,3 +221,26 @@ def test_isotonic_pehe_recovers_a_monotone_distortion_but_not_a_shuffle():
     d2 = gr.effect_decomposition((1 + bad) / 2, (1 - bad) / 2, true)
     assert d2["pehe_paper_isotonic"] > 0.6
     assert np.isnan(gr.isotonic_pehe(np.zeros(6), np.ones(6)))
+
+
+def test_a_fold_subset_keeps_each_fold_s_own_trial_seed():
+    """Scoring folds 1 and 3 alone (the scorer's --only-folds) must give the
+    rows of folds 1 and 3 of the full run, seeded by their real index."""
+    df = _labels(120)
+    pair = _fake_pair()
+    Z = np.random.default_rng(0).normal(size=(120, 4))
+    folds = gr.image_folds(len(df), 4)
+    kw = dict(deficits=[1], classifiers=["logistic_regression"])
+    full = gr.evaluate_representation(Z, df, {1: pair}, gr.HEADLINE_SCENARIOS["ideal"], folds=folds, **kw)
+    sub = gr.evaluate_representation(Z, df, {1: pair}, gr.HEADLINE_SCENARIOS["ideal"],
+                                     folds=[folds[1], folds[3]], fold_ids=[1, 3], **kw)
+    ref = full[full["fold"].isin([1, 3])].reset_index(drop=True)
+    assert sorted(sub["fold"].unique()) == [1, 3]
+    pd.testing.assert_frame_equal(sub.reset_index(drop=True), ref)
+    # without the ids the subset is simulated with the seeds of folds 0 and 1
+    shifted = gr.evaluate_representation(Z, df, {1: pair}, gr.HEADLINE_SCENARIOS["ideal"],
+                                         folds=[folds[1], folds[3]], **kw)
+    assert not np.allclose(shifted["pehe"].to_numpy(), ref["pehe"].to_numpy())
+    with pytest.raises(ValueError):
+        gr.evaluate_representation(Z, df, {1: pair}, gr.HEADLINE_SCENARIOS["ideal"],
+                                   folds=[folds[1]], fold_ids=[1, 3], **kw)
