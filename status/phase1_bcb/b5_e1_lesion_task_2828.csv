@@ -1,0 +1,4 @@
+representation,task,split,best_cell,n_seeds,pehe_paper_mean,pehe_paper_sd_seeds,balacc_headline_mean,balacc_headline_sd_seeds,balacc_row_mean,deficits_evaluable,pehe_seed0,pehe_seed1,pehe_seed2,balacc_seed0,balacc_seed1,balacc_seed2
+E1 per-fold lesion encoder (folds_lesion),lesion,receptor,LR two-model,3,0.4592,0.0051,0.7804,0.0170,0.827,16,0.4616,0.4627,0.4533,0.7689,0.7999,0.7724
+E1 per-fold lesion encoder (folds_lesion),lesion,genetics,LR two-model,3,0.4044,0.0039,0.8701,0.0133,0.889,16,0.4025,0.4088,0.4018,0.8634,0.8615,0.8855
+# Table 7b panel B, column UCLH 2,828: Giles et al., 2025 split (single-acquisition patients), BCB lesion masks, LR/ET only; siena, per-fold 1fad63f (ncpfold.score --task lesion), main 1cac8b4. balacc_headline = replica_headline.csv (used in Table 7b); balacc_row_mean = mean of deficit x fold rows. Same column: NMF-50 0.482 / 0.422, volume 0.630 / 0.730 (e0_baselines.csv).
