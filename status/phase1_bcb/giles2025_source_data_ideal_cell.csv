@@ -1,0 +1,9 @@
+block,balanced_accuracy_ideal,pehe_ideal,averaged_over
+transcriptome (our gene split),0.8683,0.3976,averaged over lesion and disconnectome inputs and both bias types
+receptome (our receptor split),0.7554,0.4433,averaged over lesion and disconnectome inputs and both bias types
+lesion mask inputs,0.7705,0.4651,averaged over both splits and both bias types
+disconnectome map inputs,0.8675,0.3043,averaged over both splits and both bias types
+allocation bias by location,0.8188,0.419,averaged over splits and inputs
+unobservable allocation bias,0.8133,0.4184,averaged over splits and inputs
+# Source: Giles et al., 2025, Source Data (MOESM4), sheets 'Figure 6' (balanced accuracy) and 'Supp. Fig. 83' (PEHE); ideal cell = top-left of each 11 x 16 grid (no allocation bias, lowest response noise).
+# Values are for the optimal expressive representation per cell (figure captions), not the VAE-50 + ExtraTrees headline (0.875 / 0.349). Check: disconnectome block 0.867 / 0.304 matches Supplementary Table 8c / 8g (0.873, 0.305).
