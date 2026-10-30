@@ -20,4 +20,8 @@ LAUNCHER="${LAUNCHER:?set LAUNCHER to tm_launch.sh, g4c_launch.sh or g5_launch.s
 case "$LAUNCHER" in tm_launch.sh|g4c_launch.sh|g5_launch.sh) ;; *) echo "unknown launcher $LAUNCHER" >&2; exit 100 ;; esac
 export SEED="${SEED:-0}"
 export CACHE="${CACHE:?set CACHE}" OUT="${OUT:?set OUT}"
+# the module function is not inherited by the launcher's non-login bash, so the
+# venv's python would start without libpython3.11; load it here, the launcher
+# inherits PATH and LD_LIBRARY_PATH
+module load python3/3.11
 bash "scripts/audit_20261028/$LAUNCHER"
