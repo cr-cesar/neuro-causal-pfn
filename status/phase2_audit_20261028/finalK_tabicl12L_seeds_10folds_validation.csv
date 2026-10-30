@@ -1,7 +1,21 @@
 kind,model,split,n_folds,pehe_mean,pehe_sd_folds,pehe_sd_seeds,balacc_mean,n_rows_balacc_defined,diff_ci95_lo,diff_ci95_hi,gain_ge_threshold,rule_both_splits
 model,finalK_tabicl12L s0,receptor,10,0.4355,0.029,,0.6724,102.0,,,,
 model,finalK_tabicl12L s1,receptor,10,0.359,0.0243,,0.8802,102.0,,,,
-model,finalK_tabicl12L mean2,receptor,10,0.3972,0.0255,0.0541,0.7763,,,,,
+model,finalK_tabicl12L s2,receptor,10,0.3506,0.0258,,0.897,102.0,,,,
+model,finalK_tabicl12L mean3,receptor,10,0.3817,0.0249,0.0468,0.8166,,,,,
+model,G4c,receptor,10,0.3663,0.03,,0.9003,102.0,,,,
+model,ens_A_G4cobj3,receptor,10,0.3419,0.0259,,0.8932,102.0,,,,
+model,LR_two_it100,receptor,10,0.3103,0.0223,,0.9017,102.0,,,,
 model,finalK_tabicl12L s0,genetics,10,0.4855,0.0343,,0.7308,138.0,,,,
 model,finalK_tabicl12L s1,genetics,10,0.3399,0.0267,,0.9151,138.0,,,,
-model,finalK_tabicl12L mean2,genetics,10,0.4127,0.026,0.1029,0.823,,,,,
+model,finalK_tabicl12L s2,genetics,10,0.3384,0.0242,,0.9372,138.0,,,,
+model,finalK_tabicl12L mean3,genetics,10,0.3879,0.0243,0.0845,0.8611,,,,,
+model,G4c,genetics,10,0.3497,0.0217,,0.9304,138.0,,,,
+model,ens_A_G4cobj3,genetics,10,0.317,0.0217,,0.9381,138.0,,,,
+model,LR_two_it100,genetics,10,0.2731,0.0403,,0.9455,138.0,,,,
+paired_diff,finalK_tabicl12L mean3 - G4c,receptor,10,0.0153,0.0145,,,,0.0049,0.0257,False,fail
+paired_diff,finalK_tabicl12L mean3 - G4c,genetics,10,0.0382,0.0174,,,,0.0258,0.0507,False,fail
+paired_diff,finalK_tabicl12L mean3 - ens_A_G4cobj3,receptor,10,0.0398,0.012,,,,0.0312,0.0484,False,fail
+paired_diff,finalK_tabicl12L mean3 - ens_A_G4cobj3,genetics,10,0.071,0.02,,,,0.0566,0.0853,False,fail
+paired_diff,finalK_tabicl12L mean3 - LR_two_it100,receptor,10,0.0714,0.0179,,,,0.0586,0.0842,False,fail
+paired_diff,finalK_tabicl12L mean3 - LR_two_it100,genetics,10,0.1148,0.0282,,,,0.0946,0.135,False,fail
