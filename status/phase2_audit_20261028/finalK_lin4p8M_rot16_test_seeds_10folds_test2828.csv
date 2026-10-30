@@ -1,0 +1,9 @@
+kind,model,split,n_folds,pehe_mean,pehe_sd_folds,pehe_sd_seeds,balacc_mean,n_rows_balacc_defined,diff_ci95_lo,diff_ci95_hi,gain_ge_threshold,rule_both_splits
+model,finalK_lin4p8M_rot16_test s0,receptor,10,0.3086,0.015,,0.8942,118.0,,,,
+model,finalK_lin4p8M_rot16_test s1,receptor,10,0.3152,0.0141,,0.904,118.0,,,,
+model,finalK_lin4p8M_rot16_test s2,receptor,10,0.3085,0.0149,,0.9066,118.0,,,,
+model,finalK_lin4p8M_rot16_test mean3,receptor,10,0.3108,0.0139,0.0039,0.9016,,,,,
+model,finalK_lin4p8M_rot16_test s0,genetics,10,0.2773,0.0096,,0.9586,145.0,,,,
+model,finalK_lin4p8M_rot16_test s1,genetics,10,0.2864,0.011,,0.9559,145.0,,,,
+model,finalK_lin4p8M_rot16_test s2,genetics,10,0.2755,0.0059,,0.9541,145.0,,,,
+model,finalK_lin4p8M_rot16_test mean3,genetics,10,0.2797,0.0071,0.0058,0.9562,,,,,
