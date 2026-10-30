@@ -59,20 +59,46 @@ def _check_same(a: Dict, b: Dict) -> None:
         sys.exit("the two caches were built with different atlases")
 
 
+def tested_names(fold_dir: str) -> set:
+    """Images tested in some fold of ``fold_dir`` (the union of the test sides)."""
+    paths = sorted(glob.glob(os.path.join(fold_dir, "fold*.npz")))
+    if not paths:
+        sys.exit(f"no fold files in {fold_dir}")
+    out = set()
+    for p in paths:
+        with np.load(p, allow_pickle=False) as z:
+            out.update(os.path.basename(str(z["files"][i])) for i in z["te_idx"])
+    return out
+
+
 def build_fold(cache: Dict, fold_path: str, out_path: str,
                extra: Optional[Dict] = None, extra_latents: Optional[str] = None,
-               extra_only: bool = False) -> Dict[str, int]:
+               extra_only: bool = False, tested: Optional[set] = None) -> Dict[str, int]:
     """One pool for fold k. With ``extra_only`` the pool holds the extra
     cohort alone (e.g. KCH encoded by fold k's encoder, the benchmark pool
     decided on 19 Oct): the fold file then only names the fold and fixes the
-    latent width, and no tested cohort row enters the pool."""
+    latent width, and no tested cohort row enters the pool. With ``tested``
+    (30 Oct, a pool for an external test cohort) the pool holds every image of
+    that set from both sides of fold k, encoded by fold k's encoder: e.g. the
+    single-acquisition patients only, so that no patient enters twice."""
     with np.load(fold_path, allow_pickle=False) as z:
         files = [str(n) for n in z["files"]]
         tr_idx, Ztr = z["tr_idx"], np.asarray(z["Ztr"], dtype=np.float32)
+        te_idx, Zte = z["te_idx"], np.asarray(z["Zte"], dtype=np.float32)
         fold = int(z["fold"]) if "fold" in z.files else -1
     names = [os.path.basename(files[i]) for i in tr_idx]
     if len(names) != len(Ztr):
         sys.exit(f"{fold_path}: {len(names)} training images but {len(Ztr)} latent rows")
+    if tested is not None:
+        te_names = [os.path.basename(files[i]) for i in te_idx]
+        if len(te_names) != len(Zte):
+            sys.exit(f"{fold_path}: {len(te_names)} test images but {len(Zte)} latent rows")
+        keep_tr = [i for i, n in enumerate(names) if n in tested]
+        keep_te = [i for i, n in enumerate(te_names) if n in tested]
+        names = [names[i] for i in keep_tr] + [te_names[i] for i in keep_te]
+        Ztr = np.concatenate([Ztr[keep_tr], Zte[keep_te]])
+        if len(names) != len(tested):
+            sys.exit(f"{fold_path}: {len(names)} of the {len(tested)} tested images found")
     if extra_only and extra is None:
         sys.exit("--extra-only needs --extra-cache and --extra-latents")
     if extra_only:
@@ -130,20 +156,29 @@ def main(argv=None):
                     help="npz of the extra cohort's latents from the fold encoder; '{fold}' is replaced per fold")
     ap.add_argument("--extra-only", action="store_true",
                     help="pool = the extra cohort alone with fold k's latents (no training-side rows)")
+    ap.add_argument("--tested-only", action="store_true",
+                    help="pool = every image tested in some fold of --fold-dir (both sides of fold k), "
+                         "with fold k's latents; for a model tested on another cohort")
     args = ap.parse_args(argv)
+    if args.tested_only and args.extra_only:
+        sys.exit("--tested-only and --extra-only exclude each other")
 
     cache = _load(args.cache)
     extra = _load(args.extra_cache) if args.extra_cache else None
     if extra is not None:
         _check_same(cache, extra)
+    tested = tested_names(args.fold_dir) if args.tested_only else None
+    if tested is not None:
+        print(f"tested-only: {len(tested)} images tested across the folds")
     for k in args.folds:
         fold_path = os.path.join(args.fold_dir, f"fold{k}.npz")
         if not os.path.exists(fold_path):
             sys.exit(f"no fold file for fold {k} in {args.fold_dir}")
         pattern = args.extra_latents.replace("{fold}", str(k)) if args.extra_latents else None
         out_path = os.path.join(args.out_dir, f"fold{k}.npz")
-        c = build_fold(cache, fold_path, out_path, extra, pattern, extra_only=args.extra_only)
-        print(f"fold {k}: {c['n_main']} training-side rows"
+        c = build_fold(cache, fold_path, out_path, extra, pattern, extra_only=args.extra_only,
+                       tested=tested)
+        print(f"fold {k}: {c['n_main']} {'tested' if tested is not None else 'training-side'} rows"
               + (f" + {c['n_extra']} extra" if c["n_extra"] else "") + f" -> {out_path}")
 
 

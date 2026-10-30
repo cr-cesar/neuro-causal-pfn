@@ -92,6 +92,30 @@ def test_mismatches_stop_the_build(tmp_path):
                   "--out-dir", str(tmp_path / "pools")])
 
 
+def test_tested_only_pool_holds_the_tested_images_from_both_sides(tmp_path, capsys):
+    names = [f"lesion{i}_NA_NA.nii.gz" for i in range(8)]       # 6 and 7 are never tested
+    _cache(tmp_path / "uclh.npz", names)
+    Z0 = np.random.default_rng(1).normal(size=(8, 5)).astype(np.float32)
+    fd = tmp_path / "folds"; fd.mkdir()
+    for k, te in ((0, [0, 1, 2]), (1, [3, 4, 5])):
+        tr = [i for i in range(8) if i not in te]
+        Z = Z0 + k                                                  # each fold's own encoder
+        np.savez(fd / f"fold{k}.npz", Ztr=Z[tr], Zte=Z[te], tr_idx=np.array(tr), te_idx=np.array(te),
+                 files=np.array(names), fold=k)
+    bfp.main(["--cache", str(tmp_path / "uclh.npz"), "--fold-dir", str(fd), "--folds", "0",
+              "--out-dir", str(tmp_path / "pools"), "--tested-only"])
+    assert "6 images tested" in capsys.readouterr().out
+    with np.load(tmp_path / "pools" / "fold0.npz", allow_pickle=True) as p:
+        assert list(p["files"]) == [names[i] for i in (3, 4, 5, 0, 1, 2)]
+        np.testing.assert_array_equal(p["Z"], Z0[[3, 4, 5, 0, 1, 2]])   # fold 0's encoder, both sides
+        with np.load(tmp_path / "uclh.npz") as c:
+            np.testing.assert_array_equal(p["volumes"], c["volumes"][[3, 4, 5, 0, 1, 2]])
+        assert int(p["n_main"]) == 6
+    with pytest.raises(SystemExit, match="exclude"):
+        bfp.main(["--cache", str(tmp_path / "uclh.npz"), "--fold-dir", str(fd), "--folds", "0",
+                  "--out-dir", str(tmp_path / "p2"), "--tested-only", "--extra-only"])
+
+
 def test_extra_only_pool_holds_the_extra_cohort_alone(tmp_path, capsys):
     names = [f"lesion{i}_NA_NA.nii.gz" for i in range(6)]
     knames = [f"kch{i}.nii.gz" for i in range(4)]
