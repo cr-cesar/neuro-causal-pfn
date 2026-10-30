@@ -1,0 +1,5 @@
+kind,model,split,n_folds,pehe_mean,pehe_sd_folds,pehe_sd_seeds,balacc_mean,n_rows_balacc_defined,diff_ci95_lo,diff_ci95_hi,gain_ge_threshold,rule_both_splits
+model,finalK_tabicl12L s0,receptor,10,0.4355,0.029,,0.6724,102.0,,,,
+model,finalK_tabicl12L mean1,receptor,10,0.4355,0.029,,0.6724,,,,,
+model,finalK_tabicl12L s0,genetics,10,0.4855,0.0343,,0.7308,138.0,,,,
+model,finalK_tabicl12L mean1,genetics,10,0.4855,0.0343,,0.7308,,,,,

@@ -1,0 +1,21 @@
+kind,model,split,n_folds,pehe_mean,pehe_sd_folds,pehe_sd_seeds,balacc_mean,n_rows_balacc_defined,diff_ci95_lo,diff_ci95_hi,gain_ge_threshold,rule_both_splits
+model,finalK_lin4p8M s0,receptor,10,0.3205,0.0249,,0.9018,102.0,,,,
+model,finalK_lin4p8M s1,receptor,10,0.3219,0.028,,0.9123,102.0,,,,
+model,finalK_lin4p8M s2,receptor,10,0.3188,0.0262,,0.9115,102.0,,,,
+model,finalK_lin4p8M mean3,receptor,10,0.3204,0.0258,0.0016,0.9085,,,,,
+model,G4c,receptor,10,0.3663,0.03,,0.9003,102.0,,,,
+model,ens_A_G4cobj3,receptor,10,0.3419,0.0259,,0.8932,102.0,,,,
+model,LR_two_it100,receptor,10,0.3103,0.0223,,0.9017,102.0,,,,
+model,finalK_lin4p8M s0,genetics,10,0.2856,0.0273,,0.9475,138.0,,,,
+model,finalK_lin4p8M s1,genetics,10,0.2934,0.0281,,0.9446,138.0,,,,
+model,finalK_lin4p8M s2,genetics,10,0.2866,0.0335,,0.9462,138.0,,,,
+model,finalK_lin4p8M mean3,genetics,10,0.2885,0.0292,0.0042,0.9461,,,,,
+model,G4c,genetics,10,0.3497,0.0217,,0.9304,138.0,,,,
+model,ens_A_G4cobj3,genetics,10,0.317,0.0217,,0.9381,138.0,,,,
+model,LR_two_it100,genetics,10,0.2731,0.0403,,0.9455,138.0,,,,
+paired_diff,finalK_lin4p8M mean3 - G4c,receptor,10,-0.0459,0.0148,,,,-0.0566,-0.0353,True,pass
+paired_diff,finalK_lin4p8M mean3 - G4c,genetics,10,-0.0611,0.0151,,,,-0.072,-0.0503,True,pass
+paired_diff,finalK_lin4p8M mean3 - ens_A_G4cobj3,receptor,10,-0.0215,0.0111,,,,-0.0294,-0.0136,True,pass
+paired_diff,finalK_lin4p8M mean3 - ens_A_G4cobj3,genetics,10,-0.0284,0.0121,,,,-0.0371,-0.0198,True,pass
+paired_diff,finalK_lin4p8M mean3 - LR_two_it100,receptor,10,0.0101,0.0124,,,,0.0012,0.019,False,fail
+paired_diff,finalK_lin4p8M mean3 - LR_two_it100,genetics,10,0.0154,0.0161,,,,0.0039,0.0269,False,fail
