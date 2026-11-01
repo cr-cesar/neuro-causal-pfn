@@ -11,6 +11,8 @@
 #   SEED=1 bash scripts/audit_20261028/g4c_launch.sh
 #   OBJECTIVE=new [CATE_W=1] bash scripts/audit_20261028/g4c_launch.sh
 #   STD=context [OBJECTIVE=new] bash scripts/audit_20261028/g4c_launch.sh
+#   GENERIC_W=0 [OBJECTIVE=new] bash scripts/audit_20261028/g4c_launch.sh
+#   HEAD_RANGE=wide bash scripts/audit_20261028/g4c_launch.sh
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 dirty=$(git status --porcelain --untracked-files=no | wc -l)
@@ -68,6 +70,22 @@ fi
 ALLOC="${ALLOC:-g4c}"
 case "$ALLOC" in g4c|g5) ;; *) echo "ALLOC must be g4c or g5" >&2; exit 1 ;; esac
 [ "$ALLOC" = g4c ] || tag="${tag}g5"
+# GENERIC_W (1 Nov): share of the processes given a generic effect in latent
+# space (generic_mix.py); 0.5 is G4c's and the final model's, 0 leaves the
+# anatomy families alone, 1 keeps only their covariates. Any other value is
+# tagged in the run name (..._gw0)
+GENERIC_W="${GENERIC_W:-0.5}"
+[[ "$GENERIC_W" =~ ^(0(\.[0-9]+)?|1(\.0+)?)$ ]] || { echo "GENERIC_W must be a number in [0, 1]" >&2; exit 1; }
+[ "$GENERIC_W" = 0.5 ] || tag="${tag}_gw$GENERIC_W"
+# HEAD_RANGE=wide (1 Nov, OBJECTIVE=old only): the single-arm objective with the
+# outcome bins of OBJECTIVE=new (-0.05 to 1.05), so that the bin range is
+# separated from the objective; default unit, G4c's 0 to 1
+HEAD_RANGE="${HEAD_RANGE:-unit}"
+case "$HEAD_RANGE" in unit|wide) ;; *) echo "HEAD_RANGE must be unit or wide" >&2; exit 1 ;; esac
+if [ "$HEAD_RANGE" = wide ]; then
+    [ "$OBJECTIVE" = old ] || { echo "HEAD_RANGE=wide needs OBJECTIVE=old (OBJECTIVE=new already uses it)" >&2; exit 1; }
+    tag="${tag}hw"
+fi
 [ "$RUN_ITERS" = 20000 ] || tag="${tag}_i$RUN_ITERS"
 [ "$RUN_ARCH" = linear ] || tag="${tag}_tabicl"
 [ -z "${RUN_D_MODEL:-}" ] || tag="${tag}_d$RUN_D_MODEL"
@@ -79,18 +97,28 @@ export OUT="${OUT:-$HOME/p2_bcb/pfn_screen/${tag}_s$SEED/fold0}"
 if [ "$OBJECTIVE" = new ]; then
     export BOTH_ARMS=1 CATE_WEIGHT="$CATE_W" HEAD_LO=-0.05 HEAD_HI=1.05
     objective_expect="pfn.both_arms=True pfn.cate_weight=$CATE_W pfn.head_lo=-0.05 pfn.head_hi=1.05"
+elif [ "$HEAD_RANGE" = wide ]; then
+    export HEAD_LO=-0.05 HEAD_HI=1.05
+    objective_expect="pfn.both_arms=UNSET pfn.head_lo=-0.05 pfn.head_hi=1.05"
 else
     objective_expect="pfn.both_arms=UNSET pfn.head_lo=UNSET"
 fi
 export FAMILY_WEIGHTS="0.5 0.5" ARCH="$RUN_ARCH" FAMILY=mixture
 export GILES_HYPER="random_partitions=1 threshold=0.03:0.08 p_te=0.9:1 p_re=0:0.05 label_noise=0:0"
-export PRIOR_HYPER="two_arms=1 effect_scale=0.2:1 d_source=network s_source=genetics_1 s_b_source=genetics_2 effect_headroom=1 generic_weight=0.5 binary_outcome=1 generic_binary=1"
+export PRIOR_HYPER="two_arms=1 effect_scale=0.2:1 d_source=network s_source=genetics_1 s_b_source=genetics_2 effect_headroom=1 generic_weight=$GENERIC_W binary_outcome=1 generic_binary=1"
 if [ "$ALLOC" = g5 ]; then
     GILES_HYPER="$GILES_HYPER bias=0:0 bias_weights=1:0:0"; PRIOR_HYPER="$PRIOR_HYPER gamma=0:0"
 fi
 export LR_SCHEDULE=constant CONTEXT_POOL=susceptible CONTEXT_MAX=3000 OMP_NUM_THREADS=4
 [ -s "$CACHE" ] || { echo "no cache $CACHE" >&2; exit 1; }
 [ -d data/atlases ] || { echo "no atlas at data/atlases" >&2; exit 1; }
+# ATLAS_SRC (1 Nov): the atlas folder the run must use, e.g. the one scoring
+# reads (~/export_bcb/atlases on siena); data/atlases must match it file by file
+echo "atlas_dir=$(readlink -f data/atlases) cache=$(readlink -f "$CACHE")"
+if [ -n "${ATLAS_SRC:-}" ]; then
+    diff -rq data/atlases "$ATLAS_SRC" >/dev/null || { echo "data/atlases differs from $ATLAS_SRC" >&2; exit 1; }
+    echo "atlas_src=$(readlink -f "$ATLAS_SRC") identical"
+fi
 mkdir -p "$OUT"
 # the launch must be G4c's: the shared values of G5 / TM and, unless
 # OBJECTIVE=new, no 28 Oct switch (the gate's ranges are opened: G4c's prior
@@ -98,7 +126,7 @@ mkdir -p "$OUT"
 # shellcheck disable=SC2086
 python scripts/prior_gate.py --batches 5 --contexts 512 --require share_zero=0:1 share_unit=0:1 share_small=0:1 \
     pos_share=0:1 ctx_binary=0:1 ctx_treated=0:1 \
-    --expect prior.family=mixture prior.family_weights=0.5:0.5 prior.hyper.generic_weight=0.5 \
+    --expect prior.family=mixture prior.family_weights=0.5:0.5 prior.hyper.generic_weight=$GENERIC_W \
              prior.hyper_giles.random_partitions=1 pfn.context_max=3000 pfn.context_min=256 \
              pfn.iters=$RUN_ITERS pfn.arch=$RUN_ARCH pfn.n_query=64 pfn.curriculum=UNSET $objective_expect $std_expect
 bash scripts/train_pfn_myriad.qsub.sh
