@@ -13,6 +13,7 @@
 #   STD=context [OBJECTIVE=new] bash scripts/audit_20261028/g4c_launch.sh
 #   GENERIC_W=0 [OBJECTIVE=new] bash scripts/audit_20261028/g4c_launch.sh
 #   HEAD_RANGE=wide bash scripts/audit_20261028/g4c_launch.sh
+#   S_SOURCE=receptor | FAMILY_W="0.25 0.75" [OBJECTIVE=new] bash scripts/audit_20261028/g4c_launch.sh
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 dirty=$(git status --porcelain --untracked-files=no | wc -l)
@@ -86,6 +87,18 @@ if [ "$HEAD_RANGE" = wide ]; then
     [ "$OBJECTIVE" = old ] || { echo "HEAD_RANGE=wide needs OBJECTIVE=old (OBJECTIVE=new already uses it)" >&2; exit 1; }
     tag="${tag}hw"
 fi
+# S_SOURCE (1 Nov): the split whose two network halves give the anatomy
+# family's susceptibilities S_A / S_B; genetics is every run so far (the halves
+# of the scored genetics trials), receptor the control that swaps the split
+S_SOURCE="${S_SOURCE:-genetics}"
+case "$S_SOURCE" in genetics|receptor) ;; *) echo "S_SOURCE must be genetics or receptor" >&2; exit 1 ;; esac
+[ "$S_SOURCE" = genetics ] || tag="${tag}_s$S_SOURCE"
+# FAMILY_W (1 Nov): the (theory, virtual-trial) family weights, before the
+# generic share is applied to all processes; "0.5 0.5" is every run so far
+FAMILY_W="${FAMILY_W:-0.5 0.5}"
+[[ "$FAMILY_W" =~ ^[0-9]+(\.[0-9]+)?\ [0-9]+(\.[0-9]+)?$ ]] || { echo "FAMILY_W must be two numbers, e.g. \"0.25 0.75\"" >&2; exit 1; }
+read -r fw_theory fw_trial <<< "$FAMILY_W"
+[ "$FAMILY_W" = "0.5 0.5" ] || tag="${tag}_fw${fw_theory}-${fw_trial}"
 [ "$RUN_ITERS" = 20000 ] || tag="${tag}_i$RUN_ITERS"
 [ "$RUN_ARCH" = linear ] || tag="${tag}_tabicl"
 [ -z "${RUN_D_MODEL:-}" ] || tag="${tag}_d$RUN_D_MODEL"
@@ -103,9 +116,9 @@ elif [ "$HEAD_RANGE" = wide ]; then
 else
     objective_expect="pfn.both_arms=UNSET pfn.head_lo=UNSET"
 fi
-export FAMILY_WEIGHTS="0.5 0.5" ARCH="$RUN_ARCH" FAMILY=mixture
+export FAMILY_WEIGHTS="$FAMILY_W" ARCH="$RUN_ARCH" FAMILY=mixture
 export GILES_HYPER="random_partitions=1 threshold=0.03:0.08 p_te=0.9:1 p_re=0:0.05 label_noise=0:0"
-export PRIOR_HYPER="two_arms=1 effect_scale=0.2:1 d_source=network s_source=genetics_1 s_b_source=genetics_2 effect_headroom=1 generic_weight=$GENERIC_W binary_outcome=1 generic_binary=1"
+export PRIOR_HYPER="two_arms=1 effect_scale=0.2:1 d_source=network s_source=${S_SOURCE}_1 s_b_source=${S_SOURCE}_2 effect_headroom=1 generic_weight=$GENERIC_W binary_outcome=1 generic_binary=1"
 if [ "$ALLOC" = g5 ]; then
     GILES_HYPER="$GILES_HYPER bias=0:0 bias_weights=1:0:0"; PRIOR_HYPER="$PRIOR_HYPER gamma=0:0"
 fi
@@ -120,13 +133,20 @@ if [ -n "${ATLAS_SRC:-}" ]; then
     echo "atlas_src=$(readlink -f "$ATLAS_SRC") identical"
 fi
 mkdir -p "$OUT"
+# the generic share replaces the effect of that share of ALL processes after the
+# family draw, so the effective composition is theory w_t(1-g), trial w_v(1-g), generic g
+echo "launch tag=$tag objective=$OBJECTIVE cate_w=$CATE_W head_range=$HEAD_RANGE generic_w=$GENERIC_W" \
+     "s_source=$S_SOURCE family_w=$fw_theory:$fw_trial iters=$RUN_ITERS seed=$SEED"
+awk -v t="$fw_theory" -v v="$fw_trial" -v g="$GENERIC_W" 'BEGIN { s = t + v;
+    printf "effective composition: theory %.3f, virtual-trial %.3f, generic %.3f\n", t / s * (1 - g), v / s * (1 - g), g }'
 # the launch must be G4c's: the shared values of G5 / TM and, unless
 # OBJECTIVE=new, no 28 Oct switch (the gate's ranges are opened: G4c's prior
 # is known to fail them, the run is its control)
 # shellcheck disable=SC2086
 python scripts/prior_gate.py --batches 5 --contexts 512 --require share_zero=0:1 share_unit=0:1 share_small=0:1 \
     pos_share=0:1 ctx_binary=0:1 ctx_treated=0:1 \
-    --expect prior.family=mixture prior.family_weights=0.5:0.5 prior.hyper.generic_weight=$GENERIC_W \
+    --expect prior.family=mixture prior.family_weights=$fw_theory:$fw_trial prior.hyper.generic_weight=$GENERIC_W \
+             prior.hyper.s_source=${S_SOURCE}_1 prior.hyper.s_b_source=${S_SOURCE}_2 \
              prior.hyper_giles.random_partitions=1 pfn.context_max=3000 pfn.context_min=256 \
              pfn.iters=$RUN_ITERS pfn.arch=$RUN_ARCH pfn.n_query=64 pfn.curriculum=UNSET $objective_expect $std_expect
 bash scripts/train_pfn_myriad.qsub.sh
