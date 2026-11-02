@@ -32,6 +32,20 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import coverage_diagnostic as cd  # noqa: E402
 
 
+def load_some_folds(rep_dir, names):
+    """[(fold id, tr, te, Ztr, Zte)] for the folds present, sorted by fold id."""
+    out = []
+    for path in sorted(glob.glob(os.path.join(glob.escape(rep_dir), "fold*.npz"))):
+        with np.load(path, allow_pickle=False) as z:
+            if "files" in z.files and [os.path.basename(str(f)) for f in z["files"]] != list(names):
+                sys.exit(f"{os.path.basename(path)}: the stored listing differs from the image folder")
+            k = int(z["fold"]) if "fold" in z.files else int(os.path.basename(path)[4:-4])
+            out.append((k, z["tr_idx"].copy(), z["te_idx"].copy(), z["Ztr"].copy(), z["Zte"].copy()))
+    if not out:
+        sys.exit(f"no fold*.npz in {rep_dir}")
+    return sorted(out, key=lambda f: f[0])
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--rep", action="append", required=True, metavar="TAG=FOLDS_DIR")
@@ -68,19 +82,34 @@ def main(argv=None):
     if cov.shape != (len(files), len(keys)):
         sys.exit("the coverage cache does not match the image folder")
 
-    reps = []
+    # a representation may hold fewer than ten folds (only some were copied to
+    # this machine); it is then compared with the first one, and NMF-50, on
+    # the same folds (tags "<first>@<folds>", "NMF-50@<folds>")
+    reps, fold_sets = [], []
     for item in a.rep:
         tag, _, path = item.partition("=")
-        reps.append((tag, cd.load_folds(path, names)))
+        folds = load_some_folds(path, names)
+        reps.append((tag, [f[1:] for f in folds]))
+        ids = tuple(f[0] for f in folds)
+        print(f"  {tag}: folds {list(ids)}", flush=True)
+        if len(ids) < 10 and ids not in fold_sets:
+            fold_sets.append(ids)
+    ref_tag, ref = reps[0][0], dict(zip(range(10), reps[0][1]))
+    if len(ref) != 10:
+        sys.exit(f"the first representation ({ref_tag}) must hold the ten folds")
+    for ids in fold_sets:
+        reps.append((f"{ref_tag}@{','.join(map(str, ids))}", [ref[k] for k in ids]))
     if a.nmf:
-        ref = reps[0][1]
         refit = _nmf_perfold(files)
-        nmf = []
-        for k, (tr, te, _, _) in enumerate(ref):
+        nmf = {}
+        for k in range(10):
+            tr, te = ref[k][0], ref[k][1]
             Ztr, Zte = refit(tr, te)
-            nmf.append((tr, te, Ztr, Zte))
+            nmf[k] = (tr, te, Ztr, Zte)
             print(f"  NMF-50 fold {k + 1}/10 refitted", flush=True)
-        reps.append(("NMF-50", nmf))
+        reps.append(("NMF-50", [nmf[k] for k in range(10)]))
+        for ids in fold_sets:
+            reps.append((f"NMF-50@{','.join(map(str, ids))}", [nmf[k] for k in ids]))
 
     rows = []
     for tag, folds in reps:
