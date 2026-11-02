@@ -1,0 +1,13 @@
+item,value
+channel,disconnectome
+threshold,0.5
+modality,receptor
+images_dir_tail,kch_bcbdisco
+overlaps_dtype,float32
+overlaps_genetics_dtype,float32
+overlaps_network_dtype,float32
+overlaps_receptor_dtype,float32
+n_atoms,80
+n_atoms_primary_kept,32
+pool_size,1207
+d_latent,50

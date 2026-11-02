@@ -1,0 +1,2 @@
+split,label_a,label_b,n_deficits,n_excluded_nan,mean_a,mean_b,diff_mean,diff_ci_low,diff_ci_high,diff_sd,n_a_lower,n_b_lower,paired_t,paired_t_p,wilcoxon_w,wilcoxon_p
+both,finalK,tabpfnS,15,1,-0.5448286870810738,-0.5648280981067049,0.019999411025631016,-0.04404538576978133,0.08404420782104337,0.11564993050230901,5,10,0.6697573055150209,0.5139080616192604,40.0,0.27685546875
