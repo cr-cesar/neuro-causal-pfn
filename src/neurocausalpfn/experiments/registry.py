@@ -172,6 +172,35 @@ REGISTRY: List[Experiment] = [
               "description says BCE. Per-fold only.",
     ),
     Experiment(
+        eid="E13a", arm="Audit", title="E1 with a contour term on the binarised disconnectome",
+        what_changes="disconnectome recon: MSE -> MSE + (BCE + soft Dice) on the map binarised at 0.5",
+        baseline="E1 (disconnectome VAE, MSE on the sigmoid, 50 latents, N(0,I) prior)",
+        variant="E1's disconnectome VAE with a contour term of weight 1 on the map "
+                "binarised at 0.5 (the map the benchmark counts coverage on), the "
+                "best checkpoint chosen at full beta; disconnectome channel only.",
+        tiers=("T4",), entry="vae",
+        params={"representation": "lesion", "backbone": "resnet",
+                "w_dice": 0.0, "fusion_mode": "disconnectome", "zdim": 50,
+                "use_ard": False, "disco_contour": 1.0, "select_after_warmup": True},
+        notes="2 Nov, after the coverage diagnostic: the E1 latents recover each "
+              "half's coverage (R^2 0.93) but only 77 % of its sides near the 5 % "
+              "threshold, where 75-80 % of the oracle's error lies, and 100 "
+              "latents do not help. Uses no atlas and no trial label. Post hoc.",
+    ),
+    Experiment(
+        eid="E13b", arm="Audit", title="E13a with a lighter KL term",
+        what_changes="E13a with beta_max 0.25",
+        baseline="E13a",
+        variant="E13a with the KL weight lowered from 1 to 0.25, so the latents "
+                "may keep more of the map's detail.",
+        tiers=("T4",), entry="vae",
+        params={"representation": "lesion", "backbone": "resnet",
+                "w_dice": 0.0, "fusion_mode": "disconnectome", "zdim": 50,
+                "use_ard": False, "disco_contour": 1.0, "select_after_warmup": True,
+                "beta_max": 0.25},
+        notes="2 Nov, with E13a. Post hoc.",
+    ),
+    Experiment(
         eid="E2", arm="A", title="Reconstruction loss",
         what_changes="recon -> BCE + Soft Dice (scan lambda_Dice)",
         baseline="E1: recon = BCE (objective BCE + beta*KL)",

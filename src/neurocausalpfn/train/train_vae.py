@@ -219,6 +219,14 @@ def run_vae(cfg: Dict):
         import functools
         from ..vae.losses import vae_loss
         loss_fn = functools.partial(vae_loss, w_bce=1.0, w_dice=0.0)
+    if representation == "disconnectome" and float(cfg["vae"].get("disco_contour", 0.0) or 0.0) > 0:
+        # 2 Nov (E13): E1's MSE plus a term on the map binarised at 0.5, the
+        # map the benchmark's coverage is counted on; default 0, every run so far
+        if str(cfg["vae"].get("disco_recon", "mse")) != "mse":
+            raise ValueError("disco_contour adds to the MSE objective; it cannot be combined with disco_recon")
+        import functools
+        from ..vae.losses import vae_loss_mse_contour
+        loss_fn = functools.partial(vae_loss_mse_contour, w_contour=float(cfg["vae"]["disco_contour"]))
     n_clinical = dataset.clinical_dim() if use_daft else 0
 
     train_idx, val_idx = _split_indices(len(dataset), cfg["data"].get("val_frac", 0.1), cfg["seed"])
@@ -286,7 +294,11 @@ def run_vae(cfg: Dict):
                 "use_daft": use_daft, "use_ard": use_ard, "backbone": backbone,
                 "use_pns": use_pns, "lambda_pns": lambda_pns, "pns_factors": pns_factors}
         torch.save(ckpt, last_path)
-        if va["total"] < best_val:
+        # select_after_warmup (2 Nov): the validation total includes beta * KL,
+        # so while beta ramps up the early epochs look better than they are;
+        # with it set, only epochs at full beta can become the best checkpoint
+        warm = not cfg["vae"].get("select_after_warmup", False) or epoch + 1 >= warmup_epochs
+        if warm and va["total"] < best_val:
             best_val = va["total"]
             ckpt["best_val"] = best_val
             torch.save(ckpt, best_path)

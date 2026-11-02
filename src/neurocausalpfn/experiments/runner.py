@@ -112,6 +112,10 @@ def build_runs(exp: Experiment, mode: str, context: Dict) -> List[RunSpec]:
             if p.get("disco_recon"):
                 # only when set, so the metadata of every earlier run is unchanged
                 meta["disco_recon"] = p["disco_recon"]
+            for key in ("disco_contour", "beta_max", "select_after_warmup"):
+                # 2 Nov (E13): likewise only when a variant pins them
+                if key in p:
+                    meta[key] = p[key]
             label = _label(exp.eid, pt, meta)
             runs.append(RunSpec(label=label, kind="fusion_vae", meta=meta))
         return runs

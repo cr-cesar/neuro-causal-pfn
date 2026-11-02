@@ -120,6 +120,38 @@ def vae_loss_mse(logits: torch.Tensor, target: torch.Tensor, mu: torch.Tensor,
     return total, parts
 
 
+def contour_loss(logits: torch.Tensor, target: torch.Tensor, thresh: float = 0.5) -> torch.Tensor:
+    """BCE plus soft Dice against the map binarised at ``thresh`` (2 Nov).
+
+    The benchmark reads a disconnectome only through its voxels above 0.5
+    (giles_replica.DISCO_THRESH): the coverage of each network half is
+    counted on that binary map. MSE on the intensities barely separates 0.49
+    from 0.51, so a latent code can lose the contour that decides the
+    coverage; this term scores the decoder's side of the threshold directly.
+    The sigmoid output exceeds ``thresh`` where the logits exceed
+    logit(thresh), so the logits are shifted by it and scored as a mask."""
+    import math
+
+    y = (target > thresh).to(logits.dtype)
+    z = logits - math.log(thresh / (1.0 - thresh))
+    return F.binary_cross_entropy_with_logits(z, y) + soft_dice_loss(z, y)
+
+
+def vae_loss_mse_contour(logits: torch.Tensor, target: torch.Tensor, mu: torch.Tensor,
+                         logvar: torch.Tensor, beta: float = 1.0, prior_var: torch.Tensor = None,
+                         w_contour: float = 1.0):
+    """The disconnectome objective of E1 (MSE + beta * KL) plus ``w_contour``
+    times the contour term on the map binarised at 0.5."""
+    mse = mse_recon_loss(logits, target)
+    con = contour_loss(logits, target)
+    rec = mse + w_contour * con
+    kl = kl_diag_gaussian(mu, logvar, prior_var)
+    total = rec + beta * kl_voxel_scale(target) * kl
+    parts = {"mse": float(mse.detach()), "contour": float(con.detach()), "rec": float(rec.detach()),
+             "kl": float(kl.detach()), "beta": float(beta), "total": float(total.detach())}
+    return total, parts
+
+
 def vae_loss_two_channel(logits: torch.Tensor, target: torch.Tensor, mu: torch.Tensor,
                          logvar: torch.Tensor, beta: float = 1.0,
                          w_bce: float = 1.0, w_dice: float = 1.0, prior_var: torch.Tensor = None):
