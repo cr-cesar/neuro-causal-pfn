@@ -25,3 +25,9 @@ generic_1,both_arms,1.0,20b0208,1,genetics,0.374
 generic_1,both_arms,1.0,20b0208,2,genetics,0.415
 logistic_regression_T,,,,0,receptor,0.31
 logistic_regression_T,,,,0,genetics,0.273
+receptor_halves_srec,both_arms,0.5,0e3db3b,0,receptor,0.319
+receptor_halves_srec,both_arms,0.5,0e3db3b,1,receptor,0.331
+receptor_halves_srec,both_arms,0.5,0e3db3b,2,receptor,0.324
+receptor_halves_srec,both_arms,0.5,0e3db3b,0,genetics,0.291
+receptor_halves_srec,both_arms,0.5,0e3db3b,1,genetics,0.297
+receptor_halves_srec,both_arms,0.5,0e3db3b,2,genetics,0.294
