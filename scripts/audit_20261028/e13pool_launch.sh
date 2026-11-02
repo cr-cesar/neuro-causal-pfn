@@ -17,10 +17,21 @@
 #   5 fw01 rescored on E13a latents (CPU) and the paired tests.
 # Aggregates only in the logs: counts, md5 prefixes, PEHE lines.
 #
+# FAMILY_W (2 Nov): the family weights of the trainings, "0 1" (fw01's) by
+# default. Any other value trains in its own directory and labels, and step 5
+# then pairs it with finalK rescored on E13a latents (same weights, so only the
+# pool's encoder differs), with finalK on E1 and with the "0 1" run on the same
+# pool (only the weights differ).
+#
 #   bash scripts/audit_20261028/e13pool_launch.sh
 #   STEPS="1 2 3" bash scripts/audit_20261028/e13pool_launch.sh
+#   FAMILY_W="0.5 0.5" STEPS="4 5" bash scripts/audit_20261028/e13pool_launch.sh
 set -euo pipefail
 STEPS="${STEPS:-1 2 3 4 5}"
+FAMILY_W="${FAMILY_W:-0 1}"
+[[ "$FAMILY_W" =~ ^[0-9]+(\.[0-9]+)?\ [0-9]+(\.[0-9]+)?$ ]] || { echo "FAMILY_W must be two numbers, e.g. \"0.5 0.5\"" >&2; exit 1; }
+if [ "$FAMILY_W" = "0 1" ]; then FWT=""; else FWT="_fw$(echo "$FAMILY_W" | tr -d '. ')"; fi
+LAB="finalKe13pool${FWT}_lin4p8M"
 PY="${PY:-$HOME/env/bin/python}"
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
 CODE="${CODE:-$HOME/ncp_full}"   # fw01's checkout, so the training code is fw01's
@@ -32,7 +43,7 @@ CK_DIR="$E/ckpt/E13a_s0_f0"
 LAT="$W/latents/kch_e13a_s0/fold0"
 POOL="$W/pools/kch_e13a_s0/fold0.npz"
 REF_POOL="${REF_POOL:-$W/pools/kch_s0/fold0.npz}"
-O="$W/pfn_e13pool"
+O="$W/pfn_e13pool$FWT"
 V="${V:-$HOME/neuro-causal-pfn-perfold/outputs_val_clean}"
 SCORE="$HERE/scripts/audit_20261028/score_val_clean.sh"
 BC_JUMP="${BC_JUMP:-ccornejo@csrw.cs.ucl.ac.uk}"
@@ -85,24 +96,45 @@ EOF
 fi
 
 if [[ " $STEPS " == *" 4 "* ]]; then
-    echo "== $(date +%H:%M) 4 three trainings, fw01's launch on the E13a pool"
+    echo "== $(date +%H:%M) 4 three trainings, fw01's launch with family weights $FAMILY_W on the E13a pool"
     for s in 0 1 2; do
         [ -s "$O/s$s/pfn.pt" ] && continue
         (cd "$CODE" && env PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True VENV="$(dirname "$(dirname "$PY")")" \
-            OBJECTIVE=new FAMILY_W="0 1" ATLAS_SRC="$HOME/export_bcb/atlases" SEED=$s RUN_ITERS=125000 \
-            JOBNAME=finalK-e13pool-lin4p8M-s$s CACHE="$POOL" OUT="$O/s$s" \
+            OBJECTIVE=new FAMILY_W="$FAMILY_W" ATLAS_SRC="$HOME/export_bcb/atlases" SEED=$s RUN_ITERS=125000 \
+            JOBNAME="finalK-e13pool${FWT//_/-}-lin4p8M-s$s" CACHE="$POOL" OUT="$O/s$s" \
             bash scripts/audit_20261028/g4c_launch.sh) > "$O/logs/train_s$s.log" 2>&1 &
     done
     wait
+    # a training that fails leaves no checkpoint, and the bare wait does not stop on it
+    for s in 0 1 2; do [ -s "$O/s$s/pfn.pt" ] || { echo "no checkpoint for seed $s" >&2; exit 1; }; done
     for s in 0 1 2; do
-        [ -s "$(rr "finalKe13pool_lin4p8M_s$s" receptor E13a/E13a/seed0)" ] && continue
-        CUDA_VISIBLE_DEVICES="" REPS="$REPS" bash "$SCORE" "finalKe13pool_lin4p8M_s$s" \
+        [ -s "$(rr "${LAB}_s$s" receptor E13a/E13a/seed0)" ] && continue
+        CUDA_VISIBLE_DEVICES="" REPS="$REPS" bash "$SCORE" "${LAB}_s$s" \
             --estimators "$O/s$s/pfn.pt" --only-estimators &
     done
     wait
 fi
 
-if [[ " $STEPS " == *" 5 "* ]]; then
+if [[ " $STEPS " == *" 5 "* ]] && [ -n "$FWT" ]; then
+    echo "== $(date +%H:%M) 5 paired tests of the family weights $FAMILY_W run"
+    pair() {  # tag, B label glob, B replica
+        for m in receptor genetics; do
+            "$PY" "$HERE/scripts/paired_deficit_test.py" --a "$(rr "${LAB}_s*" $m E13a/E13a/seed0)" --b "$(rr "$2" $m "$3")" \
+                --label-a "e13pool$FWT" --label-b "${1#*_vs_}" --out "$O/paired/${1}_${m}_pehe_paper.csv" | sed -n "1,3p"
+        done
+        "$PY" "$HERE/scripts/paired_split_mean.py" --receptor "$O/paired/${1}_receptor_pehe_paper_per_deficit.csv" \
+            --genetics "$O/paired/${1}_genetics_pehe_paper_per_deficit.csv" --label-a "e13pool$FWT" --label-b "${1#*_vs_}" \
+            --out "$O/paired/${1}_both_pehe_paper.csv" | sed -n "1,3p"
+    }
+    # only the pool's encoder differs: finalK rescored on E13a latents
+    pair "e13pool${FWT}_vs_finalKonE13a" "e13a_finalK_s*" E13a/E13a/seed0
+    # only the family weights differ: the "0 1" run on the same pool
+    pair "e13pool${FWT}_vs_e13pool" "finalKe13pool_lin4p8M_s*" E13a/E13a/seed0
+    # encoder and pool together
+    pair "e13pool${FWT}_vs_finalK" "finalK_lin4p8M_s*" E1/E1/seed0
+    echo "== md5"
+    md5sum "$O"/paired/*.csv | cut -c1-12 | tr '\n' ' '; echo
+elif [[ " $STEPS " == *" 5 "* ]]; then
     echo "== $(date +%H:%M) 5 fw01 on E13a latents, paired tests"
     for s in 0 1 2; do
         [ -s "$(rr "e13a_finalKfw01_s$s" receptor E13a/E13a/seed0)" ] && continue
