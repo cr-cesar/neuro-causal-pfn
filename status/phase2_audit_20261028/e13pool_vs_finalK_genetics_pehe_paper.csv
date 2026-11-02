@@ -1,0 +1,2 @@
+label_a,label_b,n_deficits,n_excluded_nan,mean_a,mean_b,diff_mean,diff_ci_low,diff_ci_high,diff_sd,n_a_lower,n_b_lower,paired_t,paired_t_p,wilcoxon_w,wilcoxon_p
+e13pool,finalK,16,0,0.26969781565672624,0.2885326323179157,-0.01883481666118948,-0.027280024462463123,-0.010389608859915835,0.01584875948646019,14,2,-4.753638081839862,0.0002561802864238617,7.0,0.000579833984375
