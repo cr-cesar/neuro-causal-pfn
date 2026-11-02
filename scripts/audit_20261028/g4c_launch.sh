@@ -167,6 +167,14 @@ echo "launch tag=$tag objective=$OBJECTIVE cate_w=$CATE_W head=$head_bins generi
      "batch=${RUN_BATCH:-4} context_max=$RUN_CONTEXT_MAX attn=$RUN_ATTN"
 awk -v t="$fw_theory" -v v="$fw_trial" -v g="$GENERIC_W" 'BEGIN { s = t + v;
     printf "effective composition: theory %.3f, virtual-trial %.3f, generic %.3f\n", t / s * (1 - g), v / s * (1 - g), g }'
+# PRIOR_CHECK_ONLY (2 Nov): the same cfg, the prior checks of the external
+# review (prior_checks.py, CPU, aggregates in PRIOR_CHECK_OUT) instead of the
+# gate and the training
+if [ -n "${PRIOR_CHECK_ONLY:-}" ]; then
+    : "${PRIOR_CHECK_OUT:?PRIOR_CHECK_ONLY needs PRIOR_CHECK_OUT}"
+    # shellcheck disable=SC2086
+    CUDA_VISIBLE_DEVICES="" exec python scripts/audit_20261028/prior_checks.py --out "$PRIOR_CHECK_OUT" ${PRIOR_CHECK_ARGS:-}
+fi
 # the launch must be G4c's: the shared values of G5 / TM and, unless
 # OBJECTIVE=new, no 28 Oct switch (the gate's ranges are opened: G4c's prior
 # is known to fail them, the run is its control)
