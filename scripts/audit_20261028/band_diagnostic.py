@@ -97,6 +97,14 @@ def main(argv=None):
     ref_tag, ref = reps[0][0], dict(zip(range(10), reps[0][1]))
     if len(ref) != 10:
         sys.exit(f"the first representation ({ref_tag}) must hold the ten folds")
+    # every representation must split the patients as the first one does
+    # (the same group table and fold scheme), fold by fold
+    for item in a.rep[1:]:
+        tag, _, path = item.partition("=")
+        for k, tr, te, _, _ in load_some_folds(path, names):
+            if not (np.array_equal(np.sort(te), np.sort(ref[k][1])) and np.array_equal(np.sort(tr), np.sort(ref[k][0]))):
+                sys.exit(f"{tag} fold {k}: its training and test sides differ from {ref_tag}'s (other group table or fold scheme)")
+        print(f"  {tag}: same training and test sides as {ref_tag} in every fold it holds", flush=True)
     for ids in fold_sets:
         reps.append((f"{ref_tag}@{','.join(map(str, ids))}", [ref[k] for k in ids]))
     if a.nmf:
