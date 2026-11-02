@@ -1,0 +1,2 @@
+label_a,label_b,metric,n_deficits,n_other_folds,diff_ref_fold,diff_other_folds,did_mean,did_ci_low,did_ci_high,did_t_p,n_deficits_did_negative
+pools10,finalK,pehe_paper,16,9,0.004742989554295458,0.006636421423065074,0.0018934318687696162,-0.012236458853591448,0.01602332259113068,0.7790768851786788,8
