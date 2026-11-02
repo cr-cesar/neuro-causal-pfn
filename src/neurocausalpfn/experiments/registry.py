@@ -214,6 +214,20 @@ REGISTRY: List[Experiment] = [
         notes="2 Nov, control of E13a. Post hoc.",
     ),
     Experiment(
+        eid="E13d", arm="Audit", title="E13a with a light contour term",
+        what_changes="E13a with the contour weight lowered from 1 to 0.01",
+        baseline="E13a",
+        variant="E13a with the contour term at weight 0.01: at weight 1 it is about "
+                "300 times the MSE term, so the reconstruction is in practice BCE + "
+                "soft Dice on the binarised map; at 0.01 the two terms are within an "
+                "order of magnitude.",
+        tiers=("T4",), entry="vae",
+        params={"representation": "lesion", "backbone": "resnet",
+                "w_dice": 0.0, "fusion_mode": "disconnectome", "zdim": 50,
+                "use_ard": False, "disco_contour": 0.01, "select_after_warmup": True},
+        notes="2 Nov, after E13a and E13c. Post hoc.",
+    ),
+    Experiment(
         eid="E2", arm="A", title="Reconstruction loss",
         what_changes="recon -> BCE + Soft Dice (scan lambda_Dice)",
         baseline="E1: recon = BCE (objective BCE + beta*KL)",
