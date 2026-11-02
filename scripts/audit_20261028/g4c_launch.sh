@@ -97,6 +97,23 @@ GENERIC_W="${GENERIC_W:-0.5}"
 # separated from the objective; default unit, G4c's 0 to 1
 HEAD_RANGE="${HEAD_RANGE:-unit}"
 case "$HEAD_RANGE" in unit|wide) ;; *) echo "HEAD_RANGE must be unit or wide" >&2; exit 1 ;; esac
+# PRIOR_REPAIR=1 (2 Nov, review L1): effect shapes of the trial's classes; the
+# virtual trials all-or-none (TE = 1, RE = 0), the generic share drawn from
+# unclipped step and the two trial kinds, and the gate's default requirements
+# (the trial's class shares) restored, so a prior that misses them does not train
+PRIOR_REPAIR="${PRIOR_REPAIR:-0}"
+case "$PRIOR_REPAIR" in 0|1) ;; *) echo "PRIOR_REPAIR must be 0 or 1" >&2; exit 1 ;; esac
+[ "$PRIOR_REPAIR" = 0 ] || tag="${tag}_rep"
+# DISTINCT=1 (2 Nov, review S2): contexts of distinct lesions (topped up with
+# replacement only when the slice is shorter than the context) with a
+# log-uniform length between context_min and context_max
+DISTINCT="${DISTINCT:-0}"
+case "$DISTINCT" in 0|1) ;; *) echo "DISTINCT must be 0 or 1" >&2; exit 1 ;; esac
+if [ "$DISTINCT" = 1 ]; then
+    export CONTEXT_REPLACE=0 CURRICULUM=loguniform; tag="${tag}_dist"; curriculum_expect=loguniform
+else
+    curriculum_expect=UNSET
+fi
 if [ "$HEAD_RANGE" = wide ]; then
     [ "$OBJECTIVE" = old ] || { echo "HEAD_RANGE=wide needs OBJECTIVE=old (OBJECTIVE=new already uses it)" >&2; exit 1; }
     tag="${tag}hw"
@@ -146,6 +163,12 @@ export PRIOR_HYPER="two_arms=1 effect_scale=0.2:1 d_source=network s_source=${S_
 if [ "$ALLOC" = g5 ]; then
     GILES_HYPER="$GILES_HYPER bias=0:0 bias_weights=1:0:0"; PRIOR_HYPER="$PRIOR_HYPER gamma=0:0"
 fi
+gate_require="share_zero=0:1 share_unit=0:1 share_small=0:1 pos_share=0:1 ctx_binary=0:1 ctx_treated=0:1"
+if [ "$PRIOR_REPAIR" = 1 ]; then
+    GILES_HYPER="${GILES_HYPER/p_te=0.9:1 p_re=0:0.05/p_te=1:1 p_re=0:0}"
+    PRIOR_HYPER="$PRIOR_HYPER generic_noclip=1 generic_kinds=step+trial+trial2 generic_kind_weights=0.2:0.4:0.4 generic_clean=1"
+    gate_require=""
+fi
 export LR_SCHEDULE=constant CONTEXT_POOL=susceptible CONTEXT_MAX="$RUN_CONTEXT_MAX" OMP_NUM_THREADS=4
 for c in "${caches[@]}"; do [ -s "$c" ] || { echo "no cache $c" >&2; exit 1; }; done
 [ -d data/atlases ] || { echo "no atlas at data/atlases" >&2; exit 1; }
@@ -177,13 +200,12 @@ if [ -n "${PRIOR_CHECK_ONLY:-}" ]; then
 fi
 # the launch must be G4c's: the shared values of G5 / TM and, unless
 # OBJECTIVE=new, no 28 Oct switch (the gate's ranges are opened: G4c's prior
-# is known to fail them, the run is its control)
+# is known to fail them, the run is its control; PRIOR_REPAIR=1 restores them)
 # shellcheck disable=SC2086
-python scripts/prior_gate.py --batches 5 --contexts 512 --require share_zero=0:1 share_unit=0:1 share_small=0:1 \
-    pos_share=0:1 ctx_binary=0:1 ctx_treated=0:1 \
+python scripts/prior_gate.py --batches 5 --contexts 512 ${gate_require:+--require $gate_require} \
     --expect prior.family=mixture prior.family_weights=$fw_theory:$fw_trial prior.hyper.generic_weight=$GENERIC_W \
              prior.hyper.s_source=${S_SOURCE}_1 prior.hyper.s_b_source=${S_SOURCE}_2 \
              prior.hyper_giles.random_partitions=1 pfn.context_max=$RUN_CONTEXT_MAX pfn.context_min=256 \
-             pfn.iters=$RUN_ITERS pfn.arch=$RUN_ARCH pfn.n_query=64 pfn.curriculum=UNSET $objective_expect $std_expect \
+             pfn.iters=$RUN_ITERS pfn.arch=$RUN_ARCH pfn.n_query=64 pfn.curriculum=$curriculum_expect $objective_expect $std_expect \
              pfn.n_bins=${RUN_N_BINS:-256} pfn.batch_size=${RUN_BATCH:-4} pfn.attn=$attn_expect
 bash scripts/train_pfn_myriad.qsub.sh

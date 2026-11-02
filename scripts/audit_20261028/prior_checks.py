@@ -69,10 +69,12 @@ def context_stats(batch: Dict) -> List[Dict]:
         Xc = np.asarray(batch["Xc"][i], dtype=np.float64)
         n, d = Xc.shape
         mu = Xc.mean(0)
+        # rows compared after rounding: the rotation's matrix product can round
+        # two copies of one lesion differently in the last bits
+        k = len(np.unique(np.round(Xc, 6), axis=0))
         rows.append({"rms_mean": float(np.sqrt((mu ** 2).mean())),
                      "mean_var": float(Xc.var(0).sum() / d),
-                     "distinct": int(len(np.unique(Xc, axis=0))),
-                     "distinct_share": float(len(np.unique(Xc, axis=0)) / n)})
+                     "distinct": int(k), "distinct_share": float(k / n)})
     return rows
 
 
