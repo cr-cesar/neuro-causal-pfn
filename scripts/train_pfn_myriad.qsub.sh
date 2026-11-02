@@ -66,12 +66,14 @@ HEAD_LO="${HEAD_LO:-}"                    # outcome-bin range of the head (defau
 HEAD_HI="${HEAD_HI:-}"
 N_QUERY="${N_QUERY:-}"                    # queries per training process (default: the config's, 64)
 CURRICULUM="${CURRICULUM:-}"              # context (default: linear ramp) | none | loguniform (28 Oct)
+N_BINS="${N_BINS:-}"                      # outcome bins of the head (default: the config's, 256; the design: 1024) (2 Nov)
+ATTN="${ATTN:-}"                          # masked (default) | sdpa: the same attention, memory linear in the context (2 Nov)
 
 # the cfg is built by neurocausalpfn.train.launch_cfg.cfg_from_env, the same
 # function the pre-launch checks and the prior gate use (28 Oct review)
 export CACHE CACHE_ANCHOR_WEIGHT OUT ITERS SEED ARCH VARIANT FAMILY FAMILY_WEIGHTS CONTEXT_POOL PRIOR_HYPER \
     GILES_HYPER LR_SCHEDULE BATCH CONTEXT_MIN CONTEXT_MAX AUGMENT CONTEXT_REPLACE STANDARDIZE D_MODEL N_LAYERS \
-    BOTH_ARMS CATE_WEIGHT HEAD_LO HEAD_HI N_QUERY CURRICULUM
+    BOTH_ARMS CATE_WEIGHT HEAD_LO HEAD_HI N_QUERY CURRICULUM N_BINS ATTN
 python - <<'PY'
 import json, os
 from neurocausalpfn.train.launch_cfg import cfg_from_env

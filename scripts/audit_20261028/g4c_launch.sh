@@ -22,7 +22,7 @@ echo "code_commit=$(git rev-parse HEAD) cambios_sin_commit=$dirty"
 export PYTHONPATH="$PWD/src"
 # anything left over from an earlier launch must not reach this one
 unset CACHE_ANCHOR_WEIGHT ITERS VARIANT BATCH CONTEXT_MIN AUGMENT CONTEXT_REPLACE STANDARDIZE D_MODEL N_LAYERS \
-    BOTH_ARMS CATE_WEIGHT HEAD_LO HEAD_HI N_QUERY CURRICULUM
+    BOTH_ARMS CATE_WEIGHT HEAD_LO HEAD_HI N_QUERY CURRICULUM N_BINS ATTN
 # RUN_ITERS (29 Oct): training steps, 4 simulated trials each (20000 = 80k
 # trials, G4c's); any other value is tagged in the run name (..._i25000)
 RUN_ITERS="${RUN_ITERS:-20000}"
@@ -39,6 +39,20 @@ for v in RUN_D_MODEL RUN_N_LAYERS; do
 done
 [ -z "${RUN_D_MODEL:-}" ] || export D_MODEL="$RUN_D_MODEL"
 [ -z "${RUN_N_LAYERS:-}" ] || export N_LAYERS="$RUN_N_LAYERS"
+# RUN_N_BINS / RUN_BATCH / RUN_CONTEXT_MAX / RUN_ATTN (2 Nov): the rest of the
+# design's scale (1,024 bins, 8 simulated trials per update, longer contexts);
+# defaults are the final model's (256 bins, batch 4, context 3,000, masked
+# attention). RUN_ATTN=sdpa is the same attention with memory linear in the
+# context, needed for wide models at long contexts. Non-defaults are tagged
+for v in RUN_N_BINS RUN_BATCH RUN_CONTEXT_MAX; do
+    [[ -z "${!v:-}" || "${!v}" =~ ^[1-9][0-9]*$ ]] || { echo "$v must be a positive integer" >&2; exit 1; }
+done
+RUN_CONTEXT_MAX="${RUN_CONTEXT_MAX:-3000}"
+RUN_ATTN="${RUN_ATTN:-masked}"
+case "$RUN_ATTN" in masked|sdpa) ;; *) echo "RUN_ATTN must be masked or sdpa" >&2; exit 1 ;; esac
+[ "$RUN_ATTN" = masked ] || export ATTN="$RUN_ATTN"
+[ -z "${RUN_N_BINS:-}" ] || export N_BINS="$RUN_N_BINS"
+[ -z "${RUN_BATCH:-}" ] || export BATCH="$RUN_BATCH"
 command -v module >/dev/null 2>&1 && module load python3/3.11
 source "${VENV:-$HOME/venvs/neuro}/bin/activate"
 # OBJECTIVE=new (ablation of 29 Oct): G4c's prior with TM's training target
@@ -103,6 +117,10 @@ read -r fw_theory fw_trial <<< "$FAMILY_W"
 [ "$RUN_ARCH" = linear ] || tag="${tag}_tabicl"
 [ -z "${RUN_D_MODEL:-}" ] || tag="${tag}_d$RUN_D_MODEL"
 [ -z "${RUN_N_LAYERS:-}" ] || tag="${tag}_L$RUN_N_LAYERS"
+[ -z "${RUN_N_BINS:-}" ] || tag="${tag}_b$RUN_N_BINS"
+[ -z "${RUN_BATCH:-}" ] || tag="${tag}_B$RUN_BATCH"
+[ "$RUN_CONTEXT_MAX" = 3000 ] || tag="${tag}_c$RUN_CONTEXT_MAX"
+[ "$RUN_ATTN" = masked ] || tag="${tag}_$RUN_ATTN"
 export SEED="${SEED:-0}"
 export JOBNAME="${JOBNAME:-$tag-f0-s$SEED}"
 export CACHE="${CACHE:-$HOME/p2_bcb/pools/kch_s0/fold0.npz}"
@@ -122,7 +140,7 @@ export PRIOR_HYPER="two_arms=1 effect_scale=0.2:1 d_source=network s_source=${S_
 if [ "$ALLOC" = g5 ]; then
     GILES_HYPER="$GILES_HYPER bias=0:0 bias_weights=1:0:0"; PRIOR_HYPER="$PRIOR_HYPER gamma=0:0"
 fi
-export LR_SCHEDULE=constant CONTEXT_POOL=susceptible CONTEXT_MAX=3000 OMP_NUM_THREADS=4
+export LR_SCHEDULE=constant CONTEXT_POOL=susceptible CONTEXT_MAX="$RUN_CONTEXT_MAX" OMP_NUM_THREADS=4
 [ -s "$CACHE" ] || { echo "no cache $CACHE" >&2; exit 1; }
 [ -d data/atlases ] || { echo "no atlas at data/atlases" >&2; exit 1; }
 # ATLAS_SRC (1 Nov): the atlas folder the run must use, e.g. the one scoring
@@ -133,10 +151,13 @@ if [ -n "${ATLAS_SRC:-}" ]; then
     echo "atlas_src=$(readlink -f "$ATLAS_SRC") identical"
 fi
 mkdir -p "$OUT"
+attn_expect=$([ "$RUN_ATTN" = masked ] && echo UNSET || echo "$RUN_ATTN")
 # the generic share replaces the effect of that share of ALL processes after the
 # family draw, so the effective composition is theory w_t(1-g), trial w_v(1-g), generic g
 echo "launch tag=$tag objective=$OBJECTIVE cate_w=$CATE_W head_range=$HEAD_RANGE generic_w=$GENERIC_W" \
-     "s_source=$S_SOURCE family_w=$fw_theory:$fw_trial iters=$RUN_ITERS seed=$SEED"
+     "s_source=$S_SOURCE family_w=$fw_theory:$fw_trial iters=$RUN_ITERS seed=$SEED" \
+     "d_model=${RUN_D_MODEL:-256} n_layers=${RUN_N_LAYERS:-6} n_bins=${RUN_N_BINS:-256}" \
+     "batch=${RUN_BATCH:-4} context_max=$RUN_CONTEXT_MAX attn=$RUN_ATTN"
 awk -v t="$fw_theory" -v v="$fw_trial" -v g="$GENERIC_W" 'BEGIN { s = t + v;
     printf "effective composition: theory %.3f, virtual-trial %.3f, generic %.3f\n", t / s * (1 - g), v / s * (1 - g), g }'
 # the launch must be G4c's: the shared values of G5 / TM and, unless
@@ -147,6 +168,7 @@ python scripts/prior_gate.py --batches 5 --contexts 512 --require share_zero=0:1
     pos_share=0:1 ctx_binary=0:1 ctx_treated=0:1 \
     --expect prior.family=mixture prior.family_weights=$fw_theory:$fw_trial prior.hyper.generic_weight=$GENERIC_W \
              prior.hyper.s_source=${S_SOURCE}_1 prior.hyper.s_b_source=${S_SOURCE}_2 \
-             prior.hyper_giles.random_partitions=1 pfn.context_max=3000 pfn.context_min=256 \
-             pfn.iters=$RUN_ITERS pfn.arch=$RUN_ARCH pfn.n_query=64 pfn.curriculum=UNSET $objective_expect $std_expect
+             prior.hyper_giles.random_partitions=1 pfn.context_max=$RUN_CONTEXT_MAX pfn.context_min=256 \
+             pfn.iters=$RUN_ITERS pfn.arch=$RUN_ARCH pfn.n_query=64 pfn.curriculum=UNSET $objective_expect $std_expect \
+             pfn.n_bins=${RUN_N_BINS:-256} pfn.batch_size=${RUN_BATCH:-4} pfn.attn=$attn_expect
 bash scripts/train_pfn_myriad.qsub.sh

@@ -56,9 +56,11 @@ def build_model(cfg: Dict, d_x: int):
             n_row_layers=p.get("n_row_layers", 3), n_icl_layers=p["n_layers"], n_heads=p["n_heads"],
             n_cls=p.get("n_cls", 4), n_inds=p.get("n_inds", 128), n_bins=p["n_bins"], sigma=p["sigma"],
             **rng_kw)
+    # attn (2 Nov): "sdpa" computes the same context-only softmax attention
+    # with memory linear in the context; checkpoints without it are "masked"
     return NeuroCausalPFN(
         d_x=d_x, d_model=p["d_model"], n_layers=p["n_layers"], n_heads=p["n_heads"],
-        n_bins=p["n_bins"], sigma=p["sigma"], **rng_kw)
+        n_bins=p["n_bins"], sigma=p["sigma"], attn_impl=p.get("attn", "masked"), **rng_kw)
 
 
 def pfn_loss(model, batch: Dict, p: Dict):

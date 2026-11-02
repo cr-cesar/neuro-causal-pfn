@@ -17,7 +17,8 @@ from typing import Dict, Mapping, Optional
 LAUNCH_VARS = ("CACHE", "CACHE_ANCHOR_WEIGHT", "OUT", "ITERS", "SEED", "ARCH", "VARIANT", "FAMILY",
                "FAMILY_WEIGHTS", "CONTEXT_POOL", "PRIOR_HYPER", "GILES_HYPER", "LR_SCHEDULE", "BATCH",
                "CONTEXT_MIN", "CONTEXT_MAX", "AUGMENT", "CONTEXT_REPLACE", "STANDARDIZE", "D_MODEL",
-               "N_LAYERS", "BOTH_ARMS", "CATE_WEIGHT", "HEAD_LO", "HEAD_HI", "N_QUERY", "CURRICULUM")
+               "N_LAYERS", "BOTH_ARMS", "CATE_WEIGHT", "HEAD_LO", "HEAD_HI", "N_QUERY", "CURRICULUM",
+               "N_BINS", "ATTN")
 # scoring-time switches of pfn/estimator.py: not part of the checkpoint, so
 # the scoring logs record them (estimator.scoring_settings)
 SCORING_VARS = ("PFN_CONTEXT_CAP", "PFN_CONTEXT_SELECT", "PFN_CONTEXT_K", "PFN_CONTEXT_ARM_CAP",
@@ -48,6 +49,9 @@ def cfg_from_env(env: Optional[Mapping[str, str]] = None) -> Dict:
     if get("STANDARDIZE"): cfg["prior"]["standardize"] = get("STANDARDIZE")
     if get("D_MODEL"): cfg["pfn"]["d_model"] = int(get("D_MODEL"))
     if get("N_LAYERS"): cfg["pfn"]["n_layers"] = int(get("N_LAYERS"))
+    # 2 Nov: outcome bins and the attention implementation (masked | sdpa)
+    if get("N_BINS"): cfg["pfn"]["n_bins"] = int(get("N_BINS"))
+    if get("ATTN"): cfg["pfn"]["attn"] = get("ATTN")
     # 28 Oct: both-arm targets, the effect term and the outcome-bin range
     if get("BOTH_ARMS"): cfg["pfn"]["both_arms"] = bool(int(get("BOTH_ARMS")))
     if get("CATE_WEIGHT"): cfg["pfn"]["cate_weight"] = float(get("CATE_WEIGHT"))
