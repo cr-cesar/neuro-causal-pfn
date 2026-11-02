@@ -32,15 +32,36 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import coverage_diagnostic as cd  # noqa: E402
 
 
+def _stem(name):
+    base = os.path.basename(str(name))
+    for ext in (".nii.gz", ".nii"):
+        if base.endswith(ext):
+            return base[: -len(ext)]
+    return base
+
+
 def load_some_folds(rep_dir, names):
-    """[(fold id, tr, te, Ztr, Zte)] for the folds present, sorted by fold id."""
+    """[(fold id, tr, te, Ztr, Zte)] for the folds present, sorted by fold id,
+    with tr / te as positions in ``names``. A fold stored over another order of
+    the same images (latents hashed on the cluster with hash_cache_names.py,
+    whose indices follow the sorted real names) is mapped by name; the rows of
+    Ztr / Zte keep their order, so they still match the mapped indices."""
+    pos = {_stem(n): i for i, n in enumerate(names)}
     out = []
     for path in sorted(glob.glob(os.path.join(glob.escape(rep_dir), "fold*.npz"))):
         with np.load(path, allow_pickle=False) as z:
-            if "files" in z.files and [os.path.basename(str(f)) for f in z["files"]] != list(names):
-                sys.exit(f"{os.path.basename(path)}: the stored listing differs from the image folder")
+            tr, te = z["tr_idx"].copy(), z["te_idx"].copy()
+            if "files" in z.files:
+                stored = [_stem(f) for f in z["files"]]
+                if stored != [_stem(n) for n in names]:
+                    missing = sum(s not in pos for s in stored)
+                    if missing or len(stored) != len(names):
+                        sys.exit(f"{os.path.basename(path)}: {missing} stored names are not in the image folder "
+                                 "(not hashed, or hashed with another salt)")
+                    remap = np.array([pos[s] for s in stored])
+                    tr, te = remap[tr], remap[te]
             k = int(z["fold"]) if "fold" in z.files else int(os.path.basename(path)[4:-4])
-            out.append((k, z["tr_idx"].copy(), z["te_idx"].copy(), z["Ztr"].copy(), z["Zte"].copy()))
+            out.append((k, tr, te, z["Ztr"].copy(), z["Zte"].copy()))
     if not out:
         sys.exit(f"no fold*.npz in {rep_dir}")
     return sorted(out, key=lambda f: f[0])
