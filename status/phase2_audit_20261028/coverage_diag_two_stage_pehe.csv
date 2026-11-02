@@ -1,0 +1,7 @@
+split,estimator,pehe,n_cells
+receptor,direct,0.34127172120487975,160
+receptor,two_stage_clf,0.34808783107806845,160
+receptor,two_stage_cov,0.3385706733520407,160
+genetics,direct,0.32541602197718833,160
+genetics,two_stage_clf,0.30223439568192545,160
+genetics,two_stage_cov,0.3197104819786095,160
