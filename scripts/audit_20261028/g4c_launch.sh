@@ -121,9 +121,15 @@ read -r fw_theory fw_trial <<< "$FAMILY_W"
 [ -z "${RUN_BATCH:-}" ] || tag="${tag}_B$RUN_BATCH"
 [ "$RUN_CONTEXT_MAX" = 3000 ] || tag="${tag}_c$RUN_CONTEXT_MAX"
 [ "$RUN_ATTN" = masked ] || tag="${tag}_$RUN_ATTN"
+# CACHE (2 Nov): one pool, or several separated by spaces (a multi-encoder
+# prior, prior/multi_cache.py: one pool drawn per batch, uniformly), e.g. the
+# KCH pool encoded by each of the ten fold encoders; several are tagged
+CACHE="${CACHE:-$HOME/p2_bcb/pools/kch_s0/fold0.npz}"
+read -r -a caches <<< "$CACHE"
+[ "${#caches[@]}" -le 1 ] || tag="${tag}_pools${#caches[@]}"
 export SEED="${SEED:-0}"
 export JOBNAME="${JOBNAME:-$tag-f0-s$SEED}"
-export CACHE="${CACHE:-$HOME/p2_bcb/pools/kch_s0/fold0.npz}"
+export CACHE
 export OUT="${OUT:-$HOME/p2_bcb/pfn_screen/${tag}_s$SEED/fold0}"
 if [ "$OBJECTIVE" = new ]; then
     export BOTH_ARMS=1 CATE_WEIGHT="$CATE_W" HEAD_LO=-0.05 HEAD_HI=1.05
@@ -141,11 +147,11 @@ if [ "$ALLOC" = g5 ]; then
     GILES_HYPER="$GILES_HYPER bias=0:0 bias_weights=1:0:0"; PRIOR_HYPER="$PRIOR_HYPER gamma=0:0"
 fi
 export LR_SCHEDULE=constant CONTEXT_POOL=susceptible CONTEXT_MAX="$RUN_CONTEXT_MAX" OMP_NUM_THREADS=4
-[ -s "$CACHE" ] || { echo "no cache $CACHE" >&2; exit 1; }
+for c in "${caches[@]}"; do [ -s "$c" ] || { echo "no cache $c" >&2; exit 1; }; done
 [ -d data/atlases ] || { echo "no atlas at data/atlases" >&2; exit 1; }
 # ATLAS_SRC (1 Nov): the atlas folder the run must use, e.g. the one scoring
 # reads (~/export_bcb/atlases on siena); data/atlases must match it file by file
-echo "atlas_dir=$(readlink -f data/atlases) cache=$(readlink -f "$CACHE")"
+echo "atlas_dir=$(readlink -f data/atlases) caches=${#caches[@]}: $(for c in "${caches[@]}"; do readlink -f "$c"; done | tr '\n' ' ')"
 if [ -n "${ATLAS_SRC:-}" ]; then
     diff -rq data/atlases "$ATLAS_SRC" >/dev/null || { echo "data/atlases differs from $ATLAS_SRC" >&2; exit 1; }
     echo "atlas_src=$(readlink -f "$ATLAS_SRC") identical"
@@ -154,7 +160,8 @@ mkdir -p "$OUT"
 attn_expect=$([ "$RUN_ATTN" = masked ] && echo UNSET || echo "$RUN_ATTN")
 # the generic share replaces the effect of that share of ALL processes after the
 # family draw, so the effective composition is theory w_t(1-g), trial w_v(1-g), generic g
-echo "launch tag=$tag objective=$OBJECTIVE cate_w=$CATE_W head_range=$HEAD_RANGE generic_w=$GENERIC_W" \
+head_bins=$([ "$OBJECTIVE" = new ] || [ "$HEAD_RANGE" = wide ] && echo "-0.05:1.05" || echo "0:1")
+echo "launch tag=$tag objective=$OBJECTIVE cate_w=$CATE_W head=$head_bins generic_w=$GENERIC_W" \
      "s_source=$S_SOURCE family_w=$fw_theory:$fw_trial iters=$RUN_ITERS seed=$SEED" \
      "d_model=${RUN_D_MODEL:-256} n_layers=${RUN_N_LAYERS:-6} n_bins=${RUN_N_BINS:-256}" \
      "batch=${RUN_BATCH:-4} context_max=$RUN_CONTEXT_MAX attn=$RUN_ATTN"
