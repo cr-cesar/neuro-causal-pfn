@@ -1,0 +1,7 @@
+classifier,learner,features,encoder,scorer_commit,split,pehe_paper,pehe_code_scale
+logistic_regression,two,E1+vol+centroid,E1 seed0,05072ab,receptor,0.308,0.221
+logistic_regression,two,E1+vol+centroid,E1 seed0,05072ab,genetics,0.271,0.229
+tabpfn,one,E1,E1 seed0,05072ab,receptor,0.283,0.218
+tabpfn,one,E1,E1 seed0,05072ab,genetics,0.253,0.228
+tabpfn,one,E1+vol+centroid,E1 seed0,05072ab,receptor,0.278,0.217
+tabpfn,one,E1+vol+centroid,E1 seed0,05072ab,genetics,0.254,0.228
