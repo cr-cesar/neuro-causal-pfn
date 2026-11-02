@@ -201,6 +201,19 @@ REGISTRY: List[Experiment] = [
         notes="2 Nov, with E13a. Post hoc.",
     ),
     Experiment(
+        eid="E13c", arm="Audit", title="E13a without the contour term (same-code control)",
+        what_changes="E13a with the contour term removed",
+        baseline="E13a",
+        variant="E1's disconnectome VAE (MSE only) with E13a's checkpoint choice at "
+                "full beta, trained with the same code and machine as E13a, so that "
+                "E13a against E13c isolates the contour term.",
+        tiers=("T4",), entry="vae",
+        params={"representation": "lesion", "backbone": "resnet",
+                "w_dice": 0.0, "fusion_mode": "disconnectome", "zdim": 50,
+                "use_ard": False, "select_after_warmup": True},
+        notes="2 Nov, control of E13a. Post hoc.",
+    ),
+    Experiment(
         eid="E2", arm="A", title="Reconstruction loss",
         what_changes="recon -> BCE + Soft Dice (scan lambda_Dice)",
         baseline="E1: recon = BCE (objective BCE + beta*KL)",
