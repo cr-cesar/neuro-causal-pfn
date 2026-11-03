@@ -1,0 +1,5 @@
+run,seed,steps,tasks_per_step,tasks,params,arch,objective,family_w,n_ctx_final,code_commit,pool_md5,atlas_md5,machine,date,start,end,final_loss,ckpt_bytes,ckpt_md5,error_lines
+final1M,0,250000,4,1000000,4.83M,linear,new,0 1,3000,69250c3,341e229d88f4,fd1b531e7cf9,beachcomber,2026-11-03,02:51,08:29,3.7236,19352157,d82ba638428d15c9bf3ac65e6789a627,0
+final1M,1,250000,4,1000000,4.83M,linear,new,0 1,3000,69250c3,341e229d88f4,fd1b531e7cf9,beachcomber,2026-11-03,02:51,08:30,3.7174,19352157,3db9c1e4457f5edf2f853c3134815ccf,0
+final1M,2,250000,4,1000000,4.83M,linear,new,0 1,3000,69250c3,341e229d88f4,fd1b531e7cf9,beachcomber,2026-11-03,02:51,08:30,4.2666,19352157,cccc7a361959481adf6f133d97eef06e,0
+ctl500k,0,125000,4,500000,4.83M,linear,new,0 1,3000,69250c3,341e229d88f4,fd1b531e7cf9,beachcomber,2026-11-03,02:51,05:45,3.6410,19352157,9ba0f7fe690e87e904584f35ebd8dc72,0

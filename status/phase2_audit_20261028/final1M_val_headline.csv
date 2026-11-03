@@ -1,0 +1,5 @@
+label,reps,protocol,n_queries,queries_with_other_image,receptor_pehe_paper,receptor_pehe_code,genetics_pehe_paper,genetics_pehe_code,n_deficits
+final1M_s0,E13a seed0,grp-giles-extrasclean,1291,0,0.291,0.218,0.264,0.229,16
+final1M_s1,E13a seed0,grp-giles-extrasclean,1291,0,0.292,0.220,0.265,0.231,16
+final1M_s2,E13a seed0,grp-giles-extrasclean,1291,0,0.297,0.219,0.263,0.229,16
+final1M_ctl500k_s0,E13a seed0,grp-giles-extrasclean,1291,0,0.307,0.225,0.278,0.235,16
