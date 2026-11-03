@@ -1,0 +1,2 @@
+split,label_a,label_b,n_deficits,n_excluded_nan,mean_a,mean_b,diff_mean,diff_ci_low,diff_ci_high,diff_sd,n_a_lower,n_b_lower,paired_t,paired_t_p,wilcoxon_w,wilcoxon_p
+both,final1M,ctl500k,16,0,0.2787871074578615,0.2928343960542652,-0.014047288596403716,-0.019003613733855815,-0.009090963458951617,0.009301322938238238,16,0,-6.040985218846475,2.259324614435908e-05,0.0,3.0517578125e-05
