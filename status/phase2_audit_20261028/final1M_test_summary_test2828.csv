@@ -1,0 +1,11 @@
+model,receptor_pehe,receptor_balacc,receptor_balacc_undefined,receptor_rows,receptor_folds,genetics_pehe,genetics_balacc,genetics_balacc_undefined,genetics_rows,genetics_folds
+final1M s0,0.305,0.898,42,160,10,0.269,0.953,15,160,10
+final1M s1,0.305,0.906,42,160,10,0.269,0.96,15,160,10
+final1M s2,0.299,0.922,42,160,10,0.271,0.954,15,160,10
+final1M mean3,0.303,0.908,126,480,10,0.27,0.956,45,480,10
+TabPFN-S E13a,0.286,0.907,126,480,10,0.251,0.955,45,480,10
+CausalPFN E13a,0.299,0.879,126,480,10,0.267,0.942,45,480,10
+LR-T E13a,0.335,0.881,126,480,10,0.302,0.931,45,480,10
+ET-T E13a,0.361,0.844,126,480,10,0.339,0.922,45,480,10
+TabPFN-S E1,0.284,0.904,126,480,10,0.25,0.953,45,480,10
+final 500k E1,0.317,0.899,126,480,10,0.289,0.952,45,480,10
