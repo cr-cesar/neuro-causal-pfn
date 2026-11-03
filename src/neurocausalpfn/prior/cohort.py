@@ -5,7 +5,7 @@ identifiability verifier and stacks contexts and queries into batches to train
 the transformer. Returns numpy arrays; the conversion to tensors is done in the
 model layer so that this module does not depend on torch.
 """
-from typing import Dict, Optional, Sequence
+from typing import Dict, List, Optional, Sequence
 
 import numpy as np
 
@@ -333,20 +333,25 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
         if family == "theory":
             from .intersynth_theory import InterSynthTheoryDGP
 
+            if self.excluded_networks():
+                # the theory family reads every network's halves directly
+                raise ValueError("exclude_networks is not supported with the theory family")
+
             # the D and S scales are fixed on the whole pool, so the ground
             # truth of a process does not depend on the batch it is sampled in
             return InterSynthTheoryDGP(self.atlas, self.rng, self.hyper).calibrate(self._theory_ov())
         from .neuro_prior import NeuroPriorDGP
 
         h = self.hyper if self.family == "giles" else self.hyper_giles
+        if self.excluded_networks(h) and float(getattr(h, "random_partitions", 0.0) or 0.0) < 1:
+            # a process on the atlas's own halves would read the left-out networks
+            raise ValueError("exclude_networks needs random_partitions = 1")
         if float(getattr(h, "random_partitions", 0.0) or 0.0) > 0 and self.rng.uniform() < float(h.random_partitions):
             # route C: the process's networks are random partitions of the
             # cache's anatomical atoms, never the benchmark's own halves
-            from .partitions import VirtualAtlas, atom_table, draw_virtual_networks
+            from .partitions import VirtualAtlas, draw_virtual_networks
 
-            if self._atoms is None:
-                self._atoms = atom_table(self.overlaps, self.overlaps_extra)
-            labels, table = self._atoms
+            labels, table = self.atom_table(h)
             k = int(self.rng.integers(h.n_networks[0], h.n_networks[1] + 1))
             vov, desc = draw_virtual_networks(self.rng, labels, table, k, atoms_per_side=h.atoms_per_side)
             atlas = VirtualAtlas(vov, self.centroids)
@@ -355,6 +360,34 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
             dgp.virtual_desc = desc
             return dgp
         return NeuroPriorDGP(self.atlas, self.rng, h)
+
+    def excluded_networks(self, h=None) -> List[int]:
+        """Positions k of the networks left out of the random partitions: the
+        hyper's ``exclude_networks`` atlas ids ("1+2+3+4", or one number)
+        mapped through the atlas's network order."""
+        h = h if h is not None else (self.hyper if self.family == "giles" else self.hyper_giles)
+        raw = getattr(h, "exclude_networks", "") or ""
+        if isinstance(raw, (int, float)):
+            raw = str(int(raw))
+        ids = [int(float(x)) for x in str(raw).split("+") if x.strip()]
+        order = list(getattr(self.atlas, "networks", range(1, self.overlaps.shape[1] + 1)))
+        missing = [i for i in ids if i not in order]
+        if missing:
+            raise ValueError(f"exclude_networks: no atlas network {missing}")
+        return sorted(order.index(i) for i in ids)
+
+    def atom_table(self, h=None):
+        """(labels, table) of the anatomical atoms the random partitions draw
+        from, without the left-out networks; built on first use."""
+        if self._atoms is None:
+            from .partitions import atom_table
+
+            ex = self.excluded_networks(h)
+            self._atoms = atom_table(self.overlaps, self.overlaps_extra, exclude=ex)
+            if ex:
+                log.info("leave-networks-out: %d network(s) left out, %d atoms remain",
+                         len(ex), len(self._atoms[0]))
+        return self._atoms
 
     def _giles_ov(self, dgp) -> np.ndarray:
         """The [m, K, 2] overlaps a virtual-trial process reads: the cache's

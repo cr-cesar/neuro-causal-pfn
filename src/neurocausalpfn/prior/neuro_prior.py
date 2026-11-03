@@ -52,6 +52,9 @@ class HyperPrior:
     # instead of the atlas's own halves, and the atoms per side of those
     random_partitions: float = 0.0
     atoms_per_side: Tuple[float, float] = (1, 2)
+    # leave-networks-out (2 Nov): atlas network ids, joined by "+", whose
+    # atoms the random partitions never use (needs random_partitions = 1)
+    exclude_networks: str = ""
     # share of processes with the paper's coupling of the two effects,
     # RE = 1 - TE (its grid: (1, 0), (0.75, 0.25), (0.5, 0.5), (0.25, 0.75))
     te_re_coupled: float = 0.0

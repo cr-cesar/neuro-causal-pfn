@@ -20,11 +20,15 @@ import numpy as np
 Atom = Tuple[str, int, int]     # (channel, network index, half); half = -1 for a whole network
 
 
-def atom_table(overlaps: np.ndarray, extra: Optional[Dict[str, np.ndarray]] = None
-               ) -> Tuple[List[Atom], np.ndarray]:
+def atom_table(overlaps: np.ndarray, extra: Optional[Dict[str, np.ndarray]] = None,
+               exclude: Sequence[int] = ()) -> Tuple[List[Atom], np.ndarray]:
     """Every anatomical atom of a cache as a column: returns the atom labels
     and a [m, n_atoms] array of overlap fractions. ``overlaps`` is the primary
-    [m, K, 2] array; ``extra`` the optional channels of the cache."""
+    [m, K, 2] array; ``extra`` the optional channels of the cache.
+    ``exclude`` (2 Nov, leave-networks-out) lists network positions k whose
+    atoms are dropped from every channel: the whole network and both halves of
+    both splits, so no virtual network is built from them."""
+    exclude = {int(k) for k in exclude}
     cols, labels = [], []
     arrays = {"primary": np.asarray(overlaps, dtype=np.float32)}
     for key, arr in (extra or {}).items():
@@ -36,6 +40,8 @@ def atom_table(overlaps: np.ndarray, extra: Optional[Dict[str, np.ndarray]] = No
     seen = set()
     for name, arr in arrays.items():
         for k in range(arr.shape[1]):
+            if k in exclude:
+                continue
             for h in range(arr.shape[2]):
                 col = arr[:, k, h]
                 # the primary overlaps repeat one split of the extra channels:

@@ -33,6 +33,18 @@ def test_guard_blocks_halves_inside_unions():
     assert not is_benchmark_pair([0], [2], labels)
 
 
+def test_left_out_networks_leave_no_atom():
+    # leave-networks-out: no channel keeps an atom of a left-out network
+    primary, extra = _cache(k=4)
+    labels, table = atom_table(primary, extra, exclude=[1, 3])
+    assert {k for _, k, _ in labels} == {0, 2}
+    assert table.shape[1] == len(labels) == 2 * 2 + 2 * 2 + 2
+    rng = np.random.default_rng(2)
+    for _ in range(200):
+        _, desc = draw_virtual_networks(rng, labels, table, 2, atoms_per_side=(1, 2))
+        assert all(k in (0, 2) for d in desc for side in ("A", "B") for _, k, _ in d[side])
+
+
 def test_drawn_networks_never_hold_a_benchmark_pair():
     primary, extra = _cache(k=3)
     labels, table = atom_table(primary, extra)

@@ -64,6 +64,36 @@ def test_cohort_draws_random_partition_processes():
     assert all(p["partitions"] == "atlas" for p in plain.sample_batch(3)["processes"])
 
 
+def test_left_out_networks_never_enter_a_process():
+    # leave-networks-out (2 Nov): the virtual networks of the mixture never use
+    # an atom of a left-out network, and the options that would read the
+    # atlas's own halves are refused
+    import pytest
+
+    atlas = FunctionalAtlas.synthetic(shape=SHAPE, n_networks=6, seed=1)
+    pool = _pool(atlas, 48, seed=0)
+    ids = [atlas.networks[1], atlas.networks[4]]
+    h = HyperPrior(random_partitions=1.0, atoms_per_side=(1, 2), threshold=(0.01, 0.2),
+                   exclude_networks="+".join(str(i) for i in ids))
+    coh = NeuroPriorCohort(atlas, pool, seed=6, n_context=32, n_query=4, family="mixture",
+                           family_weights=(0.0, 1.0), hyper_giles=h, context_pool="all", augment=False)
+    assert coh.excluded_networks() == [1, 4]
+    labels, _ = coh.atom_table()
+    assert labels and all(k not in (1, 4) for _, k, _ in labels)
+    for _ in range(50):
+        d = coh.sample_process()
+        assert all(k not in (1, 4) for net in d.virtual_desc for side in ("A", "B") for _, k, _ in net[side])
+    assert coh.sample_batch(3)["Yc"].shape == (3, 32)
+    half = HyperPrior(random_partitions=0.5, exclude_networks=str(ids[0]))
+    with pytest.raises(ValueError):
+        NeuroPriorCohort(atlas, pool, seed=7, n_context=32, n_query=4, family="giles", hyper=half,
+                         context_pool="all", augment=False).sample_process()
+    theory = NeuroPriorCohort(atlas, pool, seed=8, n_context=32, n_query=4, family="mixture",
+                              family_weights=(1.0, 0.0), hyper_giles=h, context_pool="all", augment=False)
+    with pytest.raises(ValueError):
+        theory.sample_process()
+
+
 def test_te_re_coupling_follows_the_paper_grid():
     atlas = FunctionalAtlas.synthetic(shape=SHAPE, n_networks=6, seed=1)
     from neurocausalpfn.prior.neuro_prior import NeuroPriorDGP

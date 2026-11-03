@@ -54,8 +54,13 @@ def cache_report(prior) -> Dict[str, object]:
     extra = getattr(prior, "overlaps_extra", {}) or {}
     for k, v in sorted(extra.items()):
         out[f"{k}_dtype"] = str(np.asarray(v).dtype)
-    labels, _ = atom_table(prior.overlaps, extra)
+    # the cohort's own table drops the networks a leave-networks-out run leaves out
+    labels, _ = prior.atom_table() if hasattr(prior, "atom_table") else atom_table(prior.overlaps, extra)
     out["n_atoms"] = len(labels)
+    if hasattr(prior, "excluded_networks"):
+        ex = prior.excluded_networks()
+        out["networks_left_out"] = len(ex)
+        out["atoms_of_left_out_networks"] = sum(1 for lab in labels if lab[1] in set(ex))
     out["n_atoms_primary_kept"] = sum(1 for lab in labels if lab[0] == "primary")
     out["pool_size"] = int(prior.m)
     out["d_latent"] = int(prior.d_x)

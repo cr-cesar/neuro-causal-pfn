@@ -138,6 +138,12 @@ read -r fw_theory fw_trial <<< "$FAMILY_W"
 [ -z "${RUN_BATCH:-}" ] || tag="${tag}_B$RUN_BATCH"
 [ "$RUN_CONTEXT_MAX" = 3000 ] || tag="${tag}_c$RUN_CONTEXT_MAX"
 [ "$RUN_ATTN" = masked ] || tag="${tag}_$RUN_ATTN"
+# EXCLUDE_NETWORKS (2 Nov, leave-networks-out): atlas network ids joined by
+# "+" (e.g. 1+2+3+4) whose atoms the virtual-trial family's random partitions
+# never use; prior/cohort.py refuses it with the theory family drawn
+EXCLUDE_NETWORKS="${EXCLUDE_NETWORKS:-}"
+[ -z "$EXCLUDE_NETWORKS" ] || [[ "$EXCLUDE_NETWORKS" =~ ^[0-9]+(\+[0-9]+)*$ ]] || { echo "EXCLUDE_NETWORKS must be ids joined by +, e.g. 1+2+3+4" >&2; exit 1; }
+[ -z "$EXCLUDE_NETWORKS" ] || tag="${tag}_lno${EXCLUDE_NETWORKS//+/-}"
 # CACHE (2 Nov): one pool, or several separated by spaces (a multi-encoder
 # prior, prior/multi_cache.py: one pool drawn per batch, uniformly), e.g. the
 # KCH pool encoded by each of the ten fold encoders; several are tagged
@@ -169,6 +175,7 @@ if [ "$PRIOR_REPAIR" = 1 ]; then
     PRIOR_HYPER="$PRIOR_HYPER generic_noclip=1 generic_kinds=step+trial+trial2 generic_kind_weights=0.2:0.4:0.4 generic_clean=1"
     gate_require=""
 fi
+[ -z "$EXCLUDE_NETWORKS" ] || GILES_HYPER="$GILES_HYPER exclude_networks=$EXCLUDE_NETWORKS"
 export LR_SCHEDULE=constant CONTEXT_POOL=susceptible CONTEXT_MAX="$RUN_CONTEXT_MAX" OMP_NUM_THREADS=4
 for c in "${caches[@]}"; do [ -s "$c" ] || { echo "no cache $c" >&2; exit 1; }; done
 [ -d data/atlases ] || { echo "no atlas at data/atlases" >&2; exit 1; }
