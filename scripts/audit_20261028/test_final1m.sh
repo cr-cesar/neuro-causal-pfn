@@ -35,7 +35,8 @@
 set -euo pipefail
 STEPS="${STEPS:-0 1 2 3 4}"
 PY="${PY:-$HOME/env/bin/python}"
-PANEL_PY="${PANEL_PY:-$HOME/env_panel/bin/python}"
+PANEL_PY="${PANEL_PY:-$HOME/env_panel/bin/python}"   # TabPFN
+CPFN_PY="${CPFN_PY:-$HOME/env_cpfn/bin/python}"      # CausalPFN (the causalpfn package)
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
 PF="${PF:-$HOME/ncp_pf_clean}"
 PF_COMMIT="${PF_COMMIT:-79e8b3c}"
@@ -66,7 +67,7 @@ score() {  # label, seed, python, ncpfold.score args...
             OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 PFN_CONTEXT_CAP=3000 nice -n 10 \
             "$py" -m ncpfold.score --reps "$E13A/seed$s/folds" --data-dir "$BCB/Full data" \
             --atlas-dir "$BCB/atlases" --groups "$BCB/fold_table.csv" --test-singles --modality "$m" \
-            --out-root "$T/$L/$m" "$@") > "$LOGS/$L-$m.log" 2>&1
+            --out-root "$T/$L/$m" "$@") > "$LOGS/$L-s$s-$m.log" 2>&1
     done
 }
 
@@ -76,6 +77,7 @@ if [[ " $STEPS " == *" 0 "* ]]; then
     [ "$have" = "$PF_COMMIT" ] || { echo "$PF is at $have, not $PF_COMMIT" >&2; exit 1; }
     [ "$(git -C "$PF" status --porcelain --untracked-files=no | wc -l)" -eq 0 ] || { echo "$PF has uncommitted changes" >&2; exit 1; }
     bad=0
+    "$CPFN_PY" -c "import causalpfn" 2>/dev/null || { echo "   $CPFN_PY has no causalpfn package"; bad=1; }
     for s in "${SEEDS[@]}"; do
         f="$CK/s$s/pfn.pt"; want=$(echo " $CK_MD5 " | sed -n "s/.* s$s=\([0-9a-f]*\) .*/\1/p")
         if [ ! -s "$f" ]; then echo "   s$s: no checkpoint"; bad=1; continue; fi
@@ -112,7 +114,7 @@ if [[ " $STEPS " == *" 2 "* ]]; then
     echo "== $(date +%H:%M) 2 comparators on E13a latents"
     for s in "${SEEDS[@]}"; do
         [ -s "$(rr lret_e13a genetics $s)" ] || CUDA_VISIBLE_DEVICES="" score lret_e13a "$s" "$PY" &
-        [ -s "$(rr causalpfn_e13a genetics $s)" ] || CUDA_VISIBLE_DEVICES="" score causalpfn_e13a "$s" "$PY" \
+        [ -s "$(rr causalpfn_e13a genetics $s)" ] || CUDA_VISIBLE_DEVICES="" score causalpfn_e13a "$s" "$CPFN_PY" \
             --estimators causalpfn --only-estimators &
     done
     wait
