@@ -1,0 +1,2 @@
+eid,label,budget,task,channel,protocol,n_seeds,pehe_paper_mean,pehe_paper_seed_sd,pehe_paper_ci_low,pehe_paper_ci_high,pehe_paper_selected,balacc_mean,pehe_code_mean
+E1,E1,published,disconnectome,disconnectome,grp-giles-singles,1,0.4617332705506952,0.0,0.4373960481286076,0.4860704929727828,0.4617332705506952,0.8189899814826511,0.273037395404853
