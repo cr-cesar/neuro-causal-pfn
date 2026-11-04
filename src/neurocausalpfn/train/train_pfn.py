@@ -152,7 +152,9 @@ CURRICULA = ("context", "none", "loguniform")
 def _context_length(cfg: Dict, it: int) -> int:
     """Context length at iteration ``it``. ``cfg["pfn"]["curriculum"]``:
     ``"context"`` (default) grows the context linearly from context_min to
-    context_max over the first half of training; ``"none"`` keeps it at
+    context_max over the first half of training, or over the first
+    ``ramp_iters`` updates when set (3 Nov), so that runs of different length
+    share one schedule; ``"none"`` keeps it at
     context_max from the start (the E12 ablation without curriculum);
     ``"loguniform"`` (28 Oct) draws every batch's length log-uniformly between
     context_min and context_max for the whole run, so short and long contexts
@@ -169,7 +171,8 @@ def _context_length(cfg: Dict, it: int) -> int:
         lo, hi = np.log(int(p["context_min"])), np.log(int(p["context_max"]))
         u = np.random.default_rng([int(cfg.get("seed", 0)), int(it), 28]).uniform()
         return int(round(np.exp(lo + u * (hi - lo))))
-    frac = min(1.0, (it + 1) / max(1, int(0.5 * p["iters"])))
+    ramp = int(p.get("ramp_iters") or 0.5 * p["iters"])
+    frac = min(1.0, (it + 1) / max(1, ramp))
     return int(p["context_min"] + frac * (p["context_max"] - p["context_min"]))
 
 
@@ -434,21 +437,32 @@ def run_pfn(cfg: Dict):
         history.append({"iter": it, "loss": float(loss.detach()), "n_ctx": n_ctx, "lr": lr_now})
         if (it + 1) % cfg["log_every"] == 0 or it == 0:
             log.info("iter %d/%d  n_ctx=%d  loss=%.4f", it + 1, p["iters"], n_ctx, float(loss.detach()))
+        # 3 Nov: intermediate checkpoints (pfn_it<updates>.pt), so one run gives
+        # the budget curve; under the constant learning rate each is the model
+        # a shorter run with the same ramp would have trained
+        every = int(p.get("ckpt_every") or 0)
+        if every and (it + 1) % every == 0 and it + 1 < p["iters"]:
+            _save_checkpoint(model, cfg, f"pfn_it{it + 1}.pt", it + 1)
 
+    _save_checkpoint(model, cfg, "pfn.pt", p["iters"], write_provenance=True)
+    return model, history
+
+
+def _save_checkpoint(model, cfg: Dict, name: str, updates: int, write_provenance: bool = False):
     os.makedirs(cfg["out_dir"], exist_ok=True)
-    ckpt = os.path.join(cfg["out_dir"], "pfn.pt")
+    ckpt = os.path.join(cfg["out_dir"], name)
     # 28 Oct review: the checkpoint now says which code and launch built it
     from .launch_cfg import provenance
 
     prov = provenance()
-    torch.save({"state_dict": model.state_dict(), "cfg": cfg, "provenance": prov}, ckpt)
-    import json
+    torch.save({"state_dict": model.state_dict(), "cfg": cfg, "provenance": prov, "updates": updates}, ckpt)
+    if write_provenance:
+        import json
 
-    with open(os.path.join(cfg["out_dir"], "provenance.json"), "w") as f:
-        json.dump(prov, f, indent=1, default=str)
-    log.info("checkpoint saved to %s (code %s%s)", ckpt, prov.get("git_commit"),
+        with open(os.path.join(cfg["out_dir"], "provenance.json"), "w") as f:
+            json.dump(prov, f, indent=1, default=str)
+    log.info("checkpoint saved to %s after %d updates (code %s%s)", ckpt, updates, prov.get("git_commit"),
              " dirty" if prov.get("git_dirty") else "")
-    return model, history
 
 
 @torch.no_grad()

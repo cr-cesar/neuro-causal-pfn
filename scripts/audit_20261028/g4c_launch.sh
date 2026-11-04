@@ -22,7 +22,7 @@ echo "code_commit=$(git rev-parse HEAD) cambios_sin_commit=$dirty"
 export PYTHONPATH="$PWD/src"
 # anything left over from an earlier launch must not reach this one
 unset CACHE_ANCHOR_WEIGHT ITERS VARIANT BATCH CONTEXT_MIN AUGMENT CONTEXT_REPLACE STANDARDIZE D_MODEL N_LAYERS \
-    BOTH_ARMS CATE_WEIGHT HEAD_LO HEAD_HI N_QUERY CURRICULUM N_BINS ATTN
+    BOTH_ARMS CATE_WEIGHT HEAD_LO HEAD_HI N_QUERY CURRICULUM N_BINS ATTN RAMP_ITERS CKPT_EVERY
 # RUN_ITERS (29 Oct): training steps, 4 simulated trials each (20000 = 80k
 # trials, G4c's); any other value is tagged in the run name (..._i25000)
 RUN_ITERS="${RUN_ITERS:-20000}"
@@ -53,6 +53,15 @@ case "$RUN_ATTN" in masked|sdpa) ;; *) echo "RUN_ATTN must be masked or sdpa" >&
 [ "$RUN_ATTN" = masked ] || export ATTN="$RUN_ATTN"
 [ -z "${RUN_N_BINS:-}" ] || export N_BINS="$RUN_N_BINS"
 [ -z "${RUN_BATCH:-}" ] || export BATCH="$RUN_BATCH"
+# RUN_RAMP_ITERS / RUN_CKPT_EVERY (3 Nov, budget curve): the context ramp over a
+# fixed number of updates instead of the first half of the run (125000 is the
+# final model's), and an intermediate checkpoint every RUN_CKPT_EVERY updates;
+# a ramp is tagged in the run name, checkpoints do not change the model
+for v in RUN_RAMP_ITERS RUN_CKPT_EVERY; do
+    [[ -z "${!v:-}" || "${!v}" =~ ^[1-9][0-9]*$ ]] || { echo "$v must be a positive integer" >&2; exit 1; }
+done
+[ -z "${RUN_RAMP_ITERS:-}" ] || export RAMP_ITERS="$RUN_RAMP_ITERS"
+[ -z "${RUN_CKPT_EVERY:-}" ] || export CKPT_EVERY="$RUN_CKPT_EVERY"
 command -v module >/dev/null 2>&1 && module load python3/3.11
 source "${VENV:-$HOME/venvs/neuro}/bin/activate"
 # OBJECTIVE=new (ablation of 29 Oct): G4c's prior with TM's training target
@@ -138,6 +147,7 @@ read -r fw_theory fw_trial <<< "$FAMILY_W"
 [ -z "${RUN_BATCH:-}" ] || tag="${tag}_B$RUN_BATCH"
 [ "$RUN_CONTEXT_MAX" = 3000 ] || tag="${tag}_c$RUN_CONTEXT_MAX"
 [ "$RUN_ATTN" = masked ] || tag="${tag}_$RUN_ATTN"
+[ -z "${RUN_RAMP_ITERS:-}" ] || tag="${tag}_r$RUN_RAMP_ITERS"
 # EXCLUDE_NETWORKS (2 Nov, leave-networks-out): atlas network ids joined by
 # "+" (e.g. 1+2+3+4) whose atoms the virtual-trial family's random partitions
 # never use; prior/cohort.py refuses it with the theory family drawn
@@ -194,7 +204,8 @@ head_bins=$([ "$OBJECTIVE" = new ] || [ "$HEAD_RANGE" = wide ] && echo "-0.05:1.
 echo "launch tag=$tag objective=$OBJECTIVE cate_w=$CATE_W head=$head_bins generic_w=$GENERIC_W" \
      "s_source=$S_SOURCE family_w=$fw_theory:$fw_trial iters=$RUN_ITERS seed=$SEED" \
      "d_model=${RUN_D_MODEL:-256} n_layers=${RUN_N_LAYERS:-6} n_bins=${RUN_N_BINS:-256}" \
-     "batch=${RUN_BATCH:-4} context_max=$RUN_CONTEXT_MAX attn=$RUN_ATTN"
+     "batch=${RUN_BATCH:-4} context_max=$RUN_CONTEXT_MAX attn=$RUN_ATTN" \
+     "ramp_iters=${RUN_RAMP_ITERS:-half} ckpt_every=${RUN_CKPT_EVERY:-none}"
 awk -v t="$fw_theory" -v v="$fw_trial" -v g="$GENERIC_W" 'BEGIN { s = t + v;
     printf "effective composition: theory %.3f, virtual-trial %.3f, generic %.3f\n", t / s * (1 - g), v / s * (1 - g), g }'
 # PRIOR_CHECK_ONLY (2 Nov): the same cfg, the prior checks of the external
@@ -214,5 +225,6 @@ python scripts/prior_gate.py --batches 5 --contexts 512 ${gate_require:+--requir
              prior.hyper.s_source=${S_SOURCE}_1 prior.hyper.s_b_source=${S_SOURCE}_2 \
              prior.hyper_giles.random_partitions=1 pfn.context_max=$RUN_CONTEXT_MAX pfn.context_min=256 \
              pfn.iters=$RUN_ITERS pfn.arch=$RUN_ARCH pfn.n_query=64 pfn.curriculum=$curriculum_expect $objective_expect $std_expect \
-             pfn.n_bins=${RUN_N_BINS:-256} pfn.batch_size=${RUN_BATCH:-4} pfn.attn=$attn_expect
+             pfn.n_bins=${RUN_N_BINS:-256} pfn.batch_size=${RUN_BATCH:-4} pfn.attn=$attn_expect \
+             pfn.ramp_iters=${RUN_RAMP_ITERS:-UNSET} pfn.ckpt_every=${RUN_CKPT_EVERY:-UNSET}
 bash scripts/train_pfn_myriad.qsub.sh

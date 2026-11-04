@@ -18,7 +18,7 @@ LAUNCH_VARS = ("CACHE", "CACHE_ANCHOR_WEIGHT", "OUT", "ITERS", "SEED", "ARCH", "
                "FAMILY_WEIGHTS", "CONTEXT_POOL", "PRIOR_HYPER", "GILES_HYPER", "LR_SCHEDULE", "BATCH",
                "CONTEXT_MIN", "CONTEXT_MAX", "AUGMENT", "CONTEXT_REPLACE", "STANDARDIZE", "D_MODEL",
                "N_LAYERS", "BOTH_ARMS", "CATE_WEIGHT", "HEAD_LO", "HEAD_HI", "N_QUERY", "CURRICULUM",
-               "N_BINS", "ATTN")
+               "N_BINS", "ATTN", "RAMP_ITERS", "CKPT_EVERY")
 # scoring-time switches of pfn/estimator.py: not part of the checkpoint, so
 # the scoring logs record them (estimator.scoring_settings)
 SCORING_VARS = ("PFN_CONTEXT_CAP", "PFN_CONTEXT_SELECT", "PFN_CONTEXT_K", "PFN_CONTEXT_ARM_CAP",
@@ -52,6 +52,10 @@ def cfg_from_env(env: Optional[Mapping[str, str]] = None) -> Dict:
     # 2 Nov: outcome bins and the attention implementation (masked | sdpa)
     if get("N_BINS"): cfg["pfn"]["n_bins"] = int(get("N_BINS"))
     if get("ATTN"): cfg["pfn"]["attn"] = get("ATTN")
+    # 3 Nov: the context ramp over a fixed number of updates (default: the first
+    # half of training) and a checkpoint every CKPT_EVERY updates
+    if get("RAMP_ITERS"): cfg["pfn"]["ramp_iters"] = int(get("RAMP_ITERS"))
+    if get("CKPT_EVERY"): cfg["pfn"]["ckpt_every"] = int(get("CKPT_EVERY"))
     # 28 Oct: both-arm targets, the effect term and the outcome-bin range
     if get("BOTH_ARMS"): cfg["pfn"]["both_arms"] = bool(int(get("BOTH_ARMS")))
     if get("CATE_WEIGHT"): cfg["pfn"]["cate_weight"] = float(get("CATE_WEIGHT"))
