@@ -154,6 +154,23 @@ read -r fw_theory fw_trial <<< "$FAMILY_W"
 EXCLUDE_NETWORKS="${EXCLUDE_NETWORKS:-}"
 [ -z "$EXCLUDE_NETWORKS" ] || [[ "$EXCLUDE_NETWORKS" =~ ^[0-9]+(\+[0-9]+)*$ ]] || { echo "EXCLUDE_NETWORKS must be ids joined by +, e.g. 1+2+3+4" >&2; exit 1; }
 [ -z "$EXCLUDE_NETWORKS" ] || tag="${tag}_lno${EXCLUDE_NETWORKS//+/-}"
+# Brief 8 stage 1 sweep (7 Nov). RUN_GILES_RANGES=wide: the virtual-trial
+# family's code defaults instead of the final model's clean ranges (effect
+# shift; Learning to Fluctuate). RUN_BIAS_WEIGHTS="a:s:g": sampling weights of
+# the axis, severity and agnostic allocation types (code default 0.6:0.3:0.1;
+# the verifier rejects nearly every agnostic draw, see the audit).
+# RUN_LR_SCHEDULE=cosine: warm-up and cosine decay instead of the constant
+# rate of every run so far. Non-defaults are tagged in the run name.
+RUN_GILES_RANGES="${RUN_GILES_RANGES:-clean}"
+case "$RUN_GILES_RANGES" in clean|wide) ;; *) echo "RUN_GILES_RANGES must be clean or wide" >&2; exit 1 ;; esac
+[ "$RUN_GILES_RANGES" = clean ] || tag="${tag}_wide"
+if [ -n "${RUN_BIAS_WEIGHTS:-}" ]; then
+    [[ "$RUN_BIAS_WEIGHTS" =~ ^[0-9.]+:[0-9.]+:[0-9.]+$ ]] || { echo "RUN_BIAS_WEIGHTS must be a:s:g" >&2; exit 1; }
+    tag="${tag}_bw${RUN_BIAS_WEIGHTS//:/-}"
+fi
+RUN_LR_SCHEDULE="${RUN_LR_SCHEDULE:-constant}"
+case "$RUN_LR_SCHEDULE" in constant|cosine) ;; *) echo "RUN_LR_SCHEDULE must be constant or cosine" >&2; exit 1 ;; esac
+[ "$RUN_LR_SCHEDULE" = constant ] || tag="${tag}_cos"
 # CACHE (2 Nov): one pool, or several separated by spaces (a multi-encoder
 # prior, prior/multi_cache.py: one pool drawn per batch, uniformly), e.g. the
 # KCH pool encoded by each of the ten fold encoders; several are tagged
@@ -186,7 +203,12 @@ if [ "$PRIOR_REPAIR" = 1 ]; then
     gate_require=""
 fi
 [ -z "$EXCLUDE_NETWORKS" ] || GILES_HYPER="$GILES_HYPER exclude_networks=$EXCLUDE_NETWORKS"
-export LR_SCHEDULE=constant CONTEXT_POOL=susceptible CONTEXT_MAX="$RUN_CONTEXT_MAX" OMP_NUM_THREADS=4
+# Brief 8 sweep options (parsed and tagged above, applied here)
+if [ "$RUN_GILES_RANGES" = wide ]; then
+    GILES_HYPER="${GILES_HYPER/threshold=0.03:0.08 p_te=0.9:1 p_re=0:0.05 label_noise=0:0/threshold=0.02:0.10 p_te=0.3:1 p_re=0:0.5 label_noise=0:0.05}"
+fi
+[ -z "${RUN_BIAS_WEIGHTS:-}" ] || GILES_HYPER="$GILES_HYPER bias_weights=$RUN_BIAS_WEIGHTS"
+export LR_SCHEDULE="$RUN_LR_SCHEDULE" CONTEXT_POOL=susceptible CONTEXT_MAX="$RUN_CONTEXT_MAX" OMP_NUM_THREADS=4
 for c in "${caches[@]}"; do [ -s "$c" ] || { echo "no cache $c" >&2; exit 1; }; done
 [ -d data/atlases ] || { echo "no atlas at data/atlases" >&2; exit 1; }
 # ATLAS_SRC (1 Nov): the atlas folder the run must use, e.g. the one scoring
@@ -214,7 +236,7 @@ awk -v t="$fw_theory" -v v="$fw_trial" -v g="$GENERIC_W" 'BEGIN { s = t + v;
 if [ -n "${PRIOR_CHECK_ONLY:-}" ]; then
     : "${PRIOR_CHECK_OUT:?PRIOR_CHECK_ONLY needs PRIOR_CHECK_OUT}"
     # shellcheck disable=SC2086
-    CUDA_VISIBLE_DEVICES="" exec python scripts/audit_20261028/prior_checks.py --out "$PRIOR_CHECK_OUT" ${PRIOR_CHECK_ARGS:-}
+    CUDA_VISIBLE_DEVICES="" exec python "${PRIOR_CHECK_SCRIPT:-scripts/audit_20261028/prior_checks.py}" --out "$PRIOR_CHECK_OUT" ${PRIOR_CHECK_ARGS:-}
 fi
 # the launch must be G4c's: the shared values of G5 / TM and, unless
 # OBJECTIVE=new, no 28 Oct switch (the gate's ranges are opened: G4c's prior
