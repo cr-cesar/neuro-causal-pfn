@@ -86,6 +86,23 @@ for _te in (0.75, 0.5, 0.25):
     HEADLINE_SCENARIOS[f"noisy_te{int(round(_te * 100)):03d}"] = {
         "TE": float(_te), "RE": float(round(1.0 - _te, 2)), "BIAS": 0.0, "BIASTYPE": "observed"}
 del _te
+# allocation by responsiveness (7 Nov, Brief 8 audit): the paper's "unobserved"
+# bias type, P(W = optimal arm) = BIAS for single-susceptible patients and 0.5
+# for the both-susceptible ones, ideal effects otherwise. The latents do not
+# carry the side exactly, so these cells are confounded in latent space; the
+# final prior's verifier rejects such processes, so they are out of family.
+for _b in (0.6, 0.75, 0.9):
+    HEADLINE_SCENARIOS[f"responsiveness_{int(round(_b * 100)):03d}"] = {
+        "TE": 1.0, "RE": 0.0, "BIAS": float(_b), "BIASTYPE": "unobserved"}
+del _b
+
+
+def implied_tau(true_ITE: np.ndarray, TE: float, RE: float) -> np.ndarray:
+    """The CATE a trial with response probability TE and spontaneous recovery
+    RE actually implies: mu_t = 1 - (1 - TE r_t)(1 - RE), so tau = (2y - 1) TE
+    (1 - RE), with y in {0, 0.5, 1} (both-susceptible gives 0). Equals 2y - 1
+    in the ideal and location-bias cells (TE = 1, RE = 0)."""
+    return (2.0 * np.asarray(true_ITE, dtype=float) - 1.0) * float(TE) * (1.0 - float(RE))
 
 
 # --------------------------------------------------------------------------- #
@@ -687,6 +704,9 @@ def evaluate_representation(Z: np.ndarray, labels_df, pairs: Dict[int, RoiPair],
                            "learner": learner, "n_train": len(Xtr), "n_test": len(Xte),
                            **scenario, **score_predictions(p1, p0, true_ITE),
                            **effect_decomposition(p1, p0, true_ITE)}
+                    # 7 Nov: PEHE against the CATE the cell implies (noisy cells:
+                    # TE (1 - RE) instead of 1); identical to pehe_paper when TE = 1, RE = 0
+                    row["pehe_implied"] = pehe(p1 - p0, implied_tau(true_ITE, scenario["TE"], scenario["RE"]))
                     if strata_te is not None:
                         row.update(stratified_pehe_paper(p1, p0, true_ITE, strata_te))
                     results.append(row)
