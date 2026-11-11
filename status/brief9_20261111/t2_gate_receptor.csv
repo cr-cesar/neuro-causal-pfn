@@ -1,0 +1,2 @@
+label_a,label_b,n_deficits,n_excluded_nan,mean_a,mean_b,diff_mean,diff_ci_low,diff_ci_high,diff_sd,n_a_lower,n_b_lower,paired_t,paired_t_p,wilcoxon_w,wilcoxon_p
+repro,final1M_s0,16,0,0.291343324224121,0.291343324224121,0.0,0.0,0.0,0.0,0,0,,,,1.0

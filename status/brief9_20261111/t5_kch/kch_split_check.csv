@@ -1,0 +1,26 @@
+item,value
+pool_md5,341e229d88f4
+pool_lesions,1207
+row_keys,Z centroids files overlaps overlaps_genetics overlaps_network overlaps_receptor volumes
+cache_modality,receptor
+cache_threshold,0.5
+cache_channel,disconnectome
+distinct_latent_rows,1207
+distinct_overlap_rows,1207
+lesions_hitting_no_network_half,0
+files_listed,1207
+distinct_file_names,1207
+files_without_regex_match,0
+distinct_patients,1207
+half_A_train_lesions,603
+half_A_train_md5,b4104431c261
+half_B_test_lesions,604
+half_B_test_md5,57bb79b68be8
+B_test_min_enrolled,50
+B_test_median_enrolled,142.0
+B_test_min_only_half1,0
+B_test_median_only_half1,31.0
+B_test_min_only_half2,0
+B_test_median_only_half2,25.0
+B_test_trials_below_50_enrolled,0
+B_test_trials_with_a_class_below_10,14

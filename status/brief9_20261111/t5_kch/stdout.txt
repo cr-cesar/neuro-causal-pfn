@@ -1,0 +1,60 @@
+wrote half A_train: 603 lesions, md5 b4104431c261
+wrote half B_test: 604 lesions, md5 57bb79b68be8
+pool_md5: 341e229d88f4
+pool_lesions: 1207
+row_keys: Z centroids files overlaps overlaps_genetics overlaps_network overlaps_receptor volumes
+cache_modality: receptor
+cache_threshold: 0.5
+cache_channel: disconnectome
+distinct_latent_rows: 1207
+distinct_overlap_rows: 1207
+lesions_hitting_no_network_half: 0
+files_listed: 1207
+distinct_file_names: 1207
+files_without_regex_match: 0
+distinct_patients: 1207
+half_A_train_lesions: 603
+half_A_train_md5: b4104431c261
+half_B_test_lesions: 604
+half_B_test_md5: 57bb79b68be8
+B_test_min_enrolled: 50
+B_test_median_enrolled: 142.0
+B_test_min_only_half1: 0
+B_test_median_only_half1: 31.0
+B_test_min_only_half2: 0
+B_test_median_only_half2: 25.0
+B_test_trials_below_50_enrolled: 0
+B_test_trials_with_a_class_below_10: 14
+   split  network   part  enrolled  only_half1  only_half2  both
+receptor        1 B_test       140          43          17    80
+receptor        2 B_test       103           0          43    60
+receptor        3 B_test        82          18          27    37
+receptor        4 B_test       137           0          80    57
+receptor        5 B_test        51           6          18    27
+receptor        6 B_test       148          93           0    55
+receptor        7 B_test       249           0          95   154
+receptor        8 B_test        75           0          15    60
+receptor        9 B_test       324          81           6   237
+receptor       10 B_test       493           6         163   324
+receptor       11 B_test       340         104          34   202
+receptor       12 B_test        53          12          36     5
+receptor       13 B_test        68          35           2    31
+receptor       14 B_test       184           7         112    65
+receptor       15 B_test       241         121          41    79
+receptor       16 B_test       222         131          23    68
+genetics        1 B_test       143          29          55    59
+genetics        2 B_test       140          72          68     0
+genetics        3 B_test       101          33          42    26
+genetics        4 B_test       130          25          21    84
+genetics        5 B_test        52           9          15    28
+genetics        6 B_test       141          25          11   105
+genetics        7 B_test       213          11          34   168
+genetics        8 B_test        75           5          13    57
+genetics        9 B_test       339         116           1   222
+genetics       10 B_test       478         147          18   313
+genetics       11 B_test       363          37         152   174
+genetics       12 B_test        50          27          14     9
+genetics       13 B_test        65          52           1    12
+genetics       14 B_test       158          80          21    57
+genetics       15 B_test       274         121         109    44
+genetics       16 B_test       259         104         115    40

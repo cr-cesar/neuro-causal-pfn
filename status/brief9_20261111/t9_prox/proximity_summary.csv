@@ -1,0 +1,2 @@
+draws,processes,virtual_networks,median_max_corr_virtual_network,trials_with_a_virtual_network_corr_ge_0.9,trials_with_a_virtual_network_corr_ge_0.8
+10000,10000,19983,0.8022,2,16

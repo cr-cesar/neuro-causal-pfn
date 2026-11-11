@@ -1,0 +1,72 @@
+code_commit=6cb459c13555b432d3e88c6cf63d8b8d861459b1 cambios_sin_commit=0
+atlas_dir=/home/cornejoc/export_bcb/atlases caches=1: /home/cornejoc/p2_bcb/pools/kch_e13a_s0/fold0.npz 
+atlas_src=/home/cornejoc/export_bcb/atlases identical
+launch tag=G4cobj_fw0-1 objective=new cate_w=0.5 head=-0.05:1.05 generic_w=0.5 s_source=genetics family_w=0:1 iters=20000 seed=0 d_model=256 n_layers=6 n_bins=256 batch=4 context_max=3000 attn=masked ramp_iters=half ckpt_every=none
+effective composition: theory 0.000, virtual-trial 0.500, generic 0.500
+21:36:00  INFO  prior cache: channel disconnectome (/home/cornejoc/kch_bcbdisco); 97 % hit at least one subnetwork above 5 %; per-network responsive fraction min/median/max 0.093/0.245/0.827
+21:36:00  INFO  theory anatomy view: D <- network, S_A <- genetics_1, S_B <- genetics_2
+21:36:00  INFO  prior: generic effect processes: weight 0.50, kinds linear+step, effect size 0.10-0.90, null share 0.30-0.80, active dims 2-8, baseline shared 0.0-0.0, binary outcomes 1.00
+hyper_bias_range: (0.0, 1.0)
+hyper_bias_weights: (0.6, 0.3, 0.1)
+family_weights_theory_trial: (0.0, 1.0)
+context_replace: 1
+max_tries: 64
+pool_rows: 1207
+pool_distinct_latent_rows: 1207
+A_sample_process_share_axis: 0.609
+A_sample_process_share_severity: 0.2896
+A_sample_process_share_agnostic: 0.1014
+B_virtual_networks: 10046
+B_share_cross_split_same_network: 0.048277921560820225
+B_share_whole_vs_own_half: 0.04957196894286283
+A_before_attempt_share_axis: 0.5964718853362734
+A_after_returned_share_axis: 0.67625
+A_pass_rate_axis: 1.0
+A_before_attempt_share_severity: 0.2850055126791621
+A_after_returned_share_severity: 0.323125
+A_pass_rate_severity: 1.0
+A_before_attempt_share_agnostic: 0.1185226019845645
+A_after_returned_share_agnostic: 0.000625
+A_pass_rate_agnostic: 0.004651162790697674
+A_attempts: 1814
+A_returned: 1600
+A_returned_after_failing_every_attempt: 0
+A_after_agnostic_strength_median: 0.047531721636669855
+C_r2_centroid_x_on_latents: 0.9338272102748101
+C_r2_centroid_y_on_latents: 0.928062053928401
+C_r2_centroid_z_on_latents: 0.9399878782452782
+C_r2_log_volume_on_latents: 0.9469153329652031
+{'type': 'axis', 'bias_bin': '0.0-0.1', 'attempts': 125, 'passed': 125, 'pass_rate': 1.0, 'returned': 125, 'treated_share_median': 0.5, 'verifier_stat_median': '', 'verifier_stat_p10': '', 'verifier_stat_p90': ''}
+{'type': 'axis', 'bias_bin': '0.1-0.2', 'attempts': 100, 'passed': 100, 'pass_rate': 1.0, 'returned': 100, 'treated_share_median': 0.499, 'verifier_stat_median': '', 'verifier_stat_p10': '', 'verifier_stat_p90': ''}
+{'type': 'axis', 'bias_bin': '0.2-0.3', 'attempts': 105, 'passed': 105, 'pass_rate': 1.0, 'returned': 105, 'treated_share_median': 0.5, 'verifier_stat_median': '', 'verifier_stat_p10': '', 'verifier_stat_p90': ''}
+{'type': 'axis', 'bias_bin': '0.3-0.4', 'attempts': 105, 'passed': 105, 'pass_rate': 1.0, 'returned': 105, 'treated_share_median': 0.4986, 'verifier_stat_median': '', 'verifier_stat_p10': '', 'verifier_stat_p90': ''}
+{'type': 'axis', 'bias_bin': '0.4-0.5', 'attempts': 102, 'passed': 102, 'pass_rate': 1.0, 'returned': 102, 'treated_share_median': 0.5015, 'verifier_stat_median': '', 'verifier_stat_p10': '', 'verifier_stat_p90': ''}
+{'type': 'axis', 'bias_bin': '0.5-0.6', 'attempts': 114, 'passed': 114, 'pass_rate': 1.0, 'returned': 114, 'treated_share_median': 0.501, 'verifier_stat_median': '', 'verifier_stat_p10': '', 'verifier_stat_p90': ''}
+{'type': 'axis', 'bias_bin': '0.6-0.7', 'attempts': 111, 'passed': 111, 'pass_rate': 1.0, 'returned': 111, 'treated_share_median': 0.5, 'verifier_stat_median': '', 'verifier_stat_p10': '', 'verifier_stat_p90': ''}
+{'type': 'axis', 'bias_bin': '0.7-0.8', 'attempts': 115, 'passed': 115, 'pass_rate': 1.0, 'returned': 115, 'treated_share_median': 0.5019, 'verifier_stat_median': '', 'verifier_stat_p10': '', 'verifier_stat_p90': ''}
+{'type': 'axis', 'bias_bin': '0.8-0.9', 'attempts': 103, 'passed': 103, 'pass_rate': 1.0, 'returned': 103, 'treated_share_median': 0.5009, 'verifier_stat_median': '', 'verifier_stat_p10': '', 'verifier_stat_p90': ''}
+{'type': 'axis', 'bias_bin': '0.9-1.0', 'attempts': 102, 'passed': 102, 'pass_rate': 1.0, 'returned': 102, 'treated_share_median': 0.5008, 'verifier_stat_median': '', 'verifier_stat_p10': '', 'verifier_stat_p90': ''}
+{'type': 'severity', 'bias_bin': '0.0-0.1', 'attempts': 48, 'passed': 48, 'pass_rate': 1.0, 'returned': 48, 'treated_share_median': 0.4986, 'verifier_stat_median': '', 'verifier_stat_p10': '', 'verifier_stat_p90': ''}
+{'type': 'severity', 'bias_bin': '0.1-0.2', 'attempts': 45, 'passed': 45, 'pass_rate': 1.0, 'returned': 45, 'treated_share_median': 0.5007, 'verifier_stat_median': '', 'verifier_stat_p10': '', 'verifier_stat_p90': ''}
+{'type': 'severity', 'bias_bin': '0.2-0.3', 'attempts': 55, 'passed': 55, 'pass_rate': 1.0, 'returned': 55, 'treated_share_median': 0.5, 'verifier_stat_median': '', 'verifier_stat_p10': '', 'verifier_stat_p90': ''}
+{'type': 'severity', 'bias_bin': '0.3-0.4', 'attempts': 56, 'passed': 56, 'pass_rate': 1.0, 'returned': 56, 'treated_share_median': 0.5006, 'verifier_stat_median': '', 'verifier_stat_p10': '', 'verifier_stat_p90': ''}
+{'type': 'severity', 'bias_bin': '0.4-0.5', 'attempts': 54, 'passed': 54, 'pass_rate': 1.0, 'returned': 54, 'treated_share_median': 0.5019, 'verifier_stat_median': '', 'verifier_stat_p10': '', 'verifier_stat_p90': ''}
+{'type': 'severity', 'bias_bin': '0.5-0.6', 'attempts': 49, 'passed': 49, 'pass_rate': 1.0, 'returned': 49, 'treated_share_median': 0.4953, 'verifier_stat_median': '', 'verifier_stat_p10': '', 'verifier_stat_p90': ''}
+{'type': 'severity', 'bias_bin': '0.6-0.7', 'attempts': 55, 'passed': 55, 'pass_rate': 1.0, 'returned': 55, 'treated_share_median': 0.5022, 'verifier_stat_median': '', 'verifier_stat_p10': '', 'verifier_stat_p90': ''}
+{'type': 'severity', 'bias_bin': '0.7-0.8', 'attempts': 63, 'passed': 63, 'pass_rate': 1.0, 'returned': 63, 'treated_share_median': 0.5006, 'verifier_stat_median': '', 'verifier_stat_p10': '', 'verifier_stat_p90': ''}
+{'type': 'severity', 'bias_bin': '0.8-0.9', 'attempts': 48, 'passed': 48, 'pass_rate': 1.0, 'returned': 48, 'treated_share_median': 0.4959, 'verifier_stat_median': '', 'verifier_stat_p10': '', 'verifier_stat_p90': ''}
+{'type': 'severity', 'bias_bin': '0.9-1.0', 'attempts': 44, 'passed': 44, 'pass_rate': 1.0, 'returned': 44, 'treated_share_median': 0.4989, 'verifier_stat_median': '', 'verifier_stat_p10': '', 'verifier_stat_p90': ''}
+{'type': 'agnostic', 'bias_bin': '0.0-0.1', 'attempts': 24, 'passed': 0, 'pass_rate': 0.0, 'returned': 0, 'treated_share_median': 0.5342, 'verifier_stat_median': 0.08993, 'verifier_stat_p10': 0.03331, 'verifier_stat_p90': 0.14819}
+{'type': 'agnostic', 'bias_bin': '0.1-0.2', 'attempts': 18, 'passed': 0, 'pass_rate': 0.0, 'returned': 0, 'treated_share_median': 0.4349, 'verifier_stat_median': 0.07225, 'verifier_stat_p10': 0.0447, 'verifier_stat_p90': 0.09588}
+{'type': 'agnostic', 'bias_bin': '0.2-0.3', 'attempts': 19, 'passed': 0, 'pass_rate': 0.0, 'returned': 0, 'treated_share_median': 0.4324, 'verifier_stat_median': 0.05916, 'verifier_stat_p10': 0.03036, 'verifier_stat_p90': 0.08072}
+{'type': 'agnostic', 'bias_bin': '0.3-0.4', 'attempts': 19, 'passed': 0, 'pass_rate': 0.0, 'returned': 0, 'treated_share_median': 0.4866, 'verifier_stat_median': 0.04216, 'verifier_stat_p10': 0.02299, 'verifier_stat_p90': 0.05318}
+{'type': 'agnostic', 'bias_bin': '0.4-0.5', 'attempts': 26, 'passed': 0, 'pass_rate': 0.0, 'returned': 0, 'treated_share_median': 0.4946, 'verifier_stat_median': 0.01748, 'verifier_stat_p10': 0.00657, 'verifier_stat_p90': 0.0315}
+{'type': 'agnostic', 'bias_bin': '0.5-0.6', 'attempts': 23, 'passed': 1, 'pass_rate': 0.0435, 'returned': 1, 'treated_share_median': 0.5, 'verifier_stat_median': 0.01468, 'verifier_stat_p10': 0.00157, 'verifier_stat_p90': 0.02681}
+{'type': 'agnostic', 'bias_bin': '0.6-0.7', 'attempts': 21, 'passed': 0, 'pass_rate': 0.0, 'returned': 0, 'treated_share_median': 0.4876, 'verifier_stat_median': 0.03334, 'verifier_stat_p10': 0.01182, 'verifier_stat_p90': 0.05954}
+{'type': 'agnostic', 'bias_bin': '0.7-0.8', 'attempts': 14, 'passed': 0, 'pass_rate': 0.0, 'returned': 0, 'treated_share_median': 0.5138, 'verifier_stat_median': 0.06509, 'verifier_stat_p10': 0.03351, 'verifier_stat_p90': 0.09407}
+{'type': 'agnostic', 'bias_bin': '0.8-0.9', 'attempts': 24, 'passed': 0, 'pass_rate': 0.0, 'returned': 0, 'treated_share_median': 0.5022, 'verifier_stat_median': 0.05479, 'verifier_stat_p10': 0.02873, 'verifier_stat_p90': 0.12266}
+{'type': 'agnostic', 'bias_bin': '0.9-1.0', 'attempts': 27, 'passed': 0, 'pass_rate': 0.0, 'returned': 0, 'treated_share_median': 0.5634, 'verifier_stat_median': 0.09601, 'verifier_stat_p10': 0.04663, 'verifier_stat_p90': 0.12889}
+{'ctx_bin': '256-511', 'contexts': 457, 'slice_median': 773.0, 'slice_p10': 390.8, 'slice_p90': 1055.8000000000002, 'distinct_median': 265.0, 'distinct_share_median': 0.7848, 'expected_share_median': 0.7822, 'share_ctx_longer_than_slice': 0.1094}
+{'ctx_bin': '512-1023', 'contexts': 463, 'slice_median': 778.0, 'slice_p10': 394.2, 'slice_p90': 1043.6, 'distinct_median': 435.0, 'distinct_share_median': 0.6138, 'expected_share_median': 0.6164, 'share_ctx_longer_than_slice': 0.5508}
+{'ctx_bin': '1024-2047', 'contexts': 550, 'slice_median': 789.5, 'slice_p10': 428.9, 'slice_p90': 1051.1, 'distinct_median': 614.0, 'distinct_share_median': 0.422, 'expected_share_median': 0.4235, 'share_ctx_longer_than_slice': 0.9927}
+{'ctx_bin': '2048-3000', 'contexts': 344, 'slice_median': 781.5, 'slice_p10': 365.90000000000003, 'slice_p90': 1074.1, 'distinct_median': 691.5, 'distinct_share_median': 0.2764, 'expected_share_median': 0.2759, 'share_ctx_longer_than_slice': 1.0}

@@ -1,0 +1,2 @@
+label_a,label_b,n_deficits,n_excluded_nan,mean_a,mean_b,diff_mean,diff_ci_low,diff_ci_high,diff_sd,n_a_lower,n_b_lower,paired_t,paired_t_p,wilcoxon_w,wilcoxon_p
+lno3held,final1M,16,0,0.2948711810594968,0.2933956099528615,0.0014755711066352512,-0.001263122603792122,0.004214264817062625,0.005139589095380066,6,10,1.148396168838968,0.2687898587653019,44.0,0.231201171875

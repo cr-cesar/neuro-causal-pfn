@@ -1,0 +1,2 @@
+level,n_deficits,r0_mean,level_mean,gain_receptor,gain_genetics,gain_mean,ci_low,ci_high,p,n_deficits_better,p_holm,same_sign_both_splits,passes_screen,meets_claim_bar_0.02
+kchA,16,0.2787871074578615,0.2812772107210215,-0.004047607362257762,-0.0009325991640621147,-0.0024901032631599383,-0.005076928955841591,9.672242952171424e-05,0.05807728976873947,5,0.05807728976873947,True,False,False

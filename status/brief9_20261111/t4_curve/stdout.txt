@@ -1,0 +1,33 @@
+4119 maps; computing coverage ...
+  validation pseudo-fold 0: 121 queries, 0 with another image of the same patient in the training side (0.000), removed
+  validation pseudo-fold 1: 125 queries, 0 with another image of the same patient in the training side (0.000), removed
+  validation pseudo-fold 2: 119 queries, 0 with another image of the same patient in the training side (0.000), removed
+  validation pseudo-fold 3: 121 queries, 0 with another image of the same patient in the training side (0.000), removed
+  validation pseudo-fold 4: 154 queries, 0 with another image of the same patient in the training side (0.000), removed
+  validation pseudo-fold 5: 128 queries, 0 with another image of the same patient in the training side (0.000), removed
+  validation pseudo-fold 6: 130 queries, 0 with another image of the same patient in the training side (0.000), removed
+  validation pseudo-fold 7: 129 queries, 0 with another image of the same patient in the training side (0.000), removed
+  validation pseudo-fold 8: 138 queries, 0 with another image of the same patient in the training side (0.000), removed
+  validation pseudo-fold 9: 126 queries, 0 with another image of the same patient in the training side (0.000), removed
+  validation (clean context): 0 of 1291 queries (0.000) had another image of the same patient in the training side
+learner tabpfn (9.2.0); sizes [500, 1000, 2000] + all; repeats 3
+  pseudo-fold 1/10 done (484s)
+[W1107 21:57:22.770491820 CUDACachingAllocator.cpp:3934] memory allocation failed with OOM on device 0 while trying to allocate 687865856 bytes (free: 247267328, total: 33670758400).
+  pseudo-fold 2/10 done (833s)
+  pseudo-fold 3/10 done (1388s)
+  pseudo-fold 4/10 done (1718s)
+  pseudo-fold 5/10 done (2009s)
+  pseudo-fold 6/10 done (2357s)
+  pseudo-fold 7/10 done (2716s)
+  pseudo-fold 8/10 done (3026s)
+  pseudo-fold 9/10 done (3428s)
+  pseudo-fold 10/10 done (3885s)
+rep learner version    n                   scope  n_cells  pehe_receptor  pehe_genetics  pehe_mean  median_train_enrolled
+ E1  tabpfn   9.2.0  500   cells_with_at_least_n      230         0.2680         0.2476     0.2578                 1084.5
+ E1  tabpfn   9.2.0  500 matched_cells_N_ge_2000       20         0.2777         0.2797     0.2787                 2604.5
+ E1  tabpfn   9.2.0 1000   cells_with_at_least_n      120         0.2556         0.2118     0.2337                 1483.5
+ E1  tabpfn   9.2.0 1000 matched_cells_N_ge_2000       20         0.2365         0.2569     0.2467                 2604.5
+ E1  tabpfn   9.2.0 2000   cells_with_at_least_n       20         0.2133         0.2351     0.2242                 2604.5
+ E1  tabpfn   9.2.0 2000 matched_cells_N_ge_2000       20         0.2133         0.2351     0.2242                 2604.5
+ E1  tabpfn   9.2.0  all   cells_with_at_least_n      320         0.2489         0.2262     0.2376                  794.0
+ E1  tabpfn   9.2.0  all matched_cells_N_ge_2000       20         0.2030         0.2296     0.2163                 2604.5
