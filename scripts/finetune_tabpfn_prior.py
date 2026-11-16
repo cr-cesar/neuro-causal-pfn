@@ -21,6 +21,19 @@ exactly like the untuned one, so the gain of the prior is read on one scale.
                        s_b_source=genetics_2 effect_headroom=1 generic_weight=0.5" \\
         --steps 2000 --n-context 2000 --out outputs/tabpfn_ft/bcb_thr03
 
+``--prior-from-env`` (16 Nov, job D) takes the prior from the launch
+environment instead of the options above: the cfg of
+``launch_cfg.cfg_from_env``, the one scripts/train_pfn_myriad.qsub.sh trains
+and scripts/prior_gate.py checks, handed to the same builder, so the processes
+come from the prior object a PFN launch with that environment trains on
+(scripts/audit_20261028/g4c_launch.sh with RUN_TRAINER=tabpfn runs it after its
+gate; scripts/audit_20261028/tabpfn_final_launch.sh is the final prior's
+launch). That mode also writes ``provenance.json`` beside the checkpoint:
+commit, launch variables, the pool's md5, the tabpfn version and the starting
+checkpoint, the configuration, and ``finished`` once the last step is saved.
+The script reads the pool cache and the atlas and nothing else: no fold, no
+image, no outcome of a real patient; it scores nothing.
+
 Needs the panel environment (tabpfn >= 9.2, torch >= 2.5) and a GPU. The
 weights' licence (Prior Labs, non-commercial) covers research use; the
 checkpoint written here contains fine-tuned weights of that model and stays
@@ -30,12 +43,13 @@ card; use --n-estimators 1 or a shorter context on 16 GB.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
 import time
 from functools import partial
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -68,6 +82,99 @@ def prior_from_args(cache: str, hyper_text: str, seed: int, n_context: int, n_qu
     if not ok:
         sys.exit("the configuration did not build a Neuro-Prior")
     return prior, d_x, cfg
+
+
+def prior_from_env(env=None):
+    """The Neuro-Prior of a PFN launch, from its environment (CACHE, SEED,
+    FAMILY, FAMILY_WEIGHTS, PRIOR_HYPER, GILES_HYPER, CONTEXT_POOL, ...): the
+    cfg scripts/train_pfn_myriad.qsub.sh trains on, built by the function it
+    uses and handed to the builder ``run_pfn`` uses. The queries per process
+    (``pfn.n_query``, which also sets the smallest slice a process may have)
+    and the seed are therefore the launch's, not this script's options."""
+    from neurocausalpfn.train.launch_cfg import cfg_from_env
+    from neurocausalpfn.train.train_pfn import _build_prior
+
+    cfg = cfg_from_env(env)
+    if not cfg["prior"].get("cache"):
+        sys.exit("--prior-from-env needs CACHE (the pool) in the environment")
+    prior, d_x, ok = _build_prior(cfg)
+    if not ok:
+        sys.exit("the launch environment did not build a Neuro-Prior")
+    return prior, d_x, cfg
+
+
+def file_md5(path: str, chunk: int = 1 << 20) -> str:
+    h = hashlib.md5()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(chunk), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def pool_record(cfg: Dict, expected_md5: Optional[str] = None) -> List[Dict]:
+    """Path, size and md5 of every pool cache of the cfg; with
+    ``expected_md5`` (a full digest or its first characters, as
+    final1m_launch.sh's POOL_MD5) a single pool must match it."""
+    caches = cfg["prior"]["cache"]
+    paths = [caches] if isinstance(caches, str) else list(caches)
+    rec = [{"path": p, "bytes": os.path.getsize(p), "md5": file_md5(p)} for p in paths]
+    if expected_md5:
+        if len(rec) != 1 or not rec[0]["md5"].startswith(expected_md5):
+            sys.exit(f"pool md5 {[r['md5'][:12] for r in rec]}, expected {expected_md5}")
+    return rec
+
+
+def base_checkpoint_record(model_path: Optional[str]) -> Dict:
+    """Which TabPFN weights the run starts from: the package version, the
+    model version it is set to, and the checkpoint file (name, size, md5) when
+    it can be located: the --model-path file, or the package's default file as
+    its own resolver names it. The resolver's signature differs between tabpfn
+    releases, so a failure is recorded, not raised."""
+    from importlib import metadata
+
+    rec: Dict = {"model_path_arg": model_path}
+    try:
+        rec["tabpfn"] = metadata.version("tabpfn")
+    except metadata.PackageNotFoundError:
+        rec["tabpfn"] = None
+    path = model_path
+    try:
+        from tabpfn.settings import settings
+
+        v = settings.tabpfn.model_version
+        rec["model_version"] = getattr(v, "value", str(v))
+        if not path:
+            from tabpfn.model_loading import resolve_model_path
+
+            path = str(resolve_model_path(None, "classifier", rec["model_version"])[0][0])
+    except Exception as e:                      # another release of the package
+        rec["resolve_error"] = repr(e)
+    if path and os.path.isfile(path):
+        rec.update(file=os.path.basename(path), bytes=os.path.getsize(path), md5=file_md5(path))
+    else:
+        rec.update(file=os.path.basename(path) if path else None, md5=None)
+    return rec
+
+
+def provenance_record(args, cfg: Dict, pools: List[Dict], base: Dict, step: int, finished: bool) -> Dict:
+    """What a checkpoint of the launch-environment mode records beside it: the
+    code and launch of ``launch_cfg.provenance`` (commit, dirty flag, launch
+    variables, library versions), the pool and atlas digests, the starting
+    weights, this script's options and the cfg of the prior."""
+    from neurocausalpfn.train.launch_cfg import provenance
+
+    prov = provenance()
+    prov.update({"trainer": "scripts/finetune_tabpfn_prior.py --prior-from-env",
+                 "pool": pools, "pool_md5_expected": args.pool_md5,
+                 "atlas_md5_reported_by_launch": args.atlas_md5,
+                 "tabpfn": base,
+                 "finetune": {k: getattr(args, k) for k in (
+                     "steps", "lr", "weight_decay", "grad_clip", "n_context", "n_query", "n_estimators",
+                     "processes_per_draw", "query_ratio", "learner", "seed", "save_every", "model_path")},
+                 "cfg": {"seed": cfg["seed"], "prior": cfg["prior"],
+                         "pfn": {k: cfg["pfn"].get(k) for k in ("n_query", "context_max")}},
+                 "steps_done": int(step), "finished": bool(finished)})
+    return prov
 
 
 def datasets_from_batch(b: Dict, rng: np.random.Generator, learner: str = "s") -> List[Tuple[np.ndarray, np.ndarray]]:
@@ -124,11 +231,26 @@ def finetune(args) -> str:
 
     os.makedirs(args.out, exist_ok=True)
     device = args.device if args.device != "auto" else ("cuda" if torch.cuda.is_available() else "cpu")
+    args.provenance = None
+    if args.prior_from_env:
+        prior, d_x, cfg = prior_from_env()
+        # the seed and the queries per process are the launch's (SEED, pfn.n_query)
+        if args.seed is not None and args.seed != int(cfg["seed"]):
+            sys.exit(f"--seed {args.seed} differs from the launch's SEED {cfg['seed']}")
+        args.seed, args.n_query = int(cfg["seed"]), int(cfg["pfn"]["n_query"])
+        args.family = cfg["prior"].get("family", "theory")
+        pools = pool_record(cfg, args.pool_md5)
+        base = base_checkpoint_record(args.model_path)
+        args.provenance = lambda step, finished: provenance_record(args, cfg, pools, base, step, finished)
+        print(f"pool md5 {[p['md5'][:12] for p in pools]}, tabpfn {base.get('tabpfn')}, starting weights "
+              f"{base.get('file')} md5 {(base.get('md5') or 'not located')[:12]}", flush=True)
+    else:
+        args.seed = 0 if args.seed is None else args.seed
+        prior, d_x, cfg = prior_from_args(args.cache, args.prior_hyper, args.seed, args.n_context, args.n_query,
+                                          context_pool=args.context_pool, atlas_dir=args.atlas_dir,
+                                          family=args.family, family_weights=args.family_weights,
+                                          giles_hyper_text=args.giles_hyper)
     rng = np.random.default_rng(args.seed)
-    prior, d_x, cfg = prior_from_args(args.cache, args.prior_hyper, args.seed, args.n_context, args.n_query,
-                                      context_pool=args.context_pool, atlas_dir=args.atlas_dir,
-                                      family=args.family, family_weights=args.family_weights,
-                                      giles_hyper_text=args.giles_hyper)
     print(f"prior: family {args.family}" + (f" {cfg['prior'].get('family_weights')}" if args.family == "mixture" else "")
           + f", giles hyper {cfg['prior'].get('hyper_giles', {})}, d_x={d_x}, context {args.n_context}+{args.n_query}, "
           f"{getattr(prior, 'describe', lambda: '')()}", flush=True)
@@ -200,30 +322,67 @@ def finetune(args) -> str:
                       f"({(time.time() - t0) / 60:.1f} min)", flush=True)
             if args.save_every and step % args.save_every == 0 and step < total:
                 _save(est, args.out, step, history, cfg, args, save_tabpfn_model)
-    path = _save(est, args.out, step, history, cfg, args, save_tabpfn_model)
+    path = _save(est, args.out, step, history, cfg, args, save_tabpfn_model, finished=True)
     print(f"wrote {path} ({step} steps, {(time.time() - t0) / 60:.1f} min)", flush=True)
     return path
 
 
-def _save(est, out, step, history, cfg, args, save_tabpfn_model) -> str:
+def checkpoint_fields(step: int, cfg: Dict, args) -> Dict:
+    """The ``neuro_prior_finetune`` record inside the checkpoint. With the
+    prior given by options: those options, as before. With --prior-from-env:
+    the cfg's prior, the seed and the commit."""
+    rec = {"steps": int(step), "learner": args.learner, "n_context": int(args.n_context)}
+    if getattr(args, "prior_from_env", False):
+        from neurocausalpfn.train.launch_cfg import _git
+
+        rec.update(prior=cfg["prior"], seed=int(cfg["seed"]), n_query=int(cfg["pfn"]["n_query"]),
+                   git_commit=_git("rev-parse", "HEAD"))
+    else:
+        rec.update(prior_hyper=args.prior_hyper, family=args.family, family_weights=args.family_weights,
+                   giles_hyper=args.giles_hyper, cache=os.path.basename(args.cache))
+    return rec
+
+
+def _save(est, out, step, history, cfg, args, save_tabpfn_model, finished: bool = False) -> str:
     path = os.path.join(out, "tabpfn_ft.pth")
     save_tabpfn_model(model=est, save_path=path,
-                      additional_fields={"neuro_prior_finetune": {"steps": int(step), "learner": args.learner,
-                                                                  "n_context": int(args.n_context),
-                                                                  "prior_hyper": args.prior_hyper,
-                                                                  "family": args.family,
-                                                                  "family_weights": args.family_weights,
-                                                                  "giles_hyper": args.giles_hyper,
-                                                                  "cache": os.path.basename(args.cache)}})
+                      additional_fields={"neuro_prior_finetune": checkpoint_fields(step, cfg, args)})
     with open(os.path.join(out, "history.json"), "w") as f:
-        json.dump({"history": history, "config": {k: v for k, v in vars(args).items()},
+        json.dump({"history": history, "config": {k: v for k, v in vars(args).items() if k != "provenance"},
                    "prior": cfg["prior"]}, f, indent=1)
+    if getattr(args, "provenance", None) is not None:
+        # written after the checkpoint, so "finished": true means the last step is on disk
+        with open(os.path.join(out, "provenance.json"), "w") as f:
+            json.dump(args.provenance(step, finished), f, indent=1, default=str)
     return path
 
 
-def main(argv=None):
+def check_args(ap, args) -> None:
+    """--cache or --prior-from-env, not both; the prior options that can be
+    told apart from their defaults are refused with --prior-from-env."""
+    if args.prior_from_env:
+        given = [o for o, v in (("--cache", args.cache), ("--family-weights", args.family_weights),
+                                ("--giles-hyper", args.giles_hyper)) if v]
+        if given:
+            ap.error(f"--prior-from-env takes the prior from the environment; drop {' '.join(given)}")
+    else:
+        if not args.cache:
+            ap.error("--cache is required (or --prior-from-env)")
+        if args.pool_md5 or args.atlas_md5:
+            ap.error("--pool-md5 and --atlas-md5 need --prior-from-env")
+
+
+def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--cache", required=True, help="anatomy cache of the pool (scripts/build_prior_cache.py)")
+    ap.add_argument("--cache", default=None, help="anatomy cache of the pool (scripts/build_prior_cache.py)")
+    ap.add_argument("--prior-from-env", action="store_true",
+                    help="take the prior from the launch environment (launch_cfg.cfg_from_env: CACHE, SEED, FAMILY, "
+                         "FAMILY_WEIGHTS, PRIOR_HYPER, GILES_HYPER, ...) instead of --cache and the prior options "
+                         "below, and write provenance.json beside the checkpoint")
+    ap.add_argument("--pool-md5", default=None,
+                    help="with --prior-from-env: the pool's md5 (or its first characters) must be this")
+    ap.add_argument("--atlas-md5", default=None,
+                    help="with --prior-from-env: the atlas digest the launch computed, recorded in provenance.json")
     ap.add_argument("--prior-hyper", default="two_arms=1 effect_scale=0.2:1 d_source=network s_source=genetics_1 "
                                             "s_b_source=genetics_2 effect_headroom=1 generic_weight=0.5")
     ap.add_argument("--family", default="theory", choices=["theory", "giles", "mixture"],
@@ -247,11 +406,17 @@ def main(argv=None):
     ap.add_argument("--lr", type=float, default=1e-5)
     ap.add_argument("--weight-decay", type=float, default=0.01)
     ap.add_argument("--grad-clip", type=float, default=1.0)
-    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--seed", type=int, default=None, help="default 0; with --prior-from-env the launch's SEED")
     ap.add_argument("--device", default="auto")
     ap.add_argument("--log-every", type=int, default=25)
     ap.add_argument("--save-every", type=int, default=500)
+    return ap
+
+
+def main(argv=None):
+    ap = build_parser()
     args = ap.parse_args(argv)
+    check_args(ap, args)
     finetune(args)
 
 
