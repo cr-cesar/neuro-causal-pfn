@@ -14,6 +14,7 @@
 #   GENERIC_W=0 [OBJECTIVE=new] bash scripts/audit_20261028/g4c_launch.sh
 #   HEAD_RANGE=wide bash scripts/audit_20261028/g4c_launch.sh
 #   S_SOURCE=receptor | FAMILY_W="0.25 0.75" [OBJECTIVE=new] bash scripts/audit_20261028/g4c_launch.sh
+#   FAMILY_W="0 1 1 1" [RULE_GRADED=0.5] [RULE_ENROL=0.2:1] [OBJECTIVE=new] bash scripts/audit_20261028/g4c_launch.sh
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 dirty=$(git status --porcelain --untracked-files=no | wc -l)
@@ -134,11 +135,29 @@ S_SOURCE="${S_SOURCE:-genetics}"
 case "$S_SOURCE" in genetics|receptor) ;; *) echo "S_SOURCE must be genetics or receptor" >&2; exit 1 ;; esac
 [ "$S_SOURCE" = genetics ] || tag="${tag}_s$S_SOURCE"
 # FAMILY_W (1 Nov): the (theory, virtual-trial) family weights, before the
-# generic share is applied to all processes; "0.5 0.5" is every run so far
+# generic share is applied to all processes; "0.5 0.5" is every run so far.
+# 16 Nov: four numbers add the volume and centroid families
+# (prior/feature_rules.py), "theory trial volume centroid"; a weight of 0
+# leaves that family out, and the generic share is left out with GENERIC_W=0.
+# With two numbers nothing below changes: the same variables, the same gate
 FAMILY_W="${FAMILY_W:-0.5 0.5}"
-[[ "$FAMILY_W" =~ ^[0-9]+(\.[0-9]+)?\ [0-9]+(\.[0-9]+)?$ ]] || { echo "FAMILY_W must be two numbers, e.g. \"0.25 0.75\"" >&2; exit 1; }
-read -r fw_theory fw_trial <<< "$FAMILY_W"
-[ "$FAMILY_W" = "0.5 0.5" ] || tag="${tag}_fw${fw_theory}-${fw_trial}"
+fw_num='[0-9]+(\.[0-9]+)?'
+[[ "$FAMILY_W" =~ ^$fw_num\ $fw_num(\ $fw_num\ $fw_num)?$ ]] || { echo "FAMILY_W must be two numbers, e.g. \"0.25 0.75\", or four, e.g. \"0 1 1 1\"" >&2; exit 1; }
+read -r fw_theory fw_trial fw_volume fw_centroid <<< "$FAMILY_W"
+awk -v w="$FAMILY_W" 'BEGIN { n = split(w, a, " "); for (i = 1; i <= n; i++) s += a[i]; exit !(s > 0) }' \
+    || { echo "FAMILY_W must not be all zeros" >&2; exit 1; }
+[ "$FAMILY_W" = "0.5 0.5" ] || tag="${tag}_fw${FAMILY_W// /-}"
+# RULE_GRADED / RULE_ENROL (16 Nov, with four family weights): the share of
+# volume and centroid processes with the graded shape (the rest are threshold
+# rules; unset: the generator's 0.5), and the range lo:hi of the share of the
+# pool such a process enrols (unset: the whole pool). Both are tagged
+if [ -n "${RULE_GRADED:-}" ] || [ -n "${RULE_ENROL:-}" ]; then
+    [ -n "${fw_volume:-}" ] || { echo "RULE_GRADED and RULE_ENROL need four numbers in FAMILY_W" >&2; exit 1; }
+fi
+[[ -z "${RULE_GRADED:-}" || "$RULE_GRADED" =~ ^(0(\.[0-9]+)?|1(\.0+)?)$ ]] || { echo "RULE_GRADED must be a number in [0, 1]" >&2; exit 1; }
+[[ -z "${RULE_ENROL:-}" || "$RULE_ENROL" =~ ^(0?\.[0-9]+|1(\.0+)?):(0?\.[0-9]+|1(\.0+)?)$ ]] || { echo "RULE_ENROL must be lo:hi inside (0, 1], e.g. 0.2:1" >&2; exit 1; }
+[ -z "${RULE_GRADED:-}" ] || tag="${tag}_rg$RULE_GRADED"
+[ -z "${RULE_ENROL:-}" ] || tag="${tag}_re${RULE_ENROL/:/-}"
 [ "$RUN_ITERS" = 20000 ] || tag="${tag}_i$RUN_ITERS"
 [ "$RUN_ARCH" = linear ] || tag="${tag}_tabicl"
 [ -z "${RUN_D_MODEL:-}" ] || tag="${tag}_d$RUN_D_MODEL"
@@ -186,6 +205,8 @@ if [ "$PRIOR_REPAIR" = 1 ]; then
     gate_require=""
 fi
 [ -z "$EXCLUDE_NETWORKS" ] || GILES_HYPER="$GILES_HYPER exclude_networks=$EXCLUDE_NETWORKS"
+[ -z "${RULE_GRADED:-}" ] || GILES_HYPER="$GILES_HYPER rule_graded=$RULE_GRADED"
+[ -z "${RULE_ENROL:-}" ] || GILES_HYPER="$GILES_HYPER rule_enrol=$RULE_ENROL"
 export LR_SCHEDULE=constant CONTEXT_POOL=susceptible CONTEXT_MAX="$RUN_CONTEXT_MAX" OMP_NUM_THREADS=4
 for c in "${caches[@]}"; do [ -s "$c" ] || { echo "no cache $c" >&2; exit 1; }; done
 [ -d data/atlases ] || { echo "no atlas at data/atlases" >&2; exit 1; }
@@ -202,12 +223,29 @@ attn_expect=$([ "$RUN_ATTN" = masked ] && echo UNSET || echo "$RUN_ATTN")
 # family draw, so the effective composition is theory w_t(1-g), trial w_v(1-g), generic g
 head_bins=$([ "$OBJECTIVE" = new ] || [ "$HEAD_RANGE" = wide ] && echo "-0.05:1.05" || echo "0:1")
 echo "launch tag=$tag objective=$OBJECTIVE cate_w=$CATE_W head=$head_bins generic_w=$GENERIC_W" \
-     "s_source=$S_SOURCE family_w=$fw_theory:$fw_trial iters=$RUN_ITERS seed=$SEED" \
+     "s_source=$S_SOURCE family_w=${FAMILY_W// /:} iters=$RUN_ITERS seed=$SEED" \
      "d_model=${RUN_D_MODEL:-256} n_layers=${RUN_N_LAYERS:-6} n_bins=${RUN_N_BINS:-256}" \
      "batch=${RUN_BATCH:-4} context_max=$RUN_CONTEXT_MAX attn=$RUN_ATTN" \
      "ramp_iters=${RUN_RAMP_ITERS:-half} ckpt_every=${RUN_CKPT_EVERY:-none}"
+if [ -z "${fw_volume:-}" ]; then
 awk -v t="$fw_theory" -v v="$fw_trial" -v g="$GENERIC_W" 'BEGIN { s = t + v;
     printf "effective composition: theory %.3f, virtual-trial %.3f, generic %.3f\n", t / s * (1 - g), v / s * (1 - g), g }'
+else
+awk -v t="$fw_theory" -v v="$fw_trial" -v o="$fw_volume" -v c="$fw_centroid" -v g="$GENERIC_W" 'BEGIN { s = t + v + o + c;
+    printf "effective composition: theory %.3f, virtual-trial %.3f, volume %.3f, centroid %.3f, generic %.3f\n",
+           t / s * (1 - g), v / s * (1 - g), o / s * (1 - g), c / s * (1 - g), g }'
+fi
+# with four family weights the gate also checks the rule options and that no
+# drawn process belongs to a family left out (weight 0; generic share 0; with
+# a generic share of 1 every process is relabelled generic)
+rule_expect="" absent=""
+if [ -n "${fw_volume:-}" ]; then
+    rule_expect="prior.hyper_giles.rule_graded=${RULE_GRADED:-UNSET} prior.hyper_giles.rule_enrol=${RULE_ENROL:-UNSET}"
+    is_zero() { awk -v x="$1" 'BEGIN { exit !(x + 0 == 0) }'; }
+    for pair in "theory:$fw_theory" "giles:$fw_trial" "volume:$fw_volume" "centroid:$fw_centroid" "generic:$GENERIC_W"; do
+        if is_zero "${pair#*:}"; then absent="$absent ${pair%%:*}"; fi
+    done
+fi
 # PRIOR_CHECK_ONLY (2 Nov): the same cfg, the prior checks of the external
 # review (prior_checks.py, CPU, aggregates in PRIOR_CHECK_OUT) instead of the
 # gate and the training
@@ -220,8 +258,8 @@ fi
 # OBJECTIVE=new, no 28 Oct switch (the gate's ranges are opened: G4c's prior
 # is known to fail them, the run is its control; PRIOR_REPAIR=1 restores them)
 # shellcheck disable=SC2086
-python scripts/prior_gate.py --batches 5 --contexts 512 ${gate_require:+--require $gate_require} \
-    --expect prior.family=mixture prior.family_weights=$fw_theory:$fw_trial prior.hyper.generic_weight=$GENERIC_W \
+python scripts/prior_gate.py --batches 5 --contexts 512 ${gate_require:+--require $gate_require} ${absent:+--absent $absent} \
+    --expect prior.family=mixture prior.family_weights=${FAMILY_W// /:} prior.hyper.generic_weight=$GENERIC_W $rule_expect \
              prior.hyper.s_source=${S_SOURCE}_1 prior.hyper.s_b_source=${S_SOURCE}_2 \
              prior.hyper_giles.random_partitions=1 pfn.context_max=$RUN_CONTEXT_MAX pfn.context_min=256 \
              pfn.iters=$RUN_ITERS pfn.arch=$RUN_ARCH pfn.n_query=64 pfn.curriculum=$curriculum_expect $objective_expect $std_expect \

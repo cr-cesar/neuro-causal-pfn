@@ -19,7 +19,9 @@ The default requirements are the trial's, with a margin; a run whose prior
 fails them does not train. ``--require metric=lo:hi`` replaces one, and
 ``--expect key.path=value`` also requires a value of the cfg (e.g.
 ``prior.hyper.generic_weight=0.8``), which replaces the per-run check
-scripts. Run it on a compute node or the lab machine (the pool cache is
+scripts. ``--absent family ...`` (16 Nov) requires that no drawn process
+belongs to those families (theory, giles, volume, centroid, generic): the
+check of a prior that leaves a family out. Run it on a compute node or the lab machine (the pool cache is
 patient data and stays there):
 
     python scripts/prior_gate.py --batches 50 --contexts 128 512 3000 --out gate.csv
@@ -80,6 +82,23 @@ def check(summary: Dict[str, Dict[str, float]], require: Dict) -> List[str]:
     return errors
 
 
+# the family labels a drawn process can carry; a generic process is labelled generic-<kind>
+FAMILY_LABELS = ("theory", "giles", "volume", "centroid", "generic")
+
+
+def check_absent(rows: List[Dict], absent: List[str]) -> List[str]:
+    """No drawn process may belong to a family in ``absent``."""
+    errors = []
+    for fam in absent:
+        if fam not in FAMILY_LABELS:
+            errors.append(f"unknown family {fam!r}; choose from {FAMILY_LABELS}")
+            continue
+        n = sum(1 for r in rows if r["family"] == fam or r["family"].startswith(fam + "-"))
+        if n:
+            errors.append(f"{n} of {len(rows)} processes are of the family {fam}, which must be absent")
+    return errors
+
+
 def _flat(d: Dict, prefix: str = "") -> Dict[str, object]:
     out = {}
     for k, v in d.items():
@@ -116,6 +135,7 @@ def main():
     ap.add_argument("--contexts", type=int, nargs="+", default=[128, 512, 3000])
     ap.add_argument("--require", nargs="*", default=[], help="metric=lo:hi, replaces a default")
     ap.add_argument("--expect", nargs="*", default=[], help="cfg key.path=value that must hold")
+    ap.add_argument("--absent", nargs="*", default=[], help="families no drawn process may belong to")
     ap.add_argument("--out", default=None, help="CSV of the per-family summary")
     a = ap.parse_args()
 
@@ -148,7 +168,7 @@ def main():
             w.writerow(["family", "processes", *METRICS, "median_slice"])
             for fam, s in summary.items():
                 w.writerow([fam, int(s["processes"]), *[f"{s[m]:.4f}" for m in METRICS], s["median_slice"]])
-    errors += check(summary, require)
+    errors += check(summary, require) + check_absent(rows, a.absent)
     if errors:
         print("PRIOR GATE FAILED: " + "; ".join(errors))
         sys.exit(1)

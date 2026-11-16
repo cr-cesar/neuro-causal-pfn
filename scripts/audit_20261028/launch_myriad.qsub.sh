@@ -7,8 +7,9 @@
 #        scripts/audit_20261028/launch_myriad.qsub.sh
 #
 # 2 Nov: OBJECTIVE, RUN_ITERS, EXCLUDE_NETWORKS and JOBNAME pass through as
-# well; FAMILY_W is given with a colon (qsub -v cannot carry the space), e.g.
-# FAMILY_W=0:1; ATLAS_LINK, when data/atlases is missing in the checkout,
+# well; FAMILY_W is given with colons (qsub -v cannot carry the space), e.g.
+# FAMILY_W=0:1, or FAMILY_W=0:1:1:1 with RULE_GRADED and RULE_ENROL (16 Nov);
+# ATLAS_LINK, when data/atlases is missing in the checkout,
 # links it to that folder; PRIOR_CHECK_ONLY=1 with PRIOR_CHECK_OUT runs the
 # prior checks instead of the training (submit with check_myriad.qsub.sh).
 #
@@ -26,8 +27,9 @@ LAUNCHER="${LAUNCHER:?set LAUNCHER to tm_launch.sh, g4c_launch.sh or g5_launch.s
 case "$LAUNCHER" in tm_launch.sh|g4c_launch.sh|g5_launch.sh) ;; *) echo "unknown launcher $LAUNCHER" >&2; exit 100 ;; esac
 export SEED="${SEED:-0}"
 export CACHE="${CACHE:?set CACHE}" OUT="${OUT:?set OUT}"
-[ -z "${FAMILY_W:-}" ] || export FAMILY_W="${FAMILY_W/:/ }"
-for v in OBJECTIVE RUN_ITERS EXCLUDE_NETWORKS JOBNAME PRIOR_CHECK_ONLY PRIOR_CHECK_OUT PRIOR_CHECK_ARGS; do
+[ -z "${FAMILY_W:-}" ] || export FAMILY_W="${FAMILY_W//:/ }"
+for v in OBJECTIVE RUN_ITERS EXCLUDE_NETWORKS JOBNAME PRIOR_CHECK_ONLY PRIOR_CHECK_OUT PRIOR_CHECK_ARGS \
+         RULE_GRADED RULE_ENROL; do
     [ -z "${!v:-}" ] || export "$v"
 done
 if [ ! -e data/atlases ] && [ -n "${ATLAS_LINK:-}" ]; then

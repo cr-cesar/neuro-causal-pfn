@@ -3,7 +3,8 @@
 #
 #   VARIANT=nocurr|ctx|ctx+stages selects an E12 curriculum variant (scripts/myriad_phase1b.sh e12).
 #   FAMILY=theory|giles|mixture selects the Neuro-Prior family (empty = theory, the pilot's);
-#   FAMILY_WEIGHTS="0.5 0.5" sets the mixture's theory / giles weights (space-separated).
+#   FAMILY_WEIGHTS="0.5 0.5" sets the mixture's theory / giles weights (space-separated);
+#   four numbers add the volume and centroid families ("theory giles volume centroid", 16 Nov).
 #   CONTEXT_POOL=susceptible|all: where a process draws its context (default susceptible; the pilot used all).
 #   qsub -v CACHE=outputs/prior_cache/kch_E1_seed0.npz,OUT=outputs/pfn_reduced_kch_E1 \
 #        scripts/train_pfn_myriad.qsub.sh
