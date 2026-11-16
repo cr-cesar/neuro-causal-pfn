@@ -12,6 +12,7 @@ import numpy as np
 from ..utils.logging_utils import get_logger
 from .atlas import FunctionalAtlas, _centroid
 from .channel import cache_channel, describe_cache
+from .feature_rules import RULE_FAMILIES
 from .intersynth import MECHANISMS, SyntheticDGP, make_dataset
 from .intersynth_atlas import InterSynthDGP, compute_overlaps, make_intersynth_dataset
 from .verify_identifiability import verify_identifiability
@@ -19,7 +20,9 @@ from .verify_identifiability import verify_identifiability
 log = get_logger()
 
 # process families of NeuroPriorCohort and where a process draws its context (see its docstring)
-FAMILIES = ("theory", "giles", "mixture")
+FAMILIES = ("theory", "giles", "mixture") + RULE_FAMILIES
+# the families a mixture draws from, in the order of ``family_weights``
+MIXTURE_FAMILIES = ("theory", "giles") + RULE_FAMILIES
 CONTEXT_POOLS = ("susceptible", "all")
 
 
@@ -135,17 +138,24 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
       susceptibility-driven allocation go to the verifier with the
       susceptibility as the unobserved variable and are rejected unless their
       strength is negligible.
-    * ``family="mixture"``: every process is drawn from one of the two
-      families with probabilities ``family_weights`` (theory, giles). The
-      theory family alone has a non-negative, continuous and mostly small
-      effect, whereas the virtual trial of the evaluation has binary outcomes
-      and effects of either sign; the mixture keeps the design's family and
-      covers the evaluation's.
+    * ``family="volume"`` and ``family="centroid"`` (16 Nov,
+      ``feature_rules``): the effect is set by the rank of the lesion's volume,
+      or of its centroid's coordinate on the first principal axis of the
+      centroids, as a threshold rule (thirds) or a graded one; efficacy,
+      recovery, allocation and outcome draws are the virtual trial's.
+    * ``family="mixture"``: every process is drawn from one of the families
+      with probabilities ``family_weights``: two numbers (theory, giles), or
+      four (theory, giles, volume, centroid). A family with weight 0 is never
+      drawn, and four weights ending in two zeros draw exactly what the first
+      two alone draw. The theory family alone has a non-negative, continuous
+      and mostly small effect, whereas the virtual trial of the evaluation has
+      binary outcomes and effects of either sign; the mixture keeps the
+      design's family and covers the evaluation's.
 
     ``hyper`` is a ``TheoryHyperPrior`` or a ``HyperPrior`` matching the
     family (None gives the family's defaults); for the mixture it holds the
     theory ranges (the curriculum stages narrow those) and ``hyper_giles``
-    the virtual-trial ranges.
+    the virtual-trial ranges, which the volume and centroid families read too.
 
     A cohort built from a cache exposes ``channel`` ("lesion" for binary
     masks, "disconnectome" for binarised continuous maps, None when the cache
@@ -161,6 +171,9 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
     deficit on the patients susceptible to it: for the giles family the
     lesions hitting one of the process's causal networks above its threshold,
     for the theory family the lesions with a non-zero disruption score.
+    A volume or centroid process affects every lesion: its slice is the
+    lesions it enrols, the whole pool unless ``rule_enrol`` asks for a random
+    part of it.
     The queries are drawn without replacement from that slice and the
     context, of the requested length, from the rest of the slice with
     replacement: a lesion that appears twice is two patients with the same
@@ -193,8 +206,9 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
             raise ValueError(f"unknown prior family {family!r}; choose from {FAMILIES}")
         self.family = family
         w = np.asarray(family_weights, dtype=float)
-        if w.shape != (2,) or np.any(w < 0) or w.sum() <= 0:
-            raise ValueError("family_weights must be two non-negative numbers (theory, giles)")
+        if w.shape not in ((2,), (len(MIXTURE_FAMILIES),)) or np.any(w < 0) or w.sum() <= 0:
+            raise ValueError("family_weights must be two non-negative numbers (theory, giles) or four "
+                             "(theory, giles, volume, centroid), not all zero")
         self.family_weights = w / w.sum()
         if context_pool not in CONTEXT_POOLS:
             raise ValueError(f"unknown context_pool {context_pool!r}; choose from {CONTEXT_POOLS}")
@@ -234,7 +248,7 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
             log.info(describe_cache(cache))
         # a slice must hold the queries plus a context worth inferring from
         self.context_pool, self.min_slice = context_pool, max(int(min_slice), self.n_query + 8)
-        self.hyper = hyper or (HyperPrior() if family == "giles" else TheoryHyperPrior())
+        self.hyper = hyper or (HyperPrior() if family in self._TRIAL_FAMILIES else TheoryHyperPrior())
         # the mixture's virtual-trial ranges (the giles family uses ``hyper``)
         self.hyper_giles = hyper_giles or HyperPrior()
         # the theory family's anatomy view: the cache's two split columns by
@@ -253,6 +267,13 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
         if self.augment and self.standardize == "pool":
             mu, sd = self.X.mean(0, keepdims=True), self.X.std(0, keepdims=True) + 1e-6
             self.X = (self.X - mu) / sd
+
+    # the families whose ranges are a virtual-trial ``HyperPrior``; alone they
+    # read it from ``hyper``, inside a mixture from ``hyper_giles``
+    _TRIAL_FAMILIES = ("giles",) + RULE_FAMILIES
+
+    def _trial_hyper(self):
+        return self.hyper if self.family in self._TRIAL_FAMILIES else self.hyper_giles
 
     def _theory_view(self) -> Optional[np.ndarray]:
         """[m, K, 3] overlaps of the D, S_A and S_B sources named by the theory
@@ -296,6 +317,8 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
     def _slice(self, dgp, family: str) -> Optional[np.ndarray]:
         """Indices of the pool lesions the process can affect (None = the
         whole pool, when context_pool is "all")."""
+        if family in RULE_FAMILIES:
+            return self._enrol(dgp)
         if self.context_pool == "all":
             return None
         if family == "giles":
@@ -305,6 +328,19 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
         else:
             hit = dgp.raw_scores(self._theory_ov())[0] > 0.0
         return np.flatnonzero(hit)
+
+    def _enrol(self, dgp) -> Optional[np.ndarray]:
+        """The lesions a volume or centroid process enrols, on which its ranks,
+        thirds and principal axis are fixed: the whole pool, or a random part
+        of it (the process's ``enrol`` share, never below ``min_slice``).
+        Returns them as the slice (None when context_pool is "all": the rule
+        is then fixed on the whole pool and rows come from all of it)."""
+        n = self.m
+        if self.context_pool != "all" and dgp.enrol < 1.0:
+            n = min(self.m, max(self.min_slice, int(round(dgp.enrol * self.m))))
+        idx = np.arange(self.m) if n >= self.m else np.sort(self.rng.choice(self.m, size=n, replace=False))
+        dgp.fit(self.volumes, self.centroids, idx)
+        return None if self.context_pool == "all" else idx
 
     def _indices_from(self, pool: Optional[np.ndarray], n: int) -> np.ndarray:
         if pool is None:
@@ -326,7 +362,8 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
     def _draw_family(self) -> str:
         if self.family != "mixture":
             return self.family
-        return str(self.rng.choice(("theory", "giles"), p=self.family_weights))
+        # two weights: the call of every run so far, on the same two names
+        return str(self.rng.choice(MIXTURE_FAMILIES[: len(self.family_weights)], p=self.family_weights))
 
     def sample_process(self, family: Optional[str] = None):
         family = family or self._draw_family()
@@ -340,9 +377,13 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
             # the D and S scales are fixed on the whole pool, so the ground
             # truth of a process does not depend on the batch it is sampled in
             return InterSynthTheoryDGP(self.atlas, self.rng, self.hyper).calibrate(self._theory_ov())
+        h = self._trial_hyper()
+        if family in RULE_FAMILIES:
+            from .feature_rules import FeatureRuleDGP
+
+            return FeatureRuleDGP(family, self.rng, h)
         from .neuro_prior import NeuroPriorDGP
 
-        h = self.hyper if self.family == "giles" else self.hyper_giles
         if self.excluded_networks(h) and float(getattr(h, "random_partitions", 0.0) or 0.0) < 1:
             # a process on the atlas's own halves would read the left-out networks
             raise ValueError("exclude_networks needs random_partitions = 1")
@@ -365,7 +406,7 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
         """Positions k of the networks left out of the random partitions: the
         hyper's ``exclude_networks`` atlas ids ("1+2+3+4", or one number)
         mapped through the atlas's network order."""
-        h = h if h is not None else (self.hyper if self.family == "giles" else self.hyper_giles)
+        h = h if h is not None else self._trial_hyper()
         raw = getattr(h, "exclude_networks", "") or ""
         if isinstance(raw, (int, float)):
             raw = str(int(raw))
@@ -430,6 +471,11 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
                 data = make_theory_dataset(dgp, ov_t[ci], self.centroids[ci], Xc,
                                            ov_t[qi], self.centroids[qi], Xq, self.rng)
                 U = None
+            elif fam in RULE_FAMILIES:
+                from .feature_rules import make_rule_dataset
+
+                data = make_rule_dataset(dgp, ci, qi, self.volumes, Xc, Xq, self.rng)
+                U = data["u_ctx"][:, None] if dgp.bias_type == "agnostic" else None
             else:
                 ov_g = self._giles_ov(dgp)
                 data = make_prior_dataset(dgp, ov_g[ci], self.centroids[ci], self.volumes[ci], Xc,

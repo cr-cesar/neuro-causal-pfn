@@ -62,6 +62,12 @@ class HyperPrior:
     # itself instead of a Bernoulli draw (the factorial's "all-or-none effect,
     # continuous outcome" cell)
     continuous_outcome: float = 0.0
+    # volume and centroid families (16 Nov, prior/feature_rules.py), which read
+    # the ranges above too: share of their processes with the graded shape
+    # (the rest have the threshold shape), and the range of the share of the
+    # pool a process enrols (1 to 1: the whole pool)
+    rule_graded: float = 0.5
+    rule_enrol: Tuple[float, float] = (1.0, 1.0)
 
     def contains_giles(self, TE: float, RE: float, BIAS: float, BIASTYPE: str) -> bool:
         """True when a paper scenario is a possible draw of this hyper-prior."""

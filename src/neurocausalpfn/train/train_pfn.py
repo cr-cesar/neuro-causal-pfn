@@ -269,7 +269,8 @@ _STAGE1_GILES = {"bias": [0.0, 0.3]}
 
 def with_family(cfg: Dict, family: str, weights=None, context_pool: Optional[str] = None) -> Dict:
     """Set the Neuro-Prior family of a reduced / E12 configuration
-    (theory | giles | mixture), for the mixture the family weights, and
+    (theory | giles | mixture | volume | centroid), for the mixture the
+    family weights (two numbers, or four with volume and centroid), and
     optionally the context pool (susceptible | all)."""
     from ..prior.cohort import CONTEXT_POOLS, FAMILIES
 
@@ -304,6 +305,7 @@ def e12_config(variant: str, family: str = "theory", weights=None, context_pool:
     cfg["pfn"]["curriculum"] = "none" if variant == "nocurr" else "context"
     if variant == "ctx+stages":
         first = {"theory": {"hyper": _STAGE1_THEORY}, "giles": {"hyper": _STAGE1_GILES},
+                 "volume": {"hyper": _STAGE1_GILES}, "centroid": {"hyper": _STAGE1_GILES},
                  "mixture": {"hyper": _STAGE1_THEORY, "hyper_giles": _STAGE1_GILES}}[family]
         cfg["prior"]["stages"] = [{"until": 0.5, **copy.deepcopy(first)}, {"until": 1.0, "hyper": {}}]
     cfg["variant"] = variant
@@ -332,7 +334,10 @@ def _build_prior(cfg: Dict, seed_offset: int = 0):
             # alpha, beta, gamma, four mechanisms; prior/intersynth_theory.py);
             # family "giles" the v1 virtual-trial generators (prior/neuro_prior.py);
             # family "mixture" draws each process from one of the two with
-            # pr["family_weights"] = [theory, giles] (default [0.5, 0.5]).
+            # pr["family_weights"] = [theory, giles] (default [0.5, 0.5]), or
+            # from four with [theory, giles, volume, centroid] (16 Nov: the
+            # volume and centroid rules of prior/feature_rules.py, which read
+            # the virtual-trial ranges; each is also a family of its own).
             # Ranges can be narrowed per curriculum stage through
             # pr["hyper"] = {"gamma": [0, 0.3], "beta": [0.2, 0.4], ...} (the
             # theory ranges for theory and mixture); pr["hyper_giles"] sets the
