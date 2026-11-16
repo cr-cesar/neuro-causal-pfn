@@ -32,7 +32,7 @@ def pool(atlas):
 
 
 def test_mixture_draws_both_families_with_the_weights(atlas, pool):
-    assert FAMILIES == ("theory", "giles", "mixture")
+    assert FAMILIES[:3] == ("theory", "giles", "mixture")     # 16 Nov: volume and centroid follow
     coh = NeuroPriorCohort(atlas, pool, seed=0, n_context=48, n_query=8, family="mixture",
                            family_weights=(0.25, 0.75), augment=False)
     assert isinstance(coh.hyper, TheoryHyperPrior) and isinstance(coh.hyper_giles, HyperPrior)
