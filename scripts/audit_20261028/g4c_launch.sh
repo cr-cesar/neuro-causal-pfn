@@ -14,6 +14,7 @@
 #   GENERIC_W=0 [OBJECTIVE=new] bash scripts/audit_20261028/g4c_launch.sh
 #   HEAD_RANGE=wide bash scripts/audit_20261028/g4c_launch.sh
 #   S_SOURCE=receptor | FAMILY_W="0.25 0.75" [OBJECTIVE=new] bash scripts/audit_20261028/g4c_launch.sh
+#   RUN_TRAINER=tabpfn [TABPFN_FT_ARGS="--steps 2000"] bash scripts/audit_20261028/g4c_launch.sh
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 dirty=$(git status --porcelain --untracked-files=no | wc -l)
@@ -62,6 +63,13 @@ for v in RUN_RAMP_ITERS RUN_CKPT_EVERY; do
 done
 [ -z "${RUN_RAMP_ITERS:-}" ] || export RAMP_ITERS="$RUN_RAMP_ITERS"
 [ -z "${RUN_CKPT_EVERY:-}" ] || export CKPT_EVERY="$RUN_CKPT_EVERY"
+# RUN_TRAINER=tabpfn (16 Nov, job D): the same prior and the same gate, then
+# TabPFN's continued pre-training on that prior (scripts/finetune_tabpfn_prior.py
+# --prior-from-env, its options in TABPFN_FT_ARGS) instead of the PFN training;
+# the model, loss and schedule variables of this launch then train nothing.
+# Default pfn, every run so far; tabpfn is tagged in the run name
+RUN_TRAINER="${RUN_TRAINER:-pfn}"
+case "$RUN_TRAINER" in pfn|tabpfn) ;; *) echo "RUN_TRAINER must be pfn or tabpfn" >&2; exit 1 ;; esac
 command -v module >/dev/null 2>&1 && module load python3/3.11
 source "${VENV:-$HOME/venvs/neuro}/bin/activate"
 # OBJECTIVE=new (ablation of 29 Oct): G4c's prior with TM's training target
@@ -148,6 +156,7 @@ read -r fw_theory fw_trial <<< "$FAMILY_W"
 [ "$RUN_CONTEXT_MAX" = 3000 ] || tag="${tag}_c$RUN_CONTEXT_MAX"
 [ "$RUN_ATTN" = masked ] || tag="${tag}_$RUN_ATTN"
 [ -z "${RUN_RAMP_ITERS:-}" ] || tag="${tag}_r$RUN_RAMP_ITERS"
+[ "$RUN_TRAINER" = pfn ] || tag="${tag}_$RUN_TRAINER"
 # EXCLUDE_NETWORKS (2 Nov, leave-networks-out): atlas network ids joined by
 # "+" (e.g. 1+2+3+4) whose atoms the virtual-trial family's random partitions
 # never use; prior/cohort.py refuses it with the theory family drawn
@@ -227,4 +236,8 @@ python scripts/prior_gate.py --batches 5 --contexts 512 ${gate_require:+--requir
              pfn.iters=$RUN_ITERS pfn.arch=$RUN_ARCH pfn.n_query=64 pfn.curriculum=$curriculum_expect $objective_expect $std_expect \
              pfn.n_bins=${RUN_N_BINS:-256} pfn.batch_size=${RUN_BATCH:-4} pfn.attn=$attn_expect \
              pfn.ramp_iters=${RUN_RAMP_ITERS:-UNSET} pfn.ckpt_every=${RUN_CKPT_EVERY:-UNSET}
+if [ "$RUN_TRAINER" = tabpfn ]; then
+    # shellcheck disable=SC2086
+    exec python scripts/finetune_tabpfn_prior.py --prior-from-env --out "$OUT" ${TABPFN_FT_ARGS:-}
+fi
 bash scripts/train_pfn_myriad.qsub.sh
