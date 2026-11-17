@@ -330,15 +330,27 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
         return np.flatnonzero(hit)
 
     def _enrol(self, dgp) -> Optional[np.ndarray]:
-        """The lesions a volume or centroid process enrols, on which its ranks,
-        thirds and principal axis are fixed: the whole pool, or a random part
-        of it (the process's ``enrol`` share, never below ``min_slice``).
-        Returns them as the slice (None when context_pool is "all": the rule
-        is then fixed on the whole pool and rows come from all of it)."""
-        n = self.m
-        if self.context_pool != "all" and dgp.enrol < 1.0:
-            n = min(self.m, max(self.min_slice, int(round(dgp.enrol * self.m))))
-        idx = np.arange(self.m) if n >= self.m else np.sort(self.rng.choice(self.m, size=n, replace=False))
+        """The lesions a volume or centroid process enrols, on which its ranks
+        and thirds are fixed (and its principal axis, unless ``rule_axis`` is
+        ``pool``). ``rule_enrol_by=share``: the whole pool, or a uniformly
+        random part of it (the process's ``enrol`` share, never below
+        ``min_slice``). ``rule_enrol_by=network``: the slice of a
+        virtual-trial process drawn from the same ranges, the lesions its
+        networks reach, as the virtual-trial family enrols; a slice below
+        ``min_slice`` is returned unfitted and the caller draws again.
+        Returns the enrolment as the slice (None when context_pool is "all":
+        the rule is then fixed on the whole pool and rows come from all of
+        it, in both modes)."""
+        if dgp.enrol_by == "network":
+            idx = self._slice(self.sample_process("giles"), "giles")
+            idx = np.arange(self.m) if idx is None else idx
+            if len(idx) < self.min_slice:
+                return idx
+        else:
+            n = self.m
+            if self.context_pool != "all" and dgp.enrol < 1.0:
+                n = min(self.m, max(self.min_slice, int(round(dgp.enrol * self.m))))
+            idx = np.arange(self.m) if n >= self.m else np.sort(self.rng.choice(self.m, size=n, replace=False))
         dgp.fit(self.volumes, self.centroids, idx)
         return None if self.context_pool == "all" else idx
 

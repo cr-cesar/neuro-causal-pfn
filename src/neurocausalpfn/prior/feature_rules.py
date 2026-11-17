@@ -25,17 +25,46 @@ formula with its response indicator replaced by that probability r_t. With
 TE = 1 and RE = 0 this is 0.5 + e / 2 under arm 1 and 0.5 - e / 2 under arm 0;
 in general mu_1 - mu_0 = TE (1 - RE) e. Context outcomes are Bernoulli draws
 (or the probability itself for the ``continuous_outcome`` share), with the
-same label noise; treatment follows the same three allocation mechanisms with
-the same strength: a ramp along the rank of the centroid coordinate on the
-principal axis (``axis``) or of the volume (``severity``), each with a random
-direction, or towards the arm that suits the lesion (``agnostic``, which the
-identifiability verifier rejects unless its strength is negligible).
+same label noise; treatment follows three allocation mechanisms with the
+virtual trial's names, weights and strength range: a ramp along the rank of
+the centroid coordinate on the principal axis (``axis``) or of the volume
+(``severity``), each with a random direction, or towards the arm that suits
+the lesion (``agnostic``, which the identifiability verifier rejects unless
+its strength is negligible).
 
-Two options of their own, in the same hyper-prior: ``rule_graded``, the share
-of processes with the graded shape (default 0.5), and ``rule_enrol``, the
-range of the share of the pool a process enrols (default 1 to 1, the whole
-pool; the thirds, the ranks and the principal axis are those of the enrolled
-lesions).
+Allocation differs from the virtual trial in the ``axis`` mechanism. There
+the ramp runs along the image axis (x, y or z) that best separates the two
+halves of the process's first network, towards the half that responds to
+arm 1 (``NeuroPriorDGP._axis``): the direction is tied to the effect. Here
+the ramp runs along the principal coordinate of the centroids and its
+direction is a coin of its own, independent of the rule's sign, as the
+direction of the ``severity`` ramp is in both families. So in a centroid
+process the ramp is aligned with the effect or against it, half the time
+each; in the virtual trial it is always aligned.
+
+Options of their own, in the same hyper-prior:
+
+- ``rule_graded``: the share of processes with the graded shape (default 0.5);
+- ``rule_enrol_by``: who a process enrols. ``share`` (default): a uniformly
+  random part of the pool, of the share drawn from ``rule_enrol`` (default 1
+  to 1, the whole pool). ``network``: the lesions a virtual-trial process
+  drawn from the same ranges would enrol, i.e. those its networks reach above
+  its threshold (the slice of the other families);
+- ``rule_axis``: the centroids whose first principal axis the ``centroid``
+  family (and the ``axis`` allocation ramp) uses. ``enrolled`` (default): the
+  enrolled lesions'. ``pool``: the whole pool's, whoever is enrolled.
+
+The thirds and the ranks are always those of the enrolled lesions. With the
+defaults every process of a family is fixed on the same lesions, so only its
+shape and its sign distinguish its effects: four functions per family.
+
+A lesion without a finite volume and centroid cannot be ranked: enrolling one
+is an error (NaN would otherwise sort last and take the top effect).
+
+The direction of a principal axis is arbitrary; ``principal_coordinate`` fixes
+it by making the axis's largest component positive, which is deterministic for
+given centroids. The rule's own sign is a coin per process, so the convention
+does not change which processes are drawn, only how ``sign`` reads.
 """
 from typing import Dict, Optional
 
@@ -45,6 +74,8 @@ from .neuro_prior import BIAS_TYPES, HyperPrior, _ramp
 
 RULE_FAMILIES = ("volume", "centroid")
 RULE_SHAPES = ("threshold", "graded")
+ENROL_BY = ("share", "network")
+RULE_AXES = ("enrolled", "pool")
 
 
 def average_ranks(values: np.ndarray) -> np.ndarray:
@@ -65,6 +96,9 @@ def rule_effect(values: np.ndarray, shape: str) -> np.ndarray:
     so that reversing the order of the values flips the sign exactly."""
     if shape not in RULE_SHAPES:
         raise ValueError(f"unknown rule shape {shape!r}; choose from {RULE_SHAPES}")
+    bad = int((~np.isfinite(np.asarray(values, dtype=np.float64))).sum())
+    if bad:
+        raise ValueError(f"{bad} of {np.size(values)} values are not finite: they cannot be ranked")
     r = average_ranks(values)
     n = len(r)
     twice = np.rint(2.0 * r).astype(np.int64)      # 2 r is an integer: no rounding below
@@ -79,6 +113,8 @@ def principal_coordinate(centroids: np.ndarray) -> np.ndarray:
     centroids (centred). The axis's direction is fixed by making its largest
     component positive, so the coordinate does not depend on the solver."""
     c = np.asarray(centroids, dtype=np.float64)
+    if not np.isfinite(c).all():
+        raise ValueError(f"{int((~np.isfinite(c)).any(axis=-1).sum())} of {len(c)} centroids are not finite")
     c = c - c.mean(axis=0, keepdims=True)
     if len(c) < 2:
         return np.zeros(len(c))
@@ -106,7 +142,8 @@ class FeatureRuleDGP:
                  shape: Optional[str] = None, sign: Optional[int] = None,
                  p_te: Optional[float] = None, p_re: Optional[float] = None,
                  bias: Optional[float] = None, bias_type: Optional[str] = None,
-                 label_noise: Optional[float] = None, enrol: Optional[float] = None):
+                 label_noise: Optional[float] = None, enrol: Optional[float] = None,
+                 enrol_by: Optional[str] = None, axis_from: Optional[str] = None):
         if feature not in RULE_FAMILIES:
             raise ValueError(f"unknown rule family {feature!r}; choose from {RULE_FAMILIES}")
         h = hyper or HyperPrior()
@@ -138,15 +175,32 @@ class FeatureRuleDGP:
         self.continuous = bool(float(getattr(h, "continuous_outcome", 0.0) or 0.0) > 0
                                and rng.uniform() < float(h.continuous_outcome))
         self.enrol = float(rng.uniform(*_enrol_range(h))) if enrol is None else float(enrol)
+        self.enrol_by = str(getattr(h, "rule_enrol_by", "share") if enrol_by is None else enrol_by)
+        if self.enrol_by not in ENROL_BY:
+            raise ValueError(f"unknown rule_enrol_by {self.enrol_by!r}; choose from {ENROL_BY}")
+        if self.enrol_by == "network" and _enrol_range(h) != (1.0, 1.0):
+            raise ValueError("rule_enrol is the share of the pool rule_enrol_by=share enrols; "
+                             "leave it out with rule_enrol_by=network")
+        self.axis_from = str(getattr(h, "rule_axis", "enrolled") if axis_from is None else axis_from)
+        if self.axis_from not in RULE_AXES:
+            raise ValueError(f"unknown rule_axis {self.axis_from!r}; choose from {RULE_AXES}")
         self.effect = self.coordinate = None               # per pool lesion, set by fit
 
     def fit(self, volumes: np.ndarray, centroids: np.ndarray, enrolled: np.ndarray) -> "FeatureRuleDGP":
         """Fix the effect of the enrolled lesions (indices into the pool):
-        ranks, thirds and the principal axis are theirs. Lesions outside the
-        enrolment get NaN, so using one is an error, not a silent zero."""
+        ranks and thirds are theirs, and so is the principal axis unless
+        ``rule_axis`` is ``pool``. Lesions outside the enrolment get NaN, so
+        using one is an error, not a silent zero; an enrolled lesion without
+        a finite volume and centroid is an error too."""
         enrolled = np.asarray(enrolled, dtype=np.int64)
-        coord = principal_coordinate(np.asarray(centroids)[enrolled])
-        values = np.asarray(volumes, dtype=np.float64)[enrolled] if self.feature == "volume" else coord
+        vol = np.asarray(volumes, dtype=np.float64)[enrolled]
+        cen = np.asarray(centroids, dtype=np.float64)[enrolled]
+        bad = int((~(np.isfinite(vol) & np.isfinite(cen).all(axis=1))).sum())
+        if bad:
+            raise ValueError(f"{bad} of {len(enrolled)} enrolled lesions have no finite volume and centroid: "
+                             f"the {self.feature} rule cannot rank them")
+        coord = principal_coordinate(centroids)[enrolled] if self.axis_from == "pool" else principal_coordinate(cen)
+        values = vol if self.feature == "volume" else coord
         self.effect = np.full(len(volumes), np.nan)
         self.effect[enrolled] = self.sign * rule_effect(values, self.shape)
         self.coordinate = np.full(len(volumes), np.nan)
@@ -172,7 +226,8 @@ class FeatureRuleDGP:
     def describe(self) -> Dict:
         return {"feature": self.feature, "shape": self.shape, "sign": self.sign,
                 "p_te": self.p_te, "p_re": self.p_re, "bias": self.bias, "bias_type": self.bias_type,
-                "label_noise": self.label_noise, "enrol": self.enrol,
+                "label_noise": self.label_noise, "enrol": self.enrol, "enrol_by": self.enrol_by,
+                "axis": self.axis_from,
                 "outcome": "continuous" if self.continuous else "binary"}
 
 
