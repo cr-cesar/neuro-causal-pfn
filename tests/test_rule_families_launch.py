@@ -22,6 +22,7 @@ RECORD = '''{ echo "ARGS $2"; for v in %s; do
   if [ -n "${!v+x}" ]; then echo "$v=${!v}"; else echo "$v=<unset>"; fi; done; } > "$OUT/call_$1.txt"
 ''' % " ".join(LAUNCH_VARS)
 INPUTS = ("FAMILY_W", "OBJECTIVE", "GENERIC_W", "RULE_GRADED", "RULE_ENROL", "RULE_ENROL_BY", "RULE_AXIS",
+          "RULE_AXIS_SIGN",
           "GATE_REQUIRE", "RUN_ITERS", "EXCLUDE_NETWORKS",
           "PRIOR_REPAIR", "ALLOC", "S_SOURCE", "STD", "DISTINCT", "HEAD_RANGE", "CATE_W", "LAUNCHER", "ATLAS_SRC",
           "PRIOR_CHECK_ONLY", *LAUNCH_VARS)
@@ -160,7 +161,9 @@ def test_four_family_weights_reach_the_gate_and_the_trainer(checkouts):
     ("enrol_zero", dict(FAMILY_W="0 1 1 1", RULE_ENROL="0.0:1"), "0 < lo <= hi"),
     ("by2", dict(FAMILY_W="0 1", RULE_ENROL_BY="network"), "need four numbers"),
     ("axis2", dict(RULE_AXIS="pool"), "need four numbers"),
-    ("by", dict(FAMILY_W="0 1 1 1", RULE_ENROL_BY="trial"), "RULE_ENROL_BY must be"),
+    ("by", dict(FAMILY_W="0 1 1 1", RULE_ENROL_BY="cohort"), "RULE_ENROL_BY must be"),
+    ("sign2", dict(FAMILY_W="0 1", RULE_AXIS_SIGN="random"), "need four numbers"),
+    ("sign", dict(FAMILY_W="0 1 1 1", RULE_AXIS_SIGN="coin"), "RULE_AXIS_SIGN must be"),
     ("axis", dict(FAMILY_W="0 1 1 1", RULE_AXIS="trial"), "RULE_AXIS must be"),
     ("by_share", dict(FAMILY_W="0 1 1 1", RULE_ENROL_BY="network", RULE_ENROL="0.2:1"), "leave it out"),
     ("gate2", dict(FAMILY_W="0 1", GATE_REQUIRE="share_zero=0:1"), "volume or centroid family"),
@@ -196,7 +199,8 @@ def test_enrolment_and_axis_options_reach_the_gate_and_the_trainer(checkouts):
             "prior.hyper_giles.rule_enrol_by=network prior.hyper_giles.rule_axis=pool") in gate
     assert "launch tag=G4cobj_fw0-1-1-1_rbnetwork_rapool " in r.stdout
     assert _said(r, "rule families:") == [
-        "rule families: graded=0.5 (default) enrol_by=network enrol=whole pool (default) axis=pool gate_require="
+        "rule families: graded=0.5 (default) enrol_by=network enrol=whole pool (default) axis=pool "
+        "axis_sign=fixed (default) gate_require="
         "share_zero=0:1 share_unit=0:1 share_small=0:1 pos_share=0:1 ctx_binary=0:1 ctx_treated=0:1"]
     # unset: the generator's defaults, expected unset, said so
     r, gate, _, tenv = _launch(checkouts, "new", "unset", OBJECTIVE="new", FAMILY_W="0 1 1 1")
@@ -252,3 +256,24 @@ def test_the_gate_requirements_of_a_launch_with_the_new_families(checkouts):
     r, gate, _, _ = _launch(checkouts, "new", "repair_two", OBJECTIVE="new", FAMILY_W="0 1", PRIOR_REPAIR=1)
     old = _launch(checkouts, "old", "repair_two", OBJECTIVE="new", FAMILY_W="0 1", PRIOR_REPAIR=1)
     assert r.returncode == 0 and gate == old[1] and "--require" not in gate
+
+
+# ------------------------------------------ third round (17 Nov, after the recheck)
+def test_axis_direction_and_trial_enrolment_reach_the_gate_and_the_trainer(checkouts):
+    r, gate, genv, tenv = _launch(checkouts, "new", "sign", OBJECTIVE="new", FAMILY_W="0 1 1 1",
+                                  RULE_ENROL_BY="trial", RULE_ENROL="0.5:1", RULE_AXIS_SIGN="random")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert tenv["GILES_HYPER"] == ("random_partitions=1 threshold=0.03:0.08 p_te=0.9:1 p_re=0:0.05 label_noise=0:0 "
+                                   "rule_enrol=0.5:1 rule_enrol_by=trial rule_axis_sign=random") == genv["GILES_HYPER"]
+    assert ("prior.hyper_giles.rule_enrol_by=trial prior.hyper_giles.rule_axis=UNSET "
+            "prior.hyper_giles.rule_axis_sign=random") in gate
+    assert "launch tag=G4cobj_fw0-1-1-1_re0.5-1_rbtrial_rsrandom " in r.stdout
+    assert "enrol_by=trial enrol=0.5:1 axis=enrolled (default) axis_sign=random " in _said(r, "rule families:")[0]
+    # unset: not passed, expected unset
+    r, gate, _, tenv = _launch(checkouts, "new", "sign_unset", OBJECTIVE="new", FAMILY_W="0 1 1 1")
+    assert "rule_" not in tenv["GILES_HYPER"] and "prior.hyper_giles.rule_axis_sign=UNSET" in gate
+    # the default written out is passed on and named; the Myriad job carries the variable
+    r, gate, _, tenv = _launch(checkouts, "new", "sign_myriad", script="launch_myriad.qsub.sh",
+                               LAUNCHER="g4c_launch.sh", FAMILY_W="0:1:1:1", RULE_AXIS_SIGN="fixed")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert tenv["GILES_HYPER"].endswith(" rule_axis_sign=fixed") and "_rsfixed" in tenv["JOBNAME"]

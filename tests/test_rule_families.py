@@ -26,6 +26,9 @@ sys.path.insert(0, os.path.join(ROOT, "scripts"))
 BASE_COMMIT = "8fa4b74ba1f0d17d7d5fa0d980ce969be6d8ac34"      # scale-budget-ckpt, the code before this change
 FIRST_ROUND = "78713055fe78174e072758ac619f7899cb125cec"      # this branch before the options of 17 Nov
 KEYS = ("Xc", "Tc", "Yc", "Xq", "Tq", "mu_q", "mu0", "mu1")
+# every option of the volume and centroid families away from its default, in two combinations
+ALL_RULE_OPTIONS = ("rule_graded=0.9 rule_enrol_by=network rule_axis=pool rule_axis_sign=random",
+                    "rule_graded=0.1 rule_enrol=0.3:0.9 rule_enrol_by=trial rule_axis_sign=random")
 
 # the prior variables scripts/audit_20261028/g4c_launch.sh exports under
 # final1m_launch.sh's call (OBJECTIVE=new FAMILY_W="0 1")
@@ -129,6 +132,12 @@ def test_the_final_prior_is_unchanged_draw_for_draw(base_src, tmp_path, seed):
     four = _draw(os.path.join(ROOT, "src"), tmp_path, "four", **dict(env, FAMILY_WEIGHTS="0 1 0 0"))
     _same(before, after)
     _same(before, four)
+    # the options of the new families, all away from their defaults, with those families at weight 0:
+    # nothing is drawn for them, so the batches are still the ones of the code before the change
+    for i, opts in enumerate(ALL_RULE_OPTIONS):
+        set_ = _draw(os.path.join(ROOT, "src"), tmp_path, f"opts{i}",
+                     **dict(env, FAMILY_WEIGHTS="0 1 0 0", GILES_HYPER=env["GILES_HYPER"] + " " + opts))
+        _same(before, set_)
     fams = set(before["families"].tolist())
     assert "giles" in fams and any(f.startswith("generic-") for f in fams)   # both components were drawn
     assert not fams & {"theory", "volume", "centroid"}
@@ -579,7 +588,7 @@ def test_enrolment_by_network_cuts_the_rule_within_each_trials_slice(cohort_kw):
     with pytest.raises(ValueError, match="rule_enrol"):
         NeuroPriorCohort(seed=3, family="volume", hyper=both, **kw).sample_batch(1)
     with pytest.raises(ValueError, match="rule_enrol_by"):
-        FeatureRuleDGP("volume", np.random.default_rng(0), enrol_by="trial")
+        FeatureRuleDGP("volume", np.random.default_rng(0), enrol_by="cohort")
 
 
 def test_the_principal_axis_is_the_enrolled_lesions_or_the_pools():
@@ -702,3 +711,104 @@ def test_the_gates_default_requirements_do_not_fit_these_families(tmp_path, monk
     monkeypatch.setattr(sys, "argv", base + ["--require", "share_zero=0:1", "share_unit=0:1"])
     pg.main()
     assert "prior gate ok" in capsys.readouterr().out
+
+
+# ------------------------------------------ third round (17 Nov, after the recheck)
+def test_a_random_axis_direction_draws_both_and_only_for_centroid_processes(tmp_path):
+    rng = np.random.default_rng(7)
+    centroids, volumes = rng.normal(size=(120, 3)) * np.array([1.0, 5.0, 1.0]), rng.lognormal(size=120)
+    idx, coord = np.arange(120), principal_coordinate(centroids)
+    fixed, random = HyperPrior(), HyperPrior(rule_axis_sign="random")
+    assert fixed.rule_axis_sign == "fixed"
+    seen = []
+    for s in range(300):
+        dgp = FeatureRuleDGP("centroid", np.random.default_rng(s), random, shape="graded").fit(volumes, centroids, idx)
+        seen.append(dgp.axis_sign)
+        assert dgp.describe()["axis_sign"] == dgp.axis_sign
+        # the coordinate is the principal coordinate, or its mirror image; the rule is cut on it
+        np.testing.assert_allclose(dgp.coordinate, dgp.axis_sign * coord)
+        np.testing.assert_array_equal(dgp.effect, dgp.sign * rule_effect(dgp.axis_sign * coord, "graded"))
+    assert set(seen) == {-1, 1} and abs(np.mean(seen)) < 0.15                # both directions, about half each
+    # the default: one direction, the rule of principal_coordinate, and no draw for it:
+    # a process built with the default leaves the generator where the code before the option left it
+    for feature, hyper in (("centroid", fixed), ("volume", fixed), ("volume", random)):
+        for s in range(20):
+            a, b = np.random.default_rng(s), np.random.default_rng(s)
+            dgp = FeatureRuleDGP(feature, a, hyper)
+            ref = FeatureRuleDGP(feature, b, fixed, axis_sign=1)             # axis_sign given: never drawn
+            assert dgp.axis_sign == 1 and a.bit_generator.state == b.bit_generator.state
+            assert (dgp.shape, dgp.sign, dgp.p_te, dgp.bias_type, dgp.ramp_sign) == \
+                   (ref.shape, ref.sign, ref.p_te, ref.bias_type, ref.ramp_sign)
+    # a centroid process with the random direction makes exactly one more draw, after all the others
+    a, b = np.random.default_rng(3), np.random.default_rng(3)
+    one, ref = FeatureRuleDGP("centroid", a, random), FeatureRuleDGP("centroid", b, fixed)
+    assert (one.shape, one.sign, one.p_te, one.ramp_sign, one.enrol) == (ref.shape, ref.sign, ref.p_te, ref.ramp_sign, ref.enrol)
+    assert a.bit_generator.state != b.bit_generator.state
+    with pytest.raises(ValueError, match="rule_axis_sign"):
+        FeatureRuleDGP("centroid", np.random.default_rng(0), HyperPrior(rule_axis_sign="coin"))
+
+
+def test_the_axis_direction_option_changes_nothing_without_centroid_processes(tmp_path):
+    """Draw for draw: the option at its default written out, and the option
+    at ``random`` with the centroid family at weight 0, are the prior without
+    the option; with centroid processes drawn it is another prior."""
+    now = os.path.join(ROOT, "src")
+    _synthetic_cache(tmp_path / "pool.npz")
+    final = dict(FINAL_PRIOR_ENV, CACHE="pool.npz", SEED="0")
+    for name, weights in (("vol", "0 1 1 0"), ("all", "0 1 1 1")):
+        plain = _draw(now, tmp_path, name, **dict(final, FAMILY_WEIGHTS=weights))
+        fixed = _draw(now, tmp_path, name + "_fixed", **dict(
+            final, FAMILY_WEIGHTS=weights, GILES_HYPER=final["GILES_HYPER"] + " rule_axis_sign=fixed"))
+        _same(plain, fixed)
+        coin = _draw(now, tmp_path, name + "_random", **dict(
+            final, FAMILY_WEIGHTS=weights, GILES_HYPER=final["GILES_HYPER"] + " rule_axis_sign=random"))
+        if name == "vol":
+            assert "volume" in set(plain["families"].tolist()) and "centroid" not in set(plain["families"].tolist())
+            _same(plain, coin)                                               # no centroid process: no draw, no change
+        else:
+            assert "centroid" in set(plain["families"].tolist())
+            assert any(not np.array_equal(plain[k], coin[k]) for k in plain)
+
+
+def test_enrolment_by_trial_cuts_the_rule_among_the_trials_own_lesions(cohort_kw):
+    """rule_enrol_by=trial: rows are drawn as with ``share`` and the ranks,
+    thirds and axis are those of the distinct lesions in this trial's context
+    and queries, so every trial has thirds of its own rows."""
+    kw = {k: v for k, v in cohort_kw.items() if k != "hyper_giles"}
+    volumes = np.asarray(cohort_kw["cache"]["volumes"], float)
+    h = cohort_kw["hyper_giles"]
+    coh = NeuroPriorCohort(seed=4, family="volume", hyper=HyperPrior(**{**h.__dict__, "rule_enrol_by": "trial",
+                                                                        "rule_graded": 0.0}), **kw)
+    cuts, differ = set(), 0
+    for _ in range(10):
+        b = coh.sample_batch(1)
+        p = b["processes"][0]
+        ci, qi = _rows(coh, b["Xc"][0]), _rows(coh, b["Xq"][0])
+        own = np.unique(np.concatenate([ci, qi]))
+        assert p["enrol_by"] == "trial" and p["n_slice"] == coh.m and p["n_ranked"] == len(own) < coh.m
+        assert len(own) < len(ci) + len(qi)                                  # the context repeats lesions: ranked once
+        # the effect of each query is the rule applied among this trial's lesions, not among the pool's
+        e_own = dict(zip(own.tolist(), (p["sign"] * rule_effect(volumes[own], "threshold")).tolist()))
+        np.testing.assert_allclose(b["mu1"][0] - b["mu0"][0], [e_own[i] for i in qi.tolist()])
+        e_pool = p["sign"] * rule_effect(volumes, "threshold")
+        cuts.add(float(volumes[own][np.array([e_own[i] for i in own.tolist()]) * p["sign"] == 1].min()))
+        # thirds of the trial's own lesions: as many at the top as at the bottom
+        vals = np.array([e_own[i] for i in own.tolist()])
+        assert (vals == 1).sum() == (vals == -1).sum() and abs((vals == 0).sum() - len(own) / 3) <= 2
+        differ += int(not np.array_equal([e_own[i] for i in qi.tolist()], e_pool[qi]))
+    assert len(cuts) > 3                                                     # the cut moves from trial to trial
+    assert differ > 0                                                        # so it is not the pool's rule
+    # a share of the pool as candidates, then the same cut among the trial's lesions
+    part = NeuroPriorCohort(seed=4, family="centroid", hyper=HyperPrior(**{
+        **h.__dict__, "rule_enrol_by": "trial", "rule_enrol": (0.5, 0.6), "rule_graded": 1.0}), **kw)
+    b = part.sample_batch(3)
+    for i, p in enumerate(b["processes"]):
+        assert 0.5 * part.m - 1 <= p["n_slice"] <= 0.6 * part.m + 1 and p["n_ranked"] < p["n_slice"]
+        tau = b["mu1"][i] - b["mu0"][i]
+        assert np.abs(tau).max() <= 1.0 and len(np.unique(np.round(tau, 9))) > 10      # graded, within the trial
+    # with every lesion a candidate the rows come from the whole pool and are ranked the same way
+    everyone = NeuroPriorCohort(seed=4, family="volume", context_pool="all", hyper=HyperPrior(**{
+        **h.__dict__, "rule_enrol_by": "trial", "rule_graded": 0.0}), **kw)
+    b = everyone.sample_batch(2)
+    assert all(p["n_ranked"] <= 96 + 16 for p in b["processes"])
+    assert set(np.unique(b["mu1"] - b["mu0"])) <= {-1.0, 0.0, 1.0}
