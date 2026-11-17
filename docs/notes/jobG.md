@@ -1,7 +1,8 @@
 # Job G: volume and centroid rule families, and leaving a family out (code only)
 
-Branch `jobG-rule-families`, cut from `scale-budget-ckpt` (`8fa4b74`). Written 16 November 2026, revised 17 November
-after the audit of the branch (`audit_branch_jobG.md`; its item numbers are in brackets below).
+Branch `jobG-rule-families`, cut from `scale-budget-ckpt` (`8fa4b74`). Written 16 November 2026, revised twice on 17 November:
+after the audit of the branch (`audit_branch_jobG.md`; its item numbers are in brackets below) and after its
+recheck (`audit_branches_DG_recheck.md`).
 Nothing was trained or scored. No pool, latent, image or participant file was opened; tests use random arrays.
 The experiment (which priors, which readings) is not fixed here.
 
@@ -45,14 +46,30 @@ Second round (17 Nov):
 13. **Two options for decisions that are César's**: who a process enrols (`RULE_ENROL_BY`) and which centroids
     give the axis (`RULE_AXIS`). Defaults are what the branch did (tested draw for draw against its earlier tip).
 
+Third round (17 Nov, after the recheck):
+
+14. **The direction of the axis is an option** (`RULE_AXIS_SIGN`): `fixed`, the default and the behaviour so far,
+    or `random`, a coin per centroid process. No random number is drawn with `fixed`, nor for a volume process, nor
+    when the centroid family has weight 0 (tested draw for draw, and on the generator's state).
+15. **A third value of `RULE_ENROL_BY`: `trial`**, the thirds cut among the lesions that enter the trial's own
+    context and queries. It draws no extra random number.
+
 ## The hard requirement: the final prior is unchanged
 
 `tests/test_rule_families.py::test_the_final_prior_is_unchanged_draw_for_draw` takes the code of `8fa4b74` from
 git history, draws batches from it and from this code for the final launch's variables, and compares every array
-exactly. It passes for seeds 0, 1 and 2, with the weights as `0 1` and as `0 1 0 0`. A second test does the same
-for weights 0.5 : 0.5, for a generic share of 0, and for the family `giles` alone. All equal, on the code of the
-second round too. The audit made its own 12 comparisons on the first round's tip, with the generators' internal
-state, and found them equal; it has not yet seen the second round.
+exactly. It passes for seeds 0, 1 and 2, with the weights as `0 1` and as `0 1 0 0`, and, since the third round,
+with every option of the new families set away from its default while those families have weight 0 (two
+combinations, among them `rule_enrol_by=network` and `trial`, `rule_axis=pool`, `rule_axis_sign=random`). A second
+test does the same for weights 0.5 : 0.5, for a generic share of 0, and for the family `giles` alone. All equal.
+The audit made its own comparisons, with the generators' internal state: 12 on the first round and 10 on the
+second, all equal; it has not yet seen the third round.
+
+**These tests need two commits in the history of the clone they run in**: `8fa4b74` (the code before the change)
+and `7871305` (this branch before its options, for the test that the options' defaults draw what the branch drew).
+In a clone without them the tests fail, with a message naming the commit; they do not skip. If the history of this
+branch is rewritten (a squash or a rebase), `7871305` disappears and that test fails until its constant
+`FIRST_ROUND` is pointed at a commit that exists, or the test is dropped.
 
 ## The family weights, by the names in the code
 
@@ -75,17 +92,19 @@ to 1, so leaving a family out raises the shares of the others.
 ## How to launch
 
 ```bash
-FAMILY_W="0 1 1 1" [RULE_GRADED=0.5] [RULE_ENROL=0.2:1 | RULE_ENROL_BY=network] [RULE_AXIS=pool] \
-    [GATE_REQUIRE="share_zero=lo:hi share_unit=lo:hi"] OBJECTIVE=new bash scripts/audit_20261028/g4c_launch.sh
+FAMILY_W="0 1 1 1" [RULE_GRADED=0.5] [RULE_ENROL=0.2:1 | RULE_ENROL_BY=network|trial] [RULE_AXIS=pool] \
+    [RULE_AXIS_SIGN=random] [GATE_REQUIRE="share_zero=lo:hi share_unit=lo:hi"] OBJECTIVE=new \
+    bash scripts/audit_20261028/g4c_launch.sh
 ```
 
 | Variable | Unset means | Meaning |
 |---|---|---|
 | `FAMILY_W` | `0.5 0.5` | two numbers (`theory giles`) or four (`theory giles volume centroid`) |
 | `RULE_GRADED` | 0.5 | share of volume and centroid processes with the graded shape |
-| `RULE_ENROL_BY` | `share` | who such a process enrols: `share` or `network` (below) |
-| `RULE_ENROL` | the whole pool | with `share`: range lo:hi of the share of the pool a process enrols |
+| `RULE_ENROL_BY` | `share` | the lesions among which the thirds are cut: `share`, `network` or `trial` (below) |
+| `RULE_ENROL` | the whole pool | with `share` and `trial`: range lo:hi of the share of the pool a process draws from |
 | `RULE_AXIS` | `enrolled` | centroids that give the principal axis: `enrolled` or `pool` (below) |
+| `RULE_AXIS_SIGN` | `fixed` | direction of that axis: `fixed` or `random` (below) |
 | `GATE_REQUIRE` | nothing added | ranges of the gate's metrics for this launch (below) |
 
 All need four numbers in `FAMILY_W`; each is named in the run when set. `final1m_launch.sh` still fixes
@@ -95,51 +114,74 @@ All need four numbers in `FAMILY_W`; each is named in the run when set. `final1m
 
 Each is an option with the branch's behaviour as default. I did not choose; this is what each does.
 
-**a. Who a process enrols, and so where the thirds are cut** (`RULE_ENROL_BY`).
+**a. Among which lesions the thirds are cut** (`RULE_ENROL_BY`).
 
-- `share`, the default. With `RULE_ENROL` unset a process enrols the whole pool. Every process of a family then
-  ranks the same lesions, so its effects depend only on its shape (2) and its sign (2): **four functions per
-  family**, cut at the pool's thirds. What varies between trials is efficacy, recovery, allocation, label noise
-  and which lesions are drawn. A network can learn those four functions of the pool as such.
-- `share` with `RULE_ENROL=lo:hi`: a process enrols a uniformly random part of the pool, of a share drawn in that
-  range, and ranks within it. This is what `RULE_ENROL` did in the first round. It moves the cuts little: a random
-  part of a pool has nearly the pool's thirds. In rank terms the cut of a part of n lesions has a standard error
-  of sqrt(2/9 / n) around the pool's cut: 0.75 percentile points for 4,000 lesions, 1.5 for 1,000. So it is
-  close to the four functions above, with some noise at the cuts.
-- `network`, new. A process enrols the lesions that a virtual-trial process of the same launch would enrol:
-  those its randomly drawn networks reach above its threshold (the slice of the family `giles`, built by the same
-  code). Ranks, thirds and, by default, the axis are those of that slice. The slice is selected by anatomy, so its
-  volumes and centroids are not the pool's and the cuts differ from trial to trial (tested on random arrays: 12
-  processes, more than 3 distinct cuts and sizes). A slice below the smallest allowed is drawn again. How much the
-  cuts move on the real pool is not known: nothing was run on it. `RULE_ENROL` does not apply and is refused.
-  With `CONTEXT_POOL=all` no family restricts its rows and this one enrols the whole pool too.
-- Not written: fixing the rule on the rows actually drawn into a trial (context and queries) instead of the slice
-  they are drawn from. The trial's rows are a random draw from the enrolled lesions, so this differs from the
-  above by sampling noise only.
+The rule ranks a set of lesions and cuts it in thirds. The option says which set. An example with made-up numbers:
+a pool of 9,000 lesions, and one simulated trial with a context of 500 rows and 64 queries.
+
+| Value | The set that is ranked | In the example |
+|---|---|---|
+| `share`, `RULE_ENROL` unset (default) | every lesion of the pool | all 9,000; the trial's 564 rows are drawn from them |
+| `share`, `RULE_ENROL=0.2:1` | a uniformly random part of the pool, drawn for that process | between 1,800 and 9,000 lesions; the 564 rows are drawn from them |
+| `network` | the lesions reached, above its threshold, by the networks of a virtual-trial process drawn for that process (the slice the family `giles` would enrol) | say 2,300 of the 9,000; the 564 rows are drawn from those 2,300 |
+| `trial` | the distinct lesions that enter this trial's context and queries | at most 564, fewer because the context repeats lesions; the rows are drawn from the pool (or from the `RULE_ENROL` part) |
+
+So with `share` and `network` the set that is ranked is larger than the trial and the trial's rows are a random
+draw from it; with `trial` the set is the trial itself. `network` is not "the trial's own rows": the audit read it
+correctly. What each does to the cuts:
+
+- `share`, whole pool: every process of a family ranks the same lesions, so its effects depend only on its shape
+  (2) and its sign (2). **Four functions per family**, cut at the pool's thirds. A lesion in the bottom third of
+  the pool is in the bottom third in every trial. A network can learn those four functions of the pool as such.
+- `share` with `RULE_ENROL`: moves the cuts little. A random part of a pool has nearly the pool's thirds: in rank
+  terms the cut has a standard error of sqrt(2/9 / n) around the pool's, 0.75 percentile points for 4,000 lesions.
+- `trial`: the same argument with a smaller n. The trial's lesions are a random draw from the pool, so their
+  thirds are the pool's plus sampling noise: a standard error of 2 percentile points for 564 lesions, 2.6 for 320.
+  The cuts differ from trial to trial (tested), but around the same place; a lesion far from a cut keeps its third.
+  This is the value that matches "top third of the patients of the trial" literally.
+- `network`: the only value that moves the cuts systematically. The slice is selected by anatomy, so its volumes
+  and centroids are not the pool's (tested on random arrays: 12 processes, more than 3 distinct cuts and sizes).
+  A slice below the smallest allowed is drawn again. How much the cuts move on the real pool is not known: nothing
+  was run on it. `RULE_ENROL` does not apply and is refused. With `CONTEXT_POOL=all` no family restricts its rows
+  and this one ranks the whole pool too.
+- Not written: `network` and `trial` together (rows drawn from a network's slice, thirds cut among the rows). The
+  option has one value at a time. It would differ from `network` by the same sampling noise as above.
 
 **b. Which centroids give the principal axis** (`RULE_AXIS`).
 
-- `enrolled`, the default: the first principal axis of the enrolled lesions' centroids. With the whole pool
-  enrolled that is the pool's axis, which is what the audit saw [5]. With `network` enrolment it is the slice's own
-  axis, which can point another way than the pool's (tested: a slab of a pool long in x has its own axis in y).
-- `pool`: the axis of the whole pool's centroids, read at the enrolled lesions; ranks and thirds are still cut
-  among the enrolled lesions. One anatomical direction for every trial.
+- `enrolled`, the default: the first principal axis of the centroids of the set that is ranked (the table above).
+  With the whole pool that is the pool's axis, which is what the first audit saw [5]. With `network` it is the
+  slice's own axis and with `trial` the axis of the trial's own lesions; either can point another way than the
+  pool's (tested: a slab of a pool long in x has its own axis in y).
+- `pool`: the axis of the whole pool's centroids, read at the ranked lesions; ranks and thirds are still cut
+  among the ranked lesions. One anatomical direction for every trial.
 - Which one matches analysis 2 of `siena_request_four_analyses.md`: the text says "its coordinate on the first
   principal axis of the centroids" and "on the same lesions and folds", and does not say whether the centroids are
   those of the whole scored cohort or of one trial. The scoring code is not in this repository. If scoring takes
-  the axis of the whole cohort and cuts thirds per trial, the counterpart here is `RULE_ENROL_BY=network
-  RULE_AXIS=pool`; if it takes both per trial, `RULE_ENROL_BY=network` alone; if both over the whole cohort, the
-  defaults. In no case is the training pool the scored cohort, so the axis and the cuts are never the same numbers.
+  the axis of the whole cohort and cuts thirds per trial, the counterpart here is `RULE_ENROL_BY=trial` (or
+  `network`) with `RULE_AXIS=pool`; if it takes both per trial, `RULE_ENROL_BY=trial` alone; if both over the
+  whole cohort, the defaults. In no case is the training pool the scored cohort, so the axis and the cuts are
+  never the same numbers.
 - The coordinate is not scaled: centroids are used in their own units, so the longest direction dominates.
 
-**c. The direction of the axis.**
+**c. The direction of the axis** (`RULE_AXIS_SIGN`).
 
-A principal axis has no direction of its own. `principal_coordinate` fixes it by a rule: the component of the axis
-that is largest in size is made positive. That is deterministic for given centroids and does not depend on the
-solver (tested: same call, rows reordered, points mirrored). It is arbitrary anatomically, and two sets of lesions
-whose axes differ can get opposite directions. For the prior this does not matter: which arm the high end responds
-to is a fair coin per process (`sign`), so flipping the convention only renames processes (tested). It would matter
-if the sign coin were removed (choice 3 below): then the convention would decide which end responds to arm A.
+A principal axis has no direction of its own.
+
+- `fixed`, the default: `principal_coordinate` makes the component of the axis that is largest in size positive.
+  That is deterministic for given centroids and does not depend on the solver (tested: same call, rows reordered,
+  points mirrored). It is arbitrary anatomically, and two sets of lesions whose axes differ can get opposite
+  directions.
+- `random`: each centroid process flips the axis with a fair coin of its own, drawn after all its other
+  parameters; both directions appear (tested, about half each).
+- What the option changes: as long as the rule's own sign is a coin per process (choice 3 below), nothing in the
+  distribution of the trials. Which arm the high end responds to is already a fair coin, and a second fair coin on
+  the axis multiplies to a fair coin; the same holds for the allocation ramp, whose direction is a coin too. The
+  individual draws differ, the processes are the same kind. The option matters if the sign coin is removed, so
+  that the high end always responds to arm A: then `fixed` ties the responding end to one anatomical end of the
+  axis, and `random` does not.
+- A volume process never draws this coin (its effect does not read the axis), and neither does anything with
+  `fixed` or with the centroid family at weight 0.
 
 ## The gate with `PRIOR_REPAIR=1`
 
@@ -182,7 +224,7 @@ so the launches of the earlier families keep the gate they had. It is not carrie
 
 ## Tests
 
-- `tests/test_rule_families.py`, 28 tests. First round (18): the unchanged-prior comparison; each rule's effects
+- `tests/test_rule_families.py`, 31 tests. First round (18): the unchanged-prior comparison; each rule's effects
   against its definition; thirds and ranks with ties; efficacy, recovery, outcome draws and allocation; weights of
   0 exclude a family; the launch variables reach the generator; the gate passes with the new keys and fails on a
   wrong one. Second round (10): values that are not finite are refused, in the functions, in a process and in a
@@ -190,25 +232,28 @@ so the launches of the earlier families keep the gate they had. It is not carrie
   draw for draw (code of `7871305` from git history); enrolment by network; the two axes; the direction of the
   axis; the axis ramp's own direction; the options through the launch environment and the gate's keys; the gate's
   defaults failing these families and passing with the two shares named; a clone without the base commit fails.
-- `tests/test_rule_families_launch.py`, 29 tests. `g4c_launch.sh` is run for real in a temporary checkout, with a
+  Third round (3, and the unchanged-prior comparison extended): the random direction gives both directions, and
+  the default, a volume process and a centroid weight of 0 leave the generator's state as it was; enrolment by
+  trial ranks the trial's own distinct lesions.
+- `tests/test_rule_families_launch.py`, 32 tests. `g4c_launch.sh` is run for real in a temporary checkout, with a
   stand-in `python` (the gate) and a stand-in PFN trainer that record what they receive.
   - With two family weights (the final launch's call, the default, `0.25 0.75`, a leave-networks-out call) the
     gate's command line, every launch variable and the printed run name are the same as with `g4c_launch.sh` of
     `8fa4b74`, which the test takes from git history.
   - With four weights: the weights and the rule options reach the gate and the trainer; the families with weight
-    0 are passed to `--absent`; 21 bad inputs stop the launch before the gate; a rule option left in the shell
+    0 are passed to `--absent`; 23 bad inputs stop the launch before the gate; a rule option left in the shell
     stops or shows; `GATE_REQUIRE` reaches the gate with and without `PRIOR_REPAIR=1`.
   - `launch_myriad.qsub.sh` passes `FAMILY_W=0:1:1:1` and the rule options on.
-- Full suite on this branch (Windows, Python 3.12, CPU): 463 passed, 5 failed, 2 skipped. The 5 failures are the
+- Full suite on this branch (Windows, Python 3.12, CPU): 469 passed, 5 failed, 2 skipped. The 5 failures are the
   5 that fail at `8fa4b74` (4 platform errors in `test_bundle_tools.py` and `test_disco_prior_match.py`, and
   `test_hyper_prior_contains_the_paper_scenarios`); the audit reran the suite there and found the same 5.
 
 ## With the job D branch
 
-Both branches edit `g4c_launch.sh`. A trial merge of the two revised tips in a scratch clone (thrown away,
-nothing merged in the repository) had no conflict. On the merged tree the test files of both branches and
-`test_prior_families.py` passed: 97 tests, among them job D's comparison of the merged `g4c_launch.sh` with
-`8fa4b74` for launches with two weights and no `RUN_TRAINER`.
+Both branches edit `g4c_launch.sh`. A trial merge of job D's tip (`6a7c6c3`) into this branch's third-round code
+in a scratch clone (thrown away, nothing merged in the repository) had no conflict. On the merged tree the test
+files of both branches and `test_prior_families.py` passed: 103 tests, among them job D's comparison of the
+merged `g4c_launch.sh` with `8fa4b74` for launches with two weights and no `RUN_TRAINER`.
 
 ## Not run anywhere
 
@@ -217,6 +262,11 @@ nothing merged in the repository) had no conflict. On the merged tree the test f
   The gate's own code ran on random arrays only.
 - The real pool and the real atlas. So nothing is known about the shares, the slices by network, the rejection
   rate or the cut points there.
+- Whether the real pool holds a lesion without a finite volume or centroid. **If it does, a run with the volume or
+  centroid family stops** at the first process that ranks that lesion, with a count; with the whole pool ranked
+  that is the first such process, normally one the gate draws before training starts. That is what was asked for
+  (fail, do not rank it top). The families of the final prior are not affected. The cache's `volumes` and
+  `centroids` can be checked for this without opening anything about patients.
 - The scorer, and siena.
 - `RUN_TRAINER=tabpfn` (job D) with four family weights.
 
@@ -230,7 +280,8 @@ nothing merged in the repository) had no conflict. On the merged tree the test f
 4. **TE and RE jitter** as in the final prior (0.9 to 1, 0 to 0.05), so effects are not exactly -1, 0, +1.
 5. **Allocation is confounded**, not randomised as in the scoring definition, and its `axis` ramp is not tied to
    the effect as in the virtual trial (above).
-6. **Who is enrolled** (decision a) and **which axis** (decision b).
+6. **Among which lesions the thirds are cut** (decision a), **which axis** (decision b) and **its direction**
+   (decision c).
 7. **Graded and threshold shapes share one family weight** (`RULE_GRADED` splits them).
 8. **The generic share replaces the outcome rule of volume and centroid trials too**, as for the other families;
    and a family left out does not remove the generic share.
