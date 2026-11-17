@@ -12,7 +12,7 @@
 #   OBJECTIVE=new [CATE_W=1] bash scripts/audit_20261028/g4c_launch.sh
 #   STD=context [OBJECTIVE=new] bash scripts/audit_20261028/g4c_launch.sh
 #   GENERIC_W=0 [OBJECTIVE=new] bash scripts/audit_20261028/g4c_launch.sh
-#   FAMILY_W="0 1 1 1" [RULE_GRADED=0.5] [RULE_ENROL=0.2:1 | RULE_ENROL_BY=network] [RULE_AXIS=pool] \
+#   FAMILY_W="0 1 1 1" [RULE_GRADED=0.5] [RULE_ENROL=0.2:1 | RULE_ENROL_BY=network|trial] [RULE_AXIS=pool] [RULE_AXIS_SIGN=random] \
 #       [GATE_REQUIRE="share_zero=0:1 share_unit=0:1"] [OBJECTIVE=new] bash scripts/audit_20261028/g4c_launch.sh
 #   HEAD_RANGE=wide bash scripts/audit_20261028/g4c_launch.sh
 #   S_SOURCE=receptor | FAMILY_W="0.25 0.75" [OBJECTIVE=new] bash scripts/audit_20261028/g4c_launch.sh
@@ -168,20 +168,26 @@ fi
 # of a family ranks the same lesions. RULE_ENROL_BY=network: the lesions a
 # virtual-trial process of this launch would enrol (its networks, its
 # threshold), so the ranks and the thirds are cut within a different slice in
-# each trial; RULE_ENROL does not apply. RULE_AXIS=enrolled (the default): the
-# axis of the enrolled lesions' centroids; pool: the whole pool's. Both are
-# tagged when set. These are inputs, read here like FAMILY_W: a value left in
-# the shell is used, and shows in the run name and in the line printed below
-if [ -n "${RULE_ENROL_BY:-}" ] || [ -n "${RULE_AXIS:-}" ]; then
-    [ -n "${fw_volume:-}" ] || { echo "RULE_ENROL_BY and RULE_AXIS need four numbers in FAMILY_W" >&2; exit 1; }
+# each trial; RULE_ENROL does not apply. RULE_ENROL_BY=trial: rows drawn as
+# with share, and the ranks and thirds cut among the distinct lesions that
+# enter that trial's context and queries. RULE_AXIS=enrolled (the default): the
+# axis of the centroids of the lesions the rule is cut among; pool: the whole
+# pool's. RULE_AXIS_SIGN=fixed (the default): the axis's direction by the
+# generator's rule; random: a coin per centroid process. All are tagged when
+# set. These are inputs, read here like FAMILY_W: a value left in the shell is
+# used, and shows in the run name and in the line printed below
+if [ -n "${RULE_ENROL_BY:-}" ] || [ -n "${RULE_AXIS:-}" ] || [ -n "${RULE_AXIS_SIGN:-}" ]; then
+    [ -n "${fw_volume:-}" ] || { echo "RULE_ENROL_BY, RULE_AXIS and RULE_AXIS_SIGN need four numbers in FAMILY_W" >&2; exit 1; }
 fi
-case "${RULE_ENROL_BY:-}" in ""|share|network) ;; *) echo "RULE_ENROL_BY must be share or network" >&2; exit 1 ;; esac
+case "${RULE_ENROL_BY:-}" in ""|share|network|trial) ;; *) echo "RULE_ENROL_BY must be share, network or trial" >&2; exit 1 ;; esac
 case "${RULE_AXIS:-}" in ""|enrolled|pool) ;; *) echo "RULE_AXIS must be enrolled or pool" >&2; exit 1 ;; esac
+case "${RULE_AXIS_SIGN:-}" in ""|fixed|random) ;; *) echo "RULE_AXIS_SIGN must be fixed or random" >&2; exit 1 ;; esac
 if [ "${RULE_ENROL_BY:-}" = network ] && [ -n "${RULE_ENROL:-}" ]; then
     echo "RULE_ENROL is the share RULE_ENROL_BY=share enrols: leave it out with RULE_ENROL_BY=network" >&2; exit 1
 fi
 [ -z "${RULE_ENROL_BY:-}" ] || tag="${tag}_rb$RULE_ENROL_BY"
 [ -z "${RULE_AXIS:-}" ] || tag="${tag}_ra$RULE_AXIS"
+[ -z "${RULE_AXIS_SIGN:-}" ] || tag="${tag}_rs$RULE_AXIS_SIGN"
 [ "$RUN_ITERS" = 20000 ] || tag="${tag}_i$RUN_ITERS"
 [ "$RUN_ARCH" = linear ] || tag="${tag}_tabicl"
 [ -z "${RUN_D_MODEL:-}" ] || tag="${tag}_d$RUN_D_MODEL"
@@ -233,6 +239,7 @@ fi
 [ -z "${RULE_ENROL:-}" ] || GILES_HYPER="$GILES_HYPER rule_enrol=$RULE_ENROL"
 [ -z "${RULE_ENROL_BY:-}" ] || GILES_HYPER="$GILES_HYPER rule_enrol_by=$RULE_ENROL_BY"
 [ -z "${RULE_AXIS:-}" ] || GILES_HYPER="$GILES_HYPER rule_axis=$RULE_AXIS"
+[ -z "${RULE_AXIS_SIGN:-}" ] || GILES_HYPER="$GILES_HYPER rule_axis_sign=$RULE_AXIS_SIGN"
 # GATE_REQUIRE (17 Nov, with the volume or centroid family drawn): ranges of
 # the gate's metrics for this launch, "metric=lo:hi ...", added after the
 # launch's own, so each replaces that metric's range and the others keep
@@ -285,8 +292,10 @@ rule_expect="" absent=""
 if [ -n "${fw_volume:-}" ]; then
     rule_expect="prior.hyper_giles.rule_graded=${RULE_GRADED:-UNSET} prior.hyper_giles.rule_enrol=${RULE_ENROL:-UNSET}"
     rule_expect="$rule_expect prior.hyper_giles.rule_enrol_by=${RULE_ENROL_BY:-UNSET} prior.hyper_giles.rule_axis=${RULE_AXIS:-UNSET}"
+    rule_expect="$rule_expect prior.hyper_giles.rule_axis_sign=${RULE_AXIS_SIGN:-UNSET}"
     echo "rule families: graded=${RULE_GRADED:-0.5 (default)} enrol_by=${RULE_ENROL_BY:-share (default)}" \
          "enrol=${RULE_ENROL:-whole pool (default)} axis=${RULE_AXIS:-enrolled (default)}" \
+         "axis_sign=${RULE_AXIS_SIGN:-fixed (default)}" \
          "gate_require=${gate_require:-the gate defaults}"
     is_zero() { awk -v x="$1" 'BEGIN { exit !(x + 0 == 0) }'; }
     for pair in "theory:$fw_theory" "giles:$fw_trial" "volume:$fw_volume" "centroid:$fw_centroid" "generic:$GENERIC_W"; do
