@@ -21,7 +21,8 @@ LAUNCH_VARS = ("CACHE", "SEED", "VARIANT", "FAMILY", "FAMILY_WEIGHTS", "CONTEXT_
 RECORD = '''{ echo "ARGS $2"; for v in %s; do
   if [ -n "${!v+x}" ]; then echo "$v=${!v}"; else echo "$v=<unset>"; fi; done; } > "$OUT/call_$1.txt"
 ''' % " ".join(LAUNCH_VARS)
-INPUTS = ("FAMILY_W", "OBJECTIVE", "GENERIC_W", "RULE_GRADED", "RULE_ENROL", "RUN_ITERS", "EXCLUDE_NETWORKS",
+INPUTS = ("FAMILY_W", "OBJECTIVE", "GENERIC_W", "RULE_GRADED", "RULE_ENROL", "RULE_ENROL_BY", "RULE_AXIS",
+          "GATE_REQUIRE", "RUN_ITERS", "EXCLUDE_NETWORKS",
           "PRIOR_REPAIR", "ALLOC", "S_SOURCE", "STD", "DISTINCT", "HEAD_RANGE", "CATE_W", "LAUNCHER", "ATLAS_SRC",
           "PRIOR_CHECK_ONLY", *LAUNCH_VARS)
 
@@ -39,8 +40,10 @@ def checkouts():
     r = subprocess.run(["git", "show", f"{BASE_COMMIT}:scripts/audit_20261028/g4c_launch.sh"], cwd=ROOT,
                        capture_output=True)
     if r.returncode != 0:
+        # without that commit the launch before the change cannot be run: a failure, not a skip
         shutil.rmtree(d, ignore_errors=True)
-        pytest.skip(f"commit {BASE_COMMIT[:7]} is not in this clone's history")
+        pytest.fail(f"commit {BASE_COMMIT[:7]} is not in this clone's history (fetch it): the comparison with the "
+                    "launch before the change cannot run")
     venv = d / "venv" / "bin"; venv.mkdir(parents=True)
     (venv / "activate").write_text('export PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd):$PATH"\n',
                                    newline="\n")
@@ -153,6 +156,17 @@ def test_four_family_weights_reach_the_gate_and_the_trainer(checkouts):
     ("graded", dict(FAMILY_W="0 1 1 1", RULE_GRADED="2"), "RULE_GRADED"),
     ("enrol", dict(FAMILY_W="0 1 1 1", RULE_ENROL="0.5"), "RULE_ENROL"),
     ("enrol_big", dict(FAMILY_W="0 1 1 1", RULE_ENROL="0.5:1.5"), "RULE_ENROL"),
+    ("enrol_rev", dict(FAMILY_W="0 1 1 1", RULE_ENROL="0.9:0.2"), "0 < lo <= hi"),
+    ("enrol_zero", dict(FAMILY_W="0 1 1 1", RULE_ENROL="0.0:1"), "0 < lo <= hi"),
+    ("by2", dict(FAMILY_W="0 1", RULE_ENROL_BY="network"), "need four numbers"),
+    ("axis2", dict(RULE_AXIS="pool"), "need four numbers"),
+    ("by", dict(FAMILY_W="0 1 1 1", RULE_ENROL_BY="trial"), "RULE_ENROL_BY must be"),
+    ("axis", dict(FAMILY_W="0 1 1 1", RULE_AXIS="trial"), "RULE_AXIS must be"),
+    ("by_share", dict(FAMILY_W="0 1 1 1", RULE_ENROL_BY="network", RULE_ENROL="0.2:1"), "leave it out"),
+    ("gate2", dict(FAMILY_W="0 1", GATE_REQUIRE="share_zero=0:1"), "volume or centroid family"),
+    ("gate0", dict(FAMILY_W="0 1 0 0", GATE_REQUIRE="share_zero=0:1"), "volume or centroid family"),
+    ("gate_bad", dict(FAMILY_W="0 1 1 1", GATE_REQUIRE="share_none=0:1"), "metric=lo:hi"),
+    ("gate_bad2", dict(FAMILY_W="0 1 1 1", GATE_REQUIRE="share_zero=0"), "metric=lo:hi"),
 ])
 def test_bad_values_stop_the_launch_before_the_gate(checkouts, name, env, message):
     r, gate, _, tenv = _launch(checkouts, "new", "bad_" + name, **env)
@@ -169,3 +183,72 @@ def test_the_myriad_job_passes_four_weights_and_the_rule_options(checkouts):
     r, _, _, tenv = _launch(checkouts, "new", "myriad2", script="launch_myriad.qsub.sh",
                             LAUNCHER="g4c_launch.sh", OBJECTIVE="new", FAMILY_W="0:1")
     assert r.returncode == 0 and tenv["FAMILY_WEIGHTS"] == "0 1"
+
+
+# ------------------------------------------ second round (17 Nov, after the audit)
+def test_enrolment_and_axis_options_reach_the_gate_and_the_trainer(checkouts):
+    r, gate, genv, tenv = _launch(checkouts, "new", "net", OBJECTIVE="new", FAMILY_W="0 1 1 1",
+                                  RULE_ENROL_BY="network", RULE_AXIS="pool")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert tenv["GILES_HYPER"] == ("random_partitions=1 threshold=0.03:0.08 p_te=0.9:1 p_re=0:0.05 label_noise=0:0 "
+                                   "rule_enrol_by=network rule_axis=pool") == genv["GILES_HYPER"]
+    assert ("prior.hyper_giles.rule_graded=UNSET prior.hyper_giles.rule_enrol=UNSET "
+            "prior.hyper_giles.rule_enrol_by=network prior.hyper_giles.rule_axis=pool") in gate
+    assert "launch tag=G4cobj_fw0-1-1-1_rbnetwork_rapool " in r.stdout
+    assert _said(r, "rule families:") == [
+        "rule families: graded=0.5 (default) enrol_by=network enrol=whole pool (default) axis=pool gate_require="
+        "share_zero=0:1 share_unit=0:1 share_small=0:1 pos_share=0:1 ctx_binary=0:1 ctx_treated=0:1"]
+    # unset: the generator's defaults, expected unset, said so
+    r, gate, _, tenv = _launch(checkouts, "new", "unset", OBJECTIVE="new", FAMILY_W="0 1 1 1")
+    assert "rule_" not in tenv["GILES_HYPER"]
+    assert "prior.hyper_giles.rule_enrol_by=UNSET prior.hyper_giles.rule_axis=UNSET" in gate
+    assert "enrol_by=share (default) enrol=whole pool (default) axis=enrolled (default)" in _said(r, "rule families:")[0]
+    # the defaults written out are passed on and named in the run
+    r, gate, _, tenv = _launch(checkouts, "new", "written", FAMILY_W="0 1 1 1", RULE_ENROL_BY="share",
+                               RULE_ENROL="0.3:1", RULE_AXIS="enrolled")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert tenv["GILES_HYPER"].endswith(" rule_enrol=0.3:1 rule_enrol_by=share rule_axis=enrolled")
+    assert "launch tag=G4c_fw0-1-1-1_re0.3-1_rbshare_raenrolled " in r.stdout
+    # the Myriad job carries both
+    r, gate, _, tenv = _launch(checkouts, "new", "myriad_net", script="launch_myriad.qsub.sh",
+                               LAUNCHER="g4c_launch.sh", FAMILY_W="0:1:1:1", RULE_ENROL_BY="network", RULE_AXIS="pool")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert tenv["GILES_HYPER"].endswith(" rule_enrol_by=network rule_axis=pool")
+
+
+def test_a_rule_option_left_in_the_shell_stops_or_shows(checkouts):
+    """The rule options are inputs of the launch, like FAMILY_W: they cannot
+    be cleared at its start. One left over from an earlier job stops a launch
+    with two weights, and with four it is used and shows in the run name, in
+    the printed line and in what the gate expects."""
+    r, gate, _, tenv = _launch(checkouts, "new", "stale2", OBJECTIVE="new", FAMILY_W="0 1", RULE_GRADED="0.9")
+    assert r.returncode != 0 and gate is None and tenv is None and "need four numbers" in r.stderr
+    r, gate, _, tenv = _launch(checkouts, "new", "stale4", OBJECTIVE="new", FAMILY_W="0 1 1 1", RULE_GRADED="0.9")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert tenv["JOBNAME"] == "G4cobj_fw0-1-1-1_rg0.9-f0-s0" and "graded=0.9 " in _said(r, "rule families:")[0]
+    assert "prior.hyper_giles.rule_graded=0.9" in gate and tenv["GILES_HYPER"].endswith(" rule_graded=0.9")
+
+
+OPEN = "share_zero=0:1 share_unit=0:1 share_small=0:1 pos_share=0:1 ctx_binary=0:1 ctx_treated=0:1"
+
+
+def test_the_gate_requirements_of_a_launch_with_the_new_families(checkouts):
+    # PRIOR_REPAIR=1 passes no requirement: the gate's defaults (the trial's class shares) apply, also with the
+    # new families, which do not have those shares (tests/test_rule_families.py shows the gate failing there)
+    r, gate, _, _ = _launch(checkouts, "new", "repair", OBJECTIVE="new", FAMILY_W="0 1 1 1", PRIOR_REPAIR=1)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "--require" not in gate and "gate_require=the gate defaults" in _said(r, "rule families:")[0]
+    # GATE_REQUIRE names the ranges for this launch; the metrics it does not name keep the gate's defaults
+    r, gate, _, tenv = _launch(checkouts, "new", "repair_req", OBJECTIVE="new", FAMILY_W="0 1 1 1", PRIOR_REPAIR=1,
+                               GATE_REQUIRE="share_zero=0.1:0.6 share_unit=0:1")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "--require share_zero=0.1:0.6 share_unit=0:1 --absent theory --expect" in gate
+    assert "p_te=1:1 p_re=0:0" in tenv["GILES_HYPER"] and "_rep" in tenv["JOBNAME"]       # the repair itself is as before
+    # without the repair the launch's opened ranges come first and the named ones replace them
+    r, gate, _, _ = _launch(checkouts, "new", "open_req", OBJECTIVE="new", FAMILY_W="0 1 1 1",
+                            GATE_REQUIRE="share_zero=0.1:0.6")
+    assert f"--require {OPEN} share_zero=0.1:0.6 --absent theory --expect" in gate
+    # the launches of the families that existed are not offered the variable (refused, see the bad values)
+    r, gate, _, _ = _launch(checkouts, "new", "repair_two", OBJECTIVE="new", FAMILY_W="0 1", PRIOR_REPAIR=1)
+    old = _launch(checkouts, "old", "repair_two", OBJECTIVE="new", FAMILY_W="0 1", PRIOR_REPAIR=1)
+    assert r.returncode == 0 and gate == old[1] and "--require" not in gate
