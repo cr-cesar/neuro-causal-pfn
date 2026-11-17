@@ -14,7 +14,7 @@
 #   GENERIC_W=0 [OBJECTIVE=new] bash scripts/audit_20261028/g4c_launch.sh
 #   HEAD_RANGE=wide bash scripts/audit_20261028/g4c_launch.sh
 #   S_SOURCE=receptor | FAMILY_W="0.25 0.75" [OBJECTIVE=new] bash scripts/audit_20261028/g4c_launch.sh
-#   RUN_TRAINER=tabpfn [TABPFN_FT_ARGS="--steps 2000"] bash scripts/audit_20261028/g4c_launch.sh
+#   RUN_TRAINER=tabpfn CACHE=<pool> POOL_MD5=... ATLAS_MD5=... [TABPFN_FT_ARGS="--steps 2000"] bash scripts/audit_20261028/g4c_launch.sh
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 dirty=$(git status --porcelain --untracked-files=no | wc -l)
@@ -67,6 +67,9 @@ done
 # TabPFN's continued pre-training on that prior (scripts/finetune_tabpfn_prior.py
 # --prior-from-env, its options in TABPFN_FT_ARGS) instead of the PFN training;
 # the model, loss and schedule variables of this launch then train nothing.
+# That trainer takes one pool given by path, never this script's default pool,
+# and the digests final1m_launch.sh checks: POOL_MD5 and ATLAS_MD5, the first
+# 12 characters, compared here with the pool and with data/atlases.
 # Default pfn, every run so far; tabpfn is tagged in the run name
 RUN_TRAINER="${RUN_TRAINER:-pfn}"
 case "$RUN_TRAINER" in pfn|tabpfn) ;; *) echo "RUN_TRAINER must be pfn or tabpfn" >&2; exit 1 ;; esac
@@ -166,6 +169,7 @@ EXCLUDE_NETWORKS="${EXCLUDE_NETWORKS:-}"
 # CACHE (2 Nov): one pool, or several separated by spaces (a multi-encoder
 # prior, prior/multi_cache.py: one pool drawn per batch, uniformly), e.g. the
 # KCH pool encoded by each of the ten fold encoders; several are tagged
+[ "$RUN_TRAINER" = pfn ] || [ -n "${CACHE:-}" ] || { echo "RUN_TRAINER=tabpfn needs CACHE: the pool, by path" >&2; exit 1; }
 CACHE="${CACHE:-$HOME/p2_bcb/pools/kch_s0/fold0.npz}"
 read -r -a caches <<< "$CACHE"
 [ "${#caches[@]}" -le 1 ] || tag="${tag}_pools${#caches[@]}"
@@ -205,6 +209,16 @@ if [ -n "${ATLAS_SRC:-}" ]; then
     diff -rq data/atlases "$ATLAS_SRC" >/dev/null || { echo "data/atlases differs from $ATLAS_SRC" >&2; exit 1; }
     echo "atlas_src=$(readlink -f "$ATLAS_SRC") identical"
 fi
+if [ "$RUN_TRAINER" = tabpfn ]; then
+    [ "${#caches[@]}" -eq 1 ] || { echo "RUN_TRAINER=tabpfn takes one pool" >&2; exit 1; }
+    [ -n "${POOL_MD5:-}" ] && [ -n "${ATLAS_MD5:-}" ] || { echo "RUN_TRAINER=tabpfn needs POOL_MD5 and ATLAS_MD5" >&2; exit 1; }
+    # the digests of final1m_launch.sh, computed the same way
+    pool_md5=$(md5sum "$CACHE" | cut -c1-12)
+    atlas_md5=$(cd -P data/atlases && find functional_parcellation_2mm.nii.gz 2mm_parcellations -type f | LC_ALL=C sort         | xargs -d '
+' md5sum | md5sum | cut -c1-12)
+    [ "$pool_md5" = "$POOL_MD5" ] || { echo "pool md5 $pool_md5, expected $POOL_MD5" >&2; exit 1; }
+    [ "$atlas_md5" = "$ATLAS_MD5" ] || { echo "atlas md5 $atlas_md5, expected $ATLAS_MD5" >&2; exit 1; }
+fi
 mkdir -p "$OUT"
 attn_expect=$([ "$RUN_ATTN" = masked ] && echo UNSET || echo "$RUN_ATTN")
 # the generic share replaces the effect of that share of ALL processes after the
@@ -238,6 +252,6 @@ python scripts/prior_gate.py --batches 5 --contexts 512 ${gate_require:+--requir
              pfn.ramp_iters=${RUN_RAMP_ITERS:-UNSET} pfn.ckpt_every=${RUN_CKPT_EVERY:-UNSET}
 if [ "$RUN_TRAINER" = tabpfn ]; then
     # shellcheck disable=SC2086
-    exec python scripts/finetune_tabpfn_prior.py --prior-from-env --out "$OUT" ${TABPFN_FT_ARGS:-}
+    exec python scripts/finetune_tabpfn_prior.py --prior-from-env --out "$OUT"         --pool-md5 "$POOL_MD5" --atlas-md5 "$atlas_md5" ${TABPFN_FT_ARGS:-}
 fi
 bash scripts/train_pfn_myriad.qsub.sh
