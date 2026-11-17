@@ -31,6 +31,22 @@ gate; scripts/audit_20261028/tabpfn_final_launch.sh is the final prior's
 launch). That mode also writes ``provenance.json`` beside the checkpoint:
 commit, launch variables, the pool's md5, the tabpfn version and the starting
 checkpoint, the configuration, and ``finished`` once the last step is saved.
+In that mode the script refuses what it cannot account for:
+
+- the prior options of the other mode (--cache, --family, --family-weights,
+  --prior-hyper, --giles-hyper, --n-query, --context-pool, --atlas-dir): the
+  prior is the environment's, so giving one is an error, not ignored;
+- a pool without its digest (--pool-md5, checked here against the file) and an
+  atlas without the digest the launch computed (--atlas-md5, recorded);
+- starting weights it cannot name: without --model-path the package must be
+  set to --model-version (default v3.5) and its file for that version must be
+  on disk; the file is hashed and handed to TabPFN by path;
+- an output folder that holds a finished model of another configuration.
+  The same configuration, finished, is left as it is.
+
+The global torch generator is seeded with the seed, and checkpoints written
+before the last step are named ``tabpfn_ft.partial.pth``.
+
 The script reads the pool cache and the atlas and nothing else: no fold, no
 image, no outcome of a real patient; it scores nothing.
 
@@ -124,36 +140,115 @@ def pool_record(cfg: Dict, expected_md5: Optional[str] = None) -> List[Dict]:
     return rec
 
 
-def base_checkpoint_record(model_path: Optional[str]) -> Dict:
+def _version_key(v) -> str:
+    """'v3.5', '3.5', 'V3_5' and the package's enum all read as '3.5'."""
+    return str(getattr(v, "value", v)).strip().lower().lstrip("v").replace("_", ".")
+
+
+def base_checkpoint_record(model_path: Optional[str], expect_version: Optional[str] = None) -> Dict:
     """Which TabPFN weights the run starts from: the package version, the
-    model version it is set to, and the checkpoint file (name, size, md5) when
-    it can be located: the --model-path file, or the package's default file as
-    its own resolver names it. The resolver's signature differs between tabpfn
-    releases, so a failure is recorded, not raised."""
+    model version the package is set to (``TABPFN_MODEL_VERSION`` or its
+    default), the version asked for, the package's own file for that version
+    as its resolver names it, and the file the run starts from (the
+    --model-path file, else that package file) with its size and md5. The
+    settings and the resolver differ between tabpfn releases, so a failure to
+    read them is recorded here; ``check_start`` decides whether the run may go
+    on."""
     from importlib import metadata
 
-    rec: Dict = {"model_path_arg": model_path}
+    rec: Dict = {"model_path_arg": model_path, "model_version_expected": expect_version}
     try:
         rec["tabpfn"] = metadata.version("tabpfn")
     except metadata.PackageNotFoundError:
         rec["tabpfn"] = None
-    path = model_path
     try:
         from tabpfn.settings import settings
 
         v = settings.tabpfn.model_version
         rec["model_version"] = getattr(v, "value", str(v))
-        if not path:
+    except Exception as e:                      # another release of the package
+        rec["settings_error"] = repr(e)
+    default = None
+    version = expect_version or rec.get("model_version")
+    if version:
+        try:
             from tabpfn.model_loading import resolve_model_path
 
-            path = str(resolve_model_path(None, "classifier", rec["model_version"])[0][0])
-    except Exception as e:                      # another release of the package
-        rec["resolve_error"] = repr(e)
+            default = str(resolve_model_path(None, "classifier", "v" + _version_key(version))[0][0])
+            rec["package_file_for_version"] = os.path.basename(default)
+        except Exception as e:                  # another release of the package
+            rec["resolve_error"] = repr(e)
+    path = model_path or default
+    rec["path"] = path
     if path and os.path.isfile(path):
         rec.update(file=os.path.basename(path), bytes=os.path.getsize(path), md5=file_md5(path))
     else:
         rec.update(file=os.path.basename(path) if path else None, md5=None)
+    if not model_path:
+        rec["version_of_file"] = "the package's file for the version asked for"
+    elif rec["md5"] and default and os.path.isfile(default) and file_md5(default) == rec["md5"]:
+        rec["version_of_file"] = "identical to the package's file for the version asked for"
+    else:
+        rec["version_of_file"] = "not checked: a file given by path"
     return rec
+
+
+def check_start(rec: Dict, expect_md5: Optional[str] = None) -> None:
+    """Stop unless the starting weights are named: a file on disk, hashed
+    (and equal to ``expect_md5`` when given). Taken from the package, the
+    package must also be set to the version asked for. A file given by path
+    carries no version this script can read; ``version_of_file`` says so."""
+    asked = rec.get("model_version_expected")
+    if rec.get("md5") is None:
+        sys.exit(f"the starting TabPFN checkpoint is not a file on disk (looked for {rec.get('path')!r}"
+                 + (f"; the package's resolver failed: {rec['resolve_error']}" if rec.get("resolve_error") else "")
+                 + "): pass --model-path")
+    if expect_md5 and not rec["md5"].startswith(expect_md5):
+        sys.exit(f"starting checkpoint md5 {rec['md5'][:12]}, expected {expect_md5}")
+    if not rec.get("model_path_arg") and asked:
+        if "model_version" not in rec:
+            sys.exit(f"cannot read the model version the tabpfn package is set to ({rec.get('settings_error')}): "
+                     "pass --model-path")
+        if _version_key(rec["model_version"]) != _version_key(asked):
+            sys.exit(f"the tabpfn package is set to model version {rec['model_version']}, the run asks for {asked}: "
+                     f"set TABPFN_MODEL_VERSION={asked} or pass --model-path")
+
+
+# what a finished checkpoint and a new request must share to be the same run;
+# save_every, the paths of the pool and of the starting file are left out
+# (their digests are compared)
+def run_identity(prov: Dict) -> Dict:
+    ident = {"git_commit": prov.get("git_commit"),
+             "pool_md5": [p.get("md5") for p in prov.get("pool", [])],
+             "atlas_md5": prov.get("atlas_md5_reported_by_launch"),
+             "tabpfn_package": prov.get("tabpfn", {}).get("tabpfn"),
+             "model_version_expected": prov.get("tabpfn", {}).get("model_version_expected"),
+             "start_md5": prov.get("tabpfn", {}).get("md5"),
+             "seed": prov.get("cfg", {}).get("seed"), "pfn": prov.get("cfg", {}).get("pfn"),
+             "prior": {k: v for k, v in prov.get("cfg", {}).get("prior", {}).items() if k != "cache"}}
+    ident.update({f"finetune.{k}": v for k, v in prov.get("finetune", {}).items()
+                  if k not in ("save_every", "model_path")})
+    return json.loads(json.dumps(ident, default=str))
+
+
+def finished_checkpoint(out: str, requested: Dict) -> Optional[str]:
+    """The finished checkpoint in ``out`` when it is the run now asked for
+    (``requested``: the provenance this run would write), None when the folder
+    holds no finished model. A finished model of another configuration stops
+    the run: it is neither reused nor overwritten."""
+    path, prov_path = os.path.join(out, "tabpfn_ft.pth"), os.path.join(out, "provenance.json")
+    if not (os.path.isfile(path) and os.path.isfile(prov_path)):
+        return None
+    with open(prov_path) as f:
+        saved = json.load(f)
+    if not saved.get("finished"):
+        return None
+    old, new = run_identity(saved), run_identity(requested)
+    diff = [f"{k}: {old.get(k)!r} -> {new.get(k)!r}" for k in sorted(set(old) | set(new)) if old.get(k) != new.get(k)]
+    if diff:
+        sys.exit(f"{out} holds a finished model of another configuration (saved -> asked): " + "; ".join(diff)
+                 + ". Use another output folder, or remove this one.")
+    return path
 
 
 def provenance_record(args, cfg: Dict, pools: List[Dict], base: Dict, step: int, finished: bool) -> Dict:
@@ -167,7 +262,7 @@ def provenance_record(args, cfg: Dict, pools: List[Dict], base: Dict, step: int,
     prov.update({"trainer": "scripts/finetune_tabpfn_prior.py --prior-from-env",
                  "pool": pools, "pool_md5_expected": args.pool_md5,
                  "atlas_md5_reported_by_launch": args.atlas_md5,
-                 "tabpfn": base,
+                 "tabpfn": base, "torch_seed": int(args.seed),
                  "finetune": {k: getattr(args, k) for k in (
                      "steps", "lr", "weight_decay", "grad_clip", "n_context", "n_query", "n_estimators",
                      "processes_per_draw", "query_ratio", "learner", "seed", "save_every", "model_path")},
@@ -232,6 +327,7 @@ def finetune(args) -> str:
     os.makedirs(args.out, exist_ok=True)
     device = args.device if args.device != "auto" else ("cuda" if torch.cuda.is_available() else "cpu")
     args.provenance = None
+    start_path = args.model_path
     if args.prior_from_env:
         prior, d_x, cfg = prior_from_env()
         # the seed and the queries per process are the launch's (SEED, pfn.n_query)
@@ -240,10 +336,20 @@ def finetune(args) -> str:
         args.seed, args.n_query = int(cfg["seed"]), int(cfg["pfn"]["n_query"])
         args.family = cfg["prior"].get("family", "theory")
         pools = pool_record(cfg, args.pool_md5)
-        base = base_checkpoint_record(args.model_path)
+        base = base_checkpoint_record(args.model_path, args.model_version)
+        check_start(base, args.model_md5)
+        start_path = base["path"]               # the file that was hashed, by path: never the package's silent default
         args.provenance = lambda step, finished: provenance_record(args, cfg, pools, base, step, finished)
-        print(f"pool md5 {[p['md5'][:12] for p in pools]}, tabpfn {base.get('tabpfn')}, starting weights "
-              f"{base.get('file')} md5 {(base.get('md5') or 'not located')[:12]}", flush=True)
+        done = finished_checkpoint(args.out, args.provenance(args.steps, True))
+        if done:
+            print(f"already finished with this configuration, left as it is: {done}", flush=True)
+            return done
+        print(f"pool md5 {[p['md5'][:12] for p in pools]}, tabpfn {base.get('tabpfn')}, model version "
+              f"{base.get('model_version', 'unread')} (asked {args.model_version}), starting weights "
+              f"{base['file']} md5 {base['md5'][:12]} ({base['version_of_file']})", flush=True)
+        # the global torch generator, per seed (the prior, the outcome draws,
+        # TabPFN's random_state, the splits and the loader were seeded already)
+        torch.manual_seed(args.seed)
     else:
         args.seed = 0 if args.seed is None else args.seed
         prior, d_x, cfg = prior_from_args(args.cache, args.prior_hyper, args.seed, args.n_context, args.n_query,
@@ -257,8 +363,8 @@ def finetune(args) -> str:
 
     kw = dict(device=device, n_estimators=args.n_estimators, random_state=args.seed,
               ignore_pretraining_limits=True, fit_mode="batched")
-    if args.model_path:
-        kw["model_path"] = args.model_path
+    if start_path:
+        kw["model_path"] = start_path
     est = TabPFNClassifier(**kw)
     est._initialize_model_variables()
     model = est.model_.to(device)
@@ -344,32 +450,76 @@ def checkpoint_fields(step: int, cfg: Dict, args) -> Dict:
 
 
 def _save(est, out, step, history, cfg, args, save_tabpfn_model, finished: bool = False) -> str:
-    path = os.path.join(out, "tabpfn_ft.pth")
-    save_tabpfn_model(model=est, save_path=path,
+    env_mode = getattr(args, "provenance", None) is not None
+    path, partial = os.path.join(out, "tabpfn_ft.pth"), os.path.join(out, "tabpfn_ft.partial.pth")
+    # with --prior-from-env only the last step is written as tabpfn_ft.pth, so
+    # that name is never an unfinished model; the other mode keeps one name
+    target = partial if env_mode and not finished else path
+    save_tabpfn_model(model=est, save_path=target,
                       additional_fields={"neuro_prior_finetune": checkpoint_fields(step, cfg, args)})
+    # the options of the other mode stay out of this mode's record, so the
+    # file without --prior-from-env has the keys it had before that option
+    skip = ("provenance",) if env_mode else ("provenance",) + ENV_MODE_OPTIONS
     with open(os.path.join(out, "history.json"), "w") as f:
-        json.dump({"history": history, "config": {k: v for k, v in vars(args).items() if k != "provenance"},
+        json.dump({"history": history, "config": {k: v for k, v in vars(args).items() if k not in skip},
                    "prior": cfg["prior"]}, f, indent=1)
-    if getattr(args, "provenance", None) is not None:
+    if env_mode:
         # written after the checkpoint, so "finished": true means the last step is on disk
         with open(os.path.join(out, "provenance.json"), "w") as f:
             json.dump(args.provenance(step, finished), f, indent=1, default=str)
-    return path
+        if finished and os.path.isfile(partial):
+            os.remove(partial)
+    return target
 
 
-def check_args(ap, args) -> None:
-    """--cache or --prior-from-env, not both; the prior options that can be
-    told apart from their defaults are refused with --prior-from-env."""
+# options that belong to one way of giving the prior
+PRIOR_OPTIONS = ("cache", "family", "family_weights", "prior_hyper", "giles_hyper", "n_query", "context_pool",
+                 "atlas_dir")
+ENV_MODE_OPTIONS = ("prior_from_env", "pool_md5", "atlas_md5", "model_version", "model_md5")
+
+
+def explicit_options(ap, argv) -> set:
+    """The destinations of the options written on the command line, whatever
+    their values (an option given its default value counts)."""
+    probe = argparse.ArgumentParser(add_help=False, allow_abbrev=ap.allow_abbrev)
+    for a in ap._actions:
+        if not a.option_strings or isinstance(a, argparse._HelpAction):
+            continue
+        kw = {"dest": a.dest, "default": argparse.SUPPRESS}
+        if isinstance(a, argparse._StoreTrueAction):
+            kw["action"] = "store_true"
+        else:
+            kw["nargs"] = a.nargs
+        probe.add_argument(*a.option_strings, **kw)
+    return set(vars(probe.parse_known_args(argv)[0]))
+
+
+def check_args(ap, args, argv=None) -> None:
+    """--cache or --prior-from-env, not both. With --prior-from-env every
+    option that describes the prior is refused, because the prior is the
+    environment's: none is read, so none may be given. ``argv`` (the command
+    line) tells which options were written; without it an option counts as
+    given when its value is not the parser's default."""
+    if argv is not None:
+        given = explicit_options(ap, argv)
+    else:
+        given = {k for k, v in vars(args).items() if v != ap.get_default(k)}
+    opt = lambda dest: "--" + dest.replace("_", "-")
     if args.prior_from_env:
-        given = [o for o, v in (("--cache", args.cache), ("--family-weights", args.family_weights),
-                                ("--giles-hyper", args.giles_hyper)) if v]
-        if given:
-            ap.error(f"--prior-from-env takes the prior from the environment; drop {' '.join(given)}")
+        clash = [opt(k) for k in PRIOR_OPTIONS if k in given]
+        if clash:
+            ap.error("--prior-from-env takes the prior from the launch environment and reads none of "
+                     f"{' '.join(clash)}: drop them (FAMILY, FAMILY_WEIGHTS, PRIOR_HYPER, GILES_HYPER, "
+                     "N_QUERY, CONTEXT_POOL and CACHE of the launch set them)")
+        if not args.pool_md5 or not args.atlas_md5:
+            ap.error("--prior-from-env needs --pool-md5 (checked against the pool) and --atlas-md5 (the digest "
+                     "the launch computed, recorded)")
     else:
         if not args.cache:
             ap.error("--cache is required (or --prior-from-env)")
-        if args.pool_md5 or args.atlas_md5:
-            ap.error("--pool-md5 and --atlas-md5 need --prior-from-env")
+        clash = [opt(k) for k in ENV_MODE_OPTIONS[1:] if k in given]
+        if clash:
+            ap.error(f"{' '.join(clash)} need --prior-from-env")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -380,9 +530,15 @@ def build_parser() -> argparse.ArgumentParser:
                          "FAMILY_WEIGHTS, PRIOR_HYPER, GILES_HYPER, ...) instead of --cache and the prior options "
                          "below, and write provenance.json beside the checkpoint")
     ap.add_argument("--pool-md5", default=None,
-                    help="with --prior-from-env: the pool's md5 (or its first characters) must be this")
+                    help="with --prior-from-env, required: the pool's md5 (or its first characters) must be this")
     ap.add_argument("--atlas-md5", default=None,
-                    help="with --prior-from-env: the atlas digest the launch computed, recorded in provenance.json")
+                    help="with --prior-from-env, required: the atlas digest the launch computed, recorded in "
+                         "provenance.json (this script does not recompute it)")
+    ap.add_argument("--model-version", default="v3.5",
+                    help="with --prior-from-env: the TabPFN model version the run starts from. Without --model-path "
+                         "the package must be set to it (TABPFN_MODEL_VERSION) and its file for it is used by path")
+    ap.add_argument("--model-md5", default=None,
+                    help="with --prior-from-env: the starting checkpoint's md5 (or its first characters) must be this")
     ap.add_argument("--prior-hyper", default="two_arms=1 effect_scale=0.2:1 d_source=network s_source=genetics_1 "
                                             "s_b_source=genetics_2 effect_headroom=1 generic_weight=0.5")
     ap.add_argument("--family", default="theory", choices=["theory", "giles", "mixture"],
@@ -398,7 +554,9 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--learner", default="s", choices=["s", "t"],
                     help="s: treatment as a feature column (one dataset per process); t: one dataset per arm")
     ap.add_argument("--steps", type=int, default=2000)
-    ap.add_argument("--processes-per-draw", type=int, default=4)
+    ap.add_argument("--processes-per-draw", type=int, default=4,
+                    help="simulated trials one draw of the prior holds. Each trial is one update (the loader's "
+                         "batch is 1), so this is not a number of trials per update")
     ap.add_argument("--n-context", type=int, default=2000)
     ap.add_argument("--n-query", type=int, default=256)
     ap.add_argument("--query-ratio", type=float, default=0.2)
@@ -415,8 +573,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv=None):
     ap = build_parser()
+    argv = sys.argv[1:] if argv is None else list(argv)
     args = ap.parse_args(argv)
-    check_args(ap, args)
+    check_args(ap, args, argv)
     finetune(args)
 
 
