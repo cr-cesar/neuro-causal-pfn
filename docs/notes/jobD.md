@@ -158,6 +158,12 @@ The tests that need commit `8fa4b74` fail, with a message, in a clone that does 
 
 Full suite on this branch: 435 passed, 5 failed, 2 skipped. The 5 failures are the 5 listed at the end of this note; they fail at `8fa4b74` too (the audit reran the suite there: 406 passed, the same 5 failed).
 
+## With the job G branch
+
+Both branches edit `g4c_launch.sh`. A trial merge of the two revised tips in a scratch clone (thrown away,
+nothing merged in the repository) had no conflict, and the test files of both branches passed on the merged
+tree (97 tests with `test_prior_families.py`). `RUN_TRAINER=tabpfn` with four family weights was not run.
+
 ## Not run anywhere
 
 - The real training loop: tabpfn 9.2 or later and a GPU. Not one real update was made.
