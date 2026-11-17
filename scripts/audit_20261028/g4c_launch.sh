@@ -12,9 +12,9 @@
 #   OBJECTIVE=new [CATE_W=1] bash scripts/audit_20261028/g4c_launch.sh
 #   STD=context [OBJECTIVE=new] bash scripts/audit_20261028/g4c_launch.sh
 #   GENERIC_W=0 [OBJECTIVE=new] bash scripts/audit_20261028/g4c_launch.sh
+#   FAMILY_W="0 1 1 1" [RULE_GRADED=0.5] [RULE_ENROL=0.2:1] [OBJECTIVE=new] bash scripts/audit_20261028/g4c_launch.sh
 #   HEAD_RANGE=wide bash scripts/audit_20261028/g4c_launch.sh
 #   S_SOURCE=receptor | FAMILY_W="0.25 0.75" [OBJECTIVE=new] bash scripts/audit_20261028/g4c_launch.sh
-#   FAMILY_W="0 1 1 1" [RULE_GRADED=0.5] [RULE_ENROL=0.2:1] [OBJECTIVE=new] bash scripts/audit_20261028/g4c_launch.sh
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 dirty=$(git status --porcelain --untracked-files=no | wc -l)
