@@ -52,16 +52,33 @@ that keeps its md5 checks is not written.
 
 ## Tests
 
-`tests/test_rule_families.py`, 18 tests. Run here with the neighbouring prior tests: 61 passed, 1 skipped,
-1 failed (`test_hyper_prior_contains_the_paper_scenarios`, which fails at `8fa4b74` too).
+- `tests/test_rule_families.py`, 18 tests: the unchanged-prior comparison above; each rule's effects against its
+  definition; thirds and ranks with ties; efficacy, recovery, outcome draws and allocation; weights of 0 exclude a
+  family; the launch variables reach the generator; the gate passes with the new keys and fails on a wrong one.
+- `tests/test_rule_families_launch.py`, 15 tests. `g4c_launch.sh` is run for real in a temporary checkout, with a
+  stand-in `python` (the gate) and a stand-in PFN trainer that record what they receive.
+  - With two family weights (the final launch's call, the default, `0.25 0.75`, a leave-networks-out call) the
+    gate's command line, every launch variable and the printed run name are the same as with `g4c_launch.sh` of
+    `8fa4b74`, which the test takes from git history.
+  - With four weights: the weights, `rule_graded` and `rule_enrol` reach the gate and the trainer; the families
+    with weight 0 are passed to `--absent`; nine bad inputs stop the launch before the gate.
+  - `launch_myriad.qsub.sh` passes `FAMILY_W=0:1:1:1` and the rule options on.
+- Full suite on this branch (Windows, Python 3.12, CPU): 439 passed, 5 failed, 2 skipped. The 5 failures are the 5 that fail at
+  `8fa4b74` (4 platform errors in `test_bundle_tools.py` and `test_disco_prior_match.py`, and
+  `test_hyper_prior_contains_the_paper_scenarios`).
+
+## With the job D branch
+
+Both branches edit `g4c_launch.sh`. A trial merge in a scratch clone (thrown away, nothing merged in the
+repository) was clean, and the new tests of both branches passed on the merged tree: 39 passed.
 
 ## Not tested, not done
 
-- **The full test suite was not run on this branch**, only the six prior test files. Run it before review.
-- **`g4c_launch.sh` was syntax-checked only** (`bash -n`). The new `FAMILY_W`, `RULE_*` and `--absent` lines were
-  not executed. The job D branch has a test that runs the launch with stand-ins; this branch has none.
-- The two branches both edit `g4c_launch.sh`, in different places. A merge was not tried.
-- The gate ran on a synthetic pool only.
+- The launch ran here under Git Bash with stand-ins, never with the real gate, pool or atlas, and not on siena.
+- The gate itself ran on a synthetic pool only.
+- No launch for job G with the md5 checks of `final1m_launch.sh` is written: that script fixes `FAMILY_W="0 1"`.
+  Which priors are trained is for the registered request; the wrapper should follow it.
+- Nothing was trained, so nothing is known about how a model learns the new families.
 
 ## Choices to confirm
 
