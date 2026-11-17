@@ -68,7 +68,8 @@ class HyperPrior:
     # pool a process enrols (1 to 1: the whole pool)
     rule_graded: float = 0.5
     rule_enrol: Tuple[float, float] = (1.0, 1.0)
-    rule_enrol_by: str = "share"         # share | network: who such a process enrols
+    rule_enrol_by: str = "share"         # share | network | trial: the lesions the rule is fixed on
+    rule_axis_sign: str = "fixed"        # fixed | random: the direction of that axis, per centroid process
     rule_axis: str = "enrolled"          # enrolled | pool: the centroids that give the principal axis
 
     def contains_giles(self, TE: float, RE: float, BIAS: float, BIASTYPE: str) -> bool:

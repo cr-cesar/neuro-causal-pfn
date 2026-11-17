@@ -45,18 +45,24 @@ each; in the virtual trial it is always aligned.
 Options of their own, in the same hyper-prior:
 
 - ``rule_graded``: the share of processes with the graded shape (default 0.5);
-- ``rule_enrol_by``: who a process enrols. ``share`` (default): a uniformly
-  random part of the pool, of the share drawn from ``rule_enrol`` (default 1
-  to 1, the whole pool). ``network``: the lesions a virtual-trial process
-  drawn from the same ranges would enrol, i.e. those its networks reach above
-  its threshold (the slice of the other families);
+- ``rule_enrol_by``: the lesions the rule is fixed on, i.e. among which the
+  ranks and the thirds are cut. ``share`` (default): a uniformly random part
+  of the pool, of the share drawn from ``rule_enrol`` (default 1 to 1, the
+  whole pool); the trial's rows are drawn from it. ``network``: the lesions a
+  virtual-trial process drawn from the same ranges would enrol, i.e. those
+  its networks reach above its threshold (the slice of the other families);
+  the trial's rows are drawn from it. ``trial``: the distinct lesions that
+  enter this trial's context and queries, themselves drawn as with ``share``;
 - ``rule_axis``: the centroids whose first principal axis the ``centroid``
-  family (and the ``axis`` allocation ramp) uses. ``enrolled`` (default): the
-  enrolled lesions'. ``pool``: the whole pool's, whoever is enrolled.
+  family (and the ``axis`` allocation ramp) uses. ``enrolled`` (default):
+  those of the lesions the rule is fixed on. ``pool``: the whole pool's;
+- ``rule_axis_sign``: the direction of that axis. ``fixed`` (default): the
+  rule of ``principal_coordinate``. ``random``: a centroid process flips it
+  with a coin of its own (no draw is made for a volume process, whose effect
+  does not read the axis, nor with ``fixed``).
 
-The thirds and the ranks are always those of the enrolled lesions. With the
-defaults every process of a family is fixed on the same lesions, so only its
-shape and its sign distinguish its effects: four functions per family.
+With the defaults every process of a family is fixed on the same lesions, so
+only its shape and its sign distinguish its effects: four functions per family.
 
 A lesion without a finite volume and centroid cannot be ranked: enrolling one
 is an error (NaN would otherwise sort last and take the top effect).
@@ -64,7 +70,10 @@ is an error (NaN would otherwise sort last and take the top effect).
 The direction of a principal axis is arbitrary; ``principal_coordinate`` fixes
 it by making the axis's largest component positive, which is deterministic for
 given centroids. The rule's own sign is a coin per process, so the convention
-does not change which processes are drawn, only how ``sign`` reads.
+does not change which processes are drawn, only how ``sign`` reads; for the
+same reason ``rule_axis_sign=random`` leaves the distribution of the processes
+as it is (two fair coins multiply to a fair coin) and matters only if the
+rule's sign is ever fixed.
 """
 from typing import Dict, Optional
 
@@ -74,8 +83,9 @@ from .neuro_prior import BIAS_TYPES, HyperPrior, _ramp
 
 RULE_FAMILIES = ("volume", "centroid")
 RULE_SHAPES = ("threshold", "graded")
-ENROL_BY = ("share", "network")
+ENROL_BY = ("share", "network", "trial")
 RULE_AXES = ("enrolled", "pool")
+AXIS_SIGNS = ("fixed", "random")
 
 
 def average_ranks(values: np.ndarray) -> np.ndarray:
@@ -143,7 +153,8 @@ class FeatureRuleDGP:
                  p_te: Optional[float] = None, p_re: Optional[float] = None,
                  bias: Optional[float] = None, bias_type: Optional[str] = None,
                  label_noise: Optional[float] = None, enrol: Optional[float] = None,
-                 enrol_by: Optional[str] = None, axis_from: Optional[str] = None):
+                 enrol_by: Optional[str] = None, axis_from: Optional[str] = None,
+                 axis_sign: Optional[int] = None):
         if feature not in RULE_FAMILIES:
             raise ValueError(f"unknown rule family {feature!r}; choose from {RULE_FAMILIES}")
         h = hyper or HyperPrior()
@@ -184,14 +195,24 @@ class FeatureRuleDGP:
         self.axis_from = str(getattr(h, "rule_axis", "enrolled") if axis_from is None else axis_from)
         if self.axis_from not in RULE_AXES:
             raise ValueError(f"unknown rule_axis {self.axis_from!r}; choose from {RULE_AXES}")
+        mode = str(getattr(h, "rule_axis_sign", "fixed"))
+        if mode not in AXIS_SIGNS:
+            raise ValueError(f"unknown rule_axis_sign {mode!r}; choose from {AXIS_SIGNS}")
+        # the last draw, and only for a centroid process asked for a random direction:
+        # every other process uses the generator exactly as without the option
+        if axis_sign is None:
+            axis_sign = int(rng.choice([-1, 1])) if (mode == "random" and feature == "centroid") else 1
+        self.axis_sign = int(axis_sign)
+        self.n_ranked = 0                                  # lesions the rule is fixed on, set by fit
         self.effect = self.coordinate = None               # per pool lesion, set by fit
 
     def fit(self, volumes: np.ndarray, centroids: np.ndarray, enrolled: np.ndarray) -> "FeatureRuleDGP":
-        """Fix the effect of the enrolled lesions (indices into the pool):
+        """Fix the effect of the given lesions (indices into the pool; the
+        enrolment, or the trial's own lesions with ``rule_enrol_by=trial``):
         ranks and thirds are theirs, and so is the principal axis unless
-        ``rule_axis`` is ``pool``. Lesions outside the enrolment get NaN, so
-        using one is an error, not a silent zero; an enrolled lesion without
-        a finite volume and centroid is an error too."""
+        ``rule_axis`` is ``pool``. The other lesions get NaN, so using one is
+        an error, not a silent zero; a given lesion without a finite volume
+        and centroid is an error too."""
         enrolled = np.asarray(enrolled, dtype=np.int64)
         vol = np.asarray(volumes, dtype=np.float64)[enrolled]
         cen = np.asarray(centroids, dtype=np.float64)[enrolled]
@@ -200,6 +221,8 @@ class FeatureRuleDGP:
             raise ValueError(f"{bad} of {len(enrolled)} enrolled lesions have no finite volume and centroid: "
                              f"the {self.feature} rule cannot rank them")
         coord = principal_coordinate(centroids)[enrolled] if self.axis_from == "pool" else principal_coordinate(cen)
+        coord = self.axis_sign * coord
+        self.n_ranked = len(enrolled)
         values = vol if self.feature == "volume" else coord
         self.effect = np.full(len(volumes), np.nan)
         self.effect[enrolled] = self.sign * rule_effect(values, self.shape)
@@ -227,7 +250,7 @@ class FeatureRuleDGP:
         return {"feature": self.feature, "shape": self.shape, "sign": self.sign,
                 "p_te": self.p_te, "p_re": self.p_re, "bias": self.bias, "bias_type": self.bias_type,
                 "label_noise": self.label_noise, "enrol": self.enrol, "enrol_by": self.enrol_by,
-                "axis": self.axis_from,
+                "axis": self.axis_from, "axis_sign": self.axis_sign, "n_ranked": self.n_ranked,
                 "outcome": "continuous" if self.continuous else "binary"}
 
 

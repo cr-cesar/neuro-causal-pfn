@@ -338,9 +338,11 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
         virtual-trial process drawn from the same ranges, the lesions its
         networks reach, as the virtual-trial family enrols; a slice below
         ``min_slice`` is returned unfitted and the caller draws again.
+        ``rule_enrol_by=trial``: the candidates of ``share``, unfitted; the
+        rule is fixed in ``_one`` on the lesions drawn into the trial.
         Returns the enrolment as the slice (None when context_pool is "all":
         the rule is then fixed on the whole pool and rows come from all of
-        it, in both modes)."""
+        it, in the first two modes)."""
         if dgp.enrol_by == "network":
             idx = self._slice(self.sample_process("giles"), "giles")
             idx = np.arange(self.m) if idx is None else idx
@@ -351,7 +353,8 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
             if self.context_pool != "all" and dgp.enrol < 1.0:
                 n = min(self.m, max(self.min_slice, int(round(dgp.enrol * self.m))))
             idx = np.arange(self.m) if n >= self.m else np.sort(self.rng.choice(self.m, size=n, replace=False))
-        dgp.fit(self.volumes, self.centroids, idx)
+        if dgp.enrol_by != "trial":
+            dgp.fit(self.volumes, self.centroids, idx)
         return None if self.context_pool == "all" else idx
 
     def _indices_from(self, pool: Optional[np.ndarray], n: int) -> np.ndarray:
@@ -486,6 +489,9 @@ class NeuroPriorCohort(NeuroPriorInterSynth):
             elif fam in RULE_FAMILIES:
                 from .feature_rules import make_rule_dataset
 
+                if dgp.enrol_by == "trial":
+                    # ranks, thirds and axis among the distinct lesions of this trial's context and queries
+                    dgp.fit(self.volumes, self.centroids, np.unique(np.concatenate([ci, qi])))
                 data = make_rule_dataset(dgp, ci, qi, self.volumes, Xc, Xq, self.rng)
                 U = data["u_ctx"][:, None] if dgp.bias_type == "agnostic" else None
             else:
