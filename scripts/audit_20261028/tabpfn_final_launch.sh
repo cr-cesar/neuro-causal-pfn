@@ -19,6 +19,13 @@
 # STEPS updates read STEPS trials whatever this value is (the final model's
 # batch of 4 trials per update has no counterpart here).
 #
+# Two settings are off unless set (25 Nov). L2SP_ALPHA: the L2-SP guard,
+# (alpha / 2) * sum ||w - w0||^2 added to each update's loss, w0 the starting
+# weights; unset or 0, no term. N_CONTEXT_RANGE=lo:hi: each draw of the prior
+# takes its context length uniformly from the integers lo to hi, in place of
+# the one length N_CONTEXT; setting both stops the launch. Both are recorded in
+# provenance.json and compared with a finished model like every other setting.
+#
 # Starting weights: TABPFN_VERSION (default v3.5) is exported to the package as
 # TABPFN_MODEL_VERSION and checked by the script, which takes the package's
 # file for that version by path and records its md5; MODEL_PATH gives another
@@ -35,7 +42,8 @@
 # script compares provenance.json with what is asked.
 #
 #   VENV=<environment with tabpfn> POOL=... ATLAS=... O=... [SEEDS="0 1 2"] [STEPS=2000] [LR=1e-5] \
-#       [TRIALS_PER_DRAW=4] [N_CONTEXT=1500] [N_EST=1] [TABPFN_VERSION=v3.5] [MODEL_PATH=... [MODEL_MD5=...]] \
+#       [TRIALS_PER_DRAW=4] [N_CONTEXT=1500 | N_CONTEXT_RANGE=256:3000] [L2SP_ALPHA=0.003] [N_EST=1] \
+#       [TABPFN_VERSION=v3.5] [MODEL_PATH=... [MODEL_MD5=...]] \
 #       [PARALLEL=1] bash scripts/audit_20261028/tabpfn_final_launch.sh
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -50,7 +58,21 @@ STEPS="${STEPS:-2000}"
 LR="${LR:-1e-5}"
 [ -z "${FT_BATCH:-}" ] || { echo "FT_BATCH is now TRIALS_PER_DRAW: trials per draw of the prior, not per update" >&2; exit 1; }
 TRIALS_PER_DRAW="${TRIALS_PER_DRAW:-4}"
+N_CONTEXT_RANGE="${N_CONTEXT_RANGE:-}"
+L2SP_ALPHA="${L2SP_ALPHA:-}"
+if [ -n "$N_CONTEXT_RANGE" ]; then
+    [ -z "${N_CONTEXT:-}" ] || { echo "N_CONTEXT_RANGE draws the context length and N_CONTEXT fixes it: set one of the two" >&2; exit 1; }
+    [[ "$N_CONTEXT_RANGE" =~ ^[1-9][0-9]*:[1-9][0-9]*$ ]] && [ "${N_CONTEXT_RANGE%%:*}" -le "${N_CONTEXT_RANGE##*:}" ] \
+        || { echo "N_CONTEXT_RANGE must be lo:hi, whole numbers with lo <= hi, e.g. 256:3000" >&2; exit 1; }
+fi
+[ -z "$L2SP_ALPHA" ] || [[ "$L2SP_ALPHA" =~ ^[0-9]+(\.[0-9]+)?([eE]-?[0-9]+)?$ ]] || { echo "L2SP_ALPHA must be a number >= 0, e.g. 0.003" >&2; exit 1; }
+# a value too large to be a number is refused here, and one that is 0 (also by underflow) is said to be no term
+[ -z "$L2SP_ALPHA" ] || awk -v a="$L2SP_ALPHA" 'BEGIN { exit !(a + 0 < 1e300) }' || { echo "L2SP_ALPHA is too large to be a number" >&2; exit 1; }
+alpha_said="${L2SP_ALPHA:-none}"
+[ -z "$L2SP_ALPHA" ] || ! awk -v a="$L2SP_ALPHA" 'BEGIN { exit !(a + 0 == 0) }' || alpha_said="$L2SP_ALPHA (zero: no term)"
 N_CONTEXT="${N_CONTEXT:-1500}"
+context_arg="--n-context $N_CONTEXT"
+[ -z "$N_CONTEXT_RANGE" ] || context_arg="--n-context-range $N_CONTEXT_RANGE"
 N_EST="${N_EST:-1}"
 TABPFN_VERSION="${TABPFN_VERSION:-v3.5}"
 MODEL_PATH="${MODEL_PATH:-}"
@@ -79,7 +101,8 @@ atlas_md5=$(cd -P "$ATLAS" && find functional_parcellation_2mm.nii.gz 2mm_parcel
 echo "== $(date +%H:%M) code $(git -C "$HERE" rev-parse --short HEAD), pool md5 $pool_md5, atlas md5 $atlas_md5"
 [ "$pool_md5" = "$POOL_MD5" ] || { echo "pool md5 $pool_md5, expected $POOL_MD5" >&2; exit 1; }
 [ "$atlas_md5" = "$ATLAS_MD5" ] || { echo "atlas md5 $atlas_md5, expected $ATLAS_MD5" >&2; exit 1; }
-echo "   steps $STEPS, lr $LR, trials per draw $TRIALS_PER_DRAW, context $N_CONTEXT, estimators $N_EST," \
+echo "   steps $STEPS, lr $LR, trials per draw $TRIALS_PER_DRAW, context ${N_CONTEXT_RANGE:-$N_CONTEXT}," \
+     "L2-SP alpha $alpha_said, estimators $N_EST," \
      "TabPFN $TABPFN_VERSION from ${MODEL_PATH:-the package file}, seeds $SEEDS"
 mkdir -p "$O/logs"
 
@@ -91,7 +114,7 @@ run() {  # seed; g4c_launch.sh checks the pool and the atlas again and gives the
         OBJECTIVE=new FAMILY_W="0 1" ATLAS_SRC="$ATLAS" SEED="$1" \
         JOBNAME="tabpfn-final-s$1" CACHE="$POOL" OUT="$O/s$1" RUN_TRAINER=tabpfn \
         POOL_MD5="$POOL_MD5" ATLAS_MD5="$ATLAS_MD5" TABPFN_MODEL_VERSION="$TABPFN_VERSION" \
-        TABPFN_FT_ARGS="--steps $STEPS --lr $LR --processes-per-draw $TRIALS_PER_DRAW --n-context $N_CONTEXT --n-estimators $N_EST --model-version $TABPFN_VERSION${MODEL_PATH:+ --model-path $MODEL_PATH}${MODEL_MD5:+ --model-md5 $MODEL_MD5}" \
+        TABPFN_FT_ARGS="--steps $STEPS --lr $LR --processes-per-draw $TRIALS_PER_DRAW $context_arg --n-estimators $N_EST --model-version $TABPFN_VERSION${MODEL_PATH:+ --model-path $MODEL_PATH}${MODEL_MD5:+ --model-md5 $MODEL_MD5}${L2SP_ALPHA:+ --l2sp-alpha $L2SP_ALPHA}" \
         bash scripts/audit_20261028/g4c_launch.sh) >> "$O/logs/train_s$1.log" 2>&1
 }
 failed=" "

@@ -21,6 +21,7 @@ import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BASE_COMMIT = "8fa4b74ba1f0d17d7d5fa0d980ce969be6d8ac34"      # the code before job D
+BEFORE_GUARD = "6a7c6c34b1198e1d9b775b177bcae58fae217ecd"     # job D before L2-SP and the drawn context (25 Nov)
 sys.path.insert(0, os.path.join(ROOT, "scripts"))
 import finetune_tabpfn_prior as ft  # noqa: E402
 
@@ -51,12 +52,13 @@ def _synthetic_cache(path, m=400, K=8, d=8, seed=0):
     return str(path)
 
 
-def _from_base(path: str) -> bytes:
-    """A file as it was before job D, from git history. A clone without that
-    commit cannot make the comparison, and that is a failure, not a skip."""
-    r = subprocess.run(["git", "show", f"{BASE_COMMIT}:{path}"], cwd=ROOT, capture_output=True)
+def _from_base(path: str, commit: str = BASE_COMMIT) -> bytes:
+    """A file as it was before job D (or at ``commit``), from git history. A
+    clone without that commit cannot make the comparison, and that is a
+    failure, not a skip."""
+    r = subprocess.run(["git", "show", f"{commit}:{path}"], cwd=ROOT, capture_output=True)
     if r.returncode != 0:
-        pytest.fail(f"commit {BASE_COMMIT[:7]} is not in this clone's history (fetch it): the comparison with the "
+        pytest.fail(f"commit {commit[:7]} is not in this clone's history (fetch it): the comparison with the "
                     f"code before the change cannot run")
     return r.stdout
 
@@ -261,6 +263,7 @@ def fake_tabpfn(monkeypatch, tmp_path):
         monkeypatch.setitem(sys.modules, name, m)
 
     def chunks(calling_instance, X_raw, y_raw, split_fn, **kw):
+        state.setdefault("tables", []).append([len(X) for X in X_raw])      # rows of each table of this draw
         return list(zip(X_raw, y_raw))
 
     def collator(items):
@@ -453,6 +456,7 @@ RECORD = '''{ echo "ARGS $2"; for v in %s; do
 export -p > "$OUT/env_$1.txt"
 ''' % " ".join(SEEN)
 INPUTS = ("FAMILY_W", "OBJECTIVE", "GENERIC_W", "RUN_TRAINER", "TABPFN_FT_ARGS", "SEEDS", "STEPS", "LR", "FT_BATCH",
+          "N_CONTEXT_RANGE", "L2SP_ALPHA",
           "TRIALS_PER_DRAW", "N_CONTEXT", "N_EST", "MODEL_PATH", "MODEL_MD5", "TABPFN_VERSION", "PARALLEL",
           "POOL_MD5", "ATLAS_MD5", "FAIL_SEED", "RUN_ITERS", "ATLAS_SRC", "EXCLUDE_NETWORKS", "PRIOR_REPAIR",
           "ALLOC", "S_SOURCE", "STD", "DISTINCT", "HEAD_RANGE", "CATE_W", "PRIOR_CHECK_ONLY", *SEEN)
@@ -693,3 +697,409 @@ def test_without_the_new_variable_the_shared_launch_does_what_it_did_before(laun
         assert seen["new"][k] == seen["old"][k], k
     assert any(line.startswith("declare -x GILES_HYPER=") for line in seen["new"]["trainer_env"])
     assert any(line.startswith("launch tag=G4c") for line in seen["new"]["said"])
+
+
+# ----------------------------------- L2-SP and the drawn context length (25 Nov)
+def _toy(seed=0):
+    import torch
+
+    torch.manual_seed(seed)
+    model = torch.nn.Sequential(torch.nn.Linear(5, 4), torch.nn.Tanh(), torch.nn.Linear(4, 2))
+    model[2].bias.requires_grad = False                                      # a weight the task does not train
+    x, y = torch.randn(30, 5), torch.randint(0, 2, (30,))
+    return model, x, y
+
+
+def test_the_l2sp_term_and_its_gradient_are_the_formula_on_a_toy_model():
+    import torch
+
+    model, x, y = _toy()
+    alpha = 0.3
+    guard = ft.L2SP(model.parameters(), alpha)
+    start = [p.detach().clone() for p in model.parameters()]
+    trainable = [p for p in model.parameters() if p.requires_grad]
+    assert len(guard.params) == 3 and all(a is b for a, b in zip(guard.params, trainable))    # the frozen bias is out
+    w0_norm = np.sqrt(sum(float((p.detach().double() ** 2).sum()) for p in trainable))
+    assert guard.w0_norm == pytest.approx(w0_norm, rel=1e-12)
+    assert float(guard.term()) == 0.0                                        # at the starting weights
+    with torch.no_grad():                                                    # move away from them
+        for p in trainable:
+            p.add_(0.1 * torch.randn_like(p))
+    dist2 = sum(float(((p.detach() - w) ** 2).sum()) for p, w in zip(trainable, guard.w0))
+    assert float(guard.term()) == pytest.approx(0.5 * alpha * dist2, rel=1e-6)
+    # its gradient is alpha (w - w0), tensor by tensor
+    grads = torch.autograd.grad(guard.term(), trainable)
+    for g, p, w in zip(grads, trainable, guard.w0):
+        torch.testing.assert_close(g, alpha * (p.detach() - w), rtol=1e-6, atol=1e-9)
+    # the loss's own gradient, taken alone, and the logged quantities after the backward pass of loss + term
+    loss = torch.nn.functional.cross_entropy(model(x), y)
+    own = torch.autograd.grad(loss, trainable, retain_graph=True)
+    own_norm = np.sqrt(sum(float((g.double() ** 2).sum()) for g in own))
+    (loss + guard.term()).backward()
+    s = guard.stats()
+    assert set(s) == {"l2sp_term", "l2sp_grad_norm", "loss_grad_norm", "rel_dist"}
+    assert s["l2sp_term"] == pytest.approx(0.5 * alpha * dist2, rel=1e-6)
+    assert s["l2sp_grad_norm"] == pytest.approx(alpha * np.sqrt(dist2), rel=1e-6)
+    assert s["loss_grad_norm"] == pytest.approx(own_norm, rel=1e-4)          # the whole gradient minus alpha (w - w0)
+    assert s["rel_dist"] == pytest.approx(np.sqrt(dist2) / w0_norm, rel=1e-6)
+    whole = np.sqrt(sum(float((p.grad.double() ** 2).sum()) for p in trainable))
+    assert abs(whole - own_norm) > 1e-6                                      # so the two norms are different things
+    # training moves the weights and leaves w0 where it was: a copy, without gradient, not the optimizer's
+    opt = torch.optim.SGD(model.parameters(), lr=0.5)
+    for _ in range(5):
+        opt.zero_grad()
+        (torch.nn.functional.cross_entropy(model(x), y) + guard.term()).backward()
+        opt.step()
+    for w, p, first in zip(guard.w0, trainable, [s_ for s_, q in zip(start, model.parameters()) if q.requires_grad]):
+        assert torch.equal(w, first) and not torch.equal(p.detach(), first)
+        assert w is not p and not w.requires_grad and w.grad is None
+    frozen = torch.nn.Linear(2, 2)
+    for p in frozen.parameters():
+        p.requires_grad = False
+    with pytest.raises(ValueError, match="trainable"):
+        ft.L2SP(frozen.parameters(), 0.1)
+
+
+def _script_before(tmp_path, monkeypatch):
+    """scripts/finetune_tabpfn_prior.py of the commit before these two
+    settings, as a module."""
+    import importlib.util
+
+    d = tmp_path / "before"; d.mkdir()
+    (d / "ft_before.py").write_bytes(_from_base("scripts/finetune_tabpfn_prior.py", BEFORE_GUARD))
+    monkeypatch.setattr(sys, "path", list(sys.path))                         # the script adds a folder to it
+    spec = importlib.util.spec_from_file_location("ft_before", d / "ft_before.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert not hasattr(mod, "L2SP")
+    return mod
+
+
+def test_without_the_guard_and_the_range_the_updates_are_those_of_the_commit_before(
+        fake_tabpfn, final_prior_launch, monkeypatch, tmp_path):
+    """alpha unset or 0, no range: every update's loss and rate equal, bit
+    for bit, those of the script at the commit before, on the same stand-ins
+    and seed. With the guard the first update is the same (w = w0) and the
+    later ones are not."""
+    before = _script_before(tmp_path, monkeypatch)
+    before.main(final_prior_launch + ["--out", "before_run"])
+    ft.main(final_prior_launch + ["--out", "unset"])
+    ft.main(final_prior_launch + ["--out", "zero", "--l2sp-alpha", "0"])
+    old = json.load(open("before_run/history.json"))
+    for run in ("unset", "zero"):
+        new = json.load(open(f"{run}/history.json"))
+        assert new["history"] == old["history"] and len(old["history"]) == 6     # steps, losses, rates: equal floats
+        assert set(new) == set(old) == {"history", "config", "prior"} and new["prior"] == old["prior"]
+        # the files are the old ones plus the two settings, recorded as off; nothing else differs
+        assert set(new["config"]) - set(old["config"]) == {"l2sp_alpha", "n_context_range"}
+        assert {k: v for k, v in new["config"].items() if k in old["config"] and k != "out"} == \
+               {k: v for k, v in old["config"].items() if k != "out"}
+        assert new["config"]["l2sp_alpha"] == 0.0 and new["config"]["n_context_range"] is None
+        p_new, p_old = (json.load(open(f"{d}/provenance.json")) for d in (run, "before_run"))
+        assert set(p_new) == set(p_old)
+        assert set(p_new["finetune"]) - set(p_old["finetune"]) == {"l2sp_alpha", "n_context_range"}
+        assert all(set(h) == {"step", "loss", "lr"} for h in new["history"])
+        prov = json.load(open(f"{run}/provenance.json"))["finetune"]
+        assert prov["l2sp_alpha"] == 0.0 and prov["n_context_range"] is None and prov["n_context"] == 96
+    assert json.load(open("unset/provenance.json"))["cfg"] == json.load(open("before_run/provenance.json"))["cfg"]
+    ft.main(final_prior_launch + ["--out", "guarded", "--l2sp-alpha", "5", "--lr", "0.05"])
+    ft.main(final_prior_launch + ["--out", "free", "--lr", "0.05"])
+    a, b = _losses("guarded"), _losses("free")
+    assert a[0] == b[0] and a[1:] != b[1:]
+
+
+def test_the_guard_in_finetune_records_its_quantities_and_holds_the_weights(
+        fake_tabpfn, final_prior_launch, monkeypatch, capsys):
+    import torch
+
+    made = []
+
+    class Recording(ft.L2SP):
+        def __init__(self, parameters, alpha):
+            super().__init__(parameters, alpha)
+            self.first = [w.clone() for w in self.w0]
+            made.append(self)
+
+    monkeypatch.setattr(ft, "L2SP", Recording)
+    opts = final_prior_launch + ["--lr", "0.05", "--steps", "12", "--save-every", "0"]
+    ft.main(opts + ["--out", "tight", "--l2sp-alpha", "20"])
+    out = capsys.readouterr().out
+    guard, = made
+    hist = json.load(open("tight/history.json"))["history"]
+    keys = {"step", "loss", "lr", "l2sp_term", "l2sp_grad_norm", "loss_grad_norm", "rel_dist"}
+    assert len(hist) == 12 and all(set(h) == keys and all(np.isfinite(list(h.values()))) for h in hist)
+    # before the first update the weights are the starting ones: no distance, no term, and a gradient of the loss
+    assert hist[0]["rel_dist"] == 0.0 and hist[0]["l2sp_term"] == 0.0 and hist[0]["l2sp_grad_norm"] == 0.0
+    assert hist[0]["loss_grad_norm"] > 0 and all(h["rel_dist"] > 0 for h in hist[1:])
+    for h in hist[1:]:                                                       # the three quantities are one distance
+        assert h["l2sp_grad_norm"] == pytest.approx(20 * h["rel_dist"] * guard.w0_norm, rel=1e-9)
+        assert h["l2sp_term"] == pytest.approx(h["l2sp_grad_norm"] ** 2 / (2 * 20), rel=1e-9)
+    # the starting weights were copied once and not moved; the model's weights moved
+    assert all(torch.equal(w, f) for w, f in zip(guard.w0, guard.first))
+    assert any(not torch.equal(p.detach(), w) for p, w in zip(guard.params, guard.w0))
+    live = [p for p in _FakeClassifier.made[-1].model_.parameters() if p.requires_grad]
+    assert len(guard.params) == len(live) and all(a is b for a, b in zip(guard.params, live))
+    # the log: the head line, and the four quantities at each log line (every 2 updates here)
+    assert "L2-SP: alpha 20 towards the starting weights, 2 tensors" in out
+    lines = [line for line in out.splitlines() if line.startswith("step ")]
+    assert len(lines) == 6
+    for line in lines:
+        assert all(word in line for word in ("loss ", "l2sp ", "|grad l2sp| ", "|grad loss| ", "|w-w0|/|w0| "))
+    assert f"|w-w0|/|w0| {hist[-1]['rel_dist']:.3e}" in lines[-1] and f"l2sp {hist[-1]['l2sp_term']:.3e}" in lines[-1]
+    # recorded beside the checkpoint and inside it
+    assert json.load(open("tight/provenance.json"))["finetune"]["l2sp_alpha"] == 20.0
+    assert fake_tabpfn["saved"][-1][1]["neuro_prior_finetune"]["l2sp_alpha"] == 20.0
+    # a weaker guard lets the weights go further in the same updates
+    ft.main(opts + ["--out", "loose", "--l2sp-alpha", "1e-9"])
+    loose = json.load(open("loose/history.json"))["history"]
+    assert loose[-1]["rel_dist"] > hist[-1]["rel_dist"] and loose[0]["loss"] == hist[0]["loss"]
+
+
+def _without(opts, name):
+    i = opts.index(name)
+    return opts[:i] + opts[i + 2:]
+
+
+def test_context_lengths_are_drawn_in_the_range_and_repeat_with_the_seed(fake_tabpfn, final_prior_launch, capsys):
+    opts = _without(final_prior_launch, "--n-context") + ["--steps", "14"]
+    ft.main(opts + ["--out", "r0", "--n-context-range", "80:140"])
+    out = capsys.readouterr().out
+    h = json.load(open("r0/history.json"))
+    drawn = [d["n_context"] for d in h["context_draws"]]
+    assert len(drawn) >= 7 and all(80 <= n <= 140 for n in drawn)            # 14 updates, at most 2 per draw
+    assert len(set(drawn)) > 3                                               # they differ between draws
+    assert [d["after_step"] for d in h["context_draws"]] == sorted(d["after_step"] for d in h["context_draws"])
+    # every draw says how many updates used its length; together they are the 14 updates, in order
+    assert sum(d["updates"] for d in h["context_draws"]) == 14 and all(0 <= d["updates"] <= 2 for d in h["context_draws"])
+    assert [u["n_context"] for u in h["history"]] == [d["n_context"] for d in h["context_draws"]
+                                                      for _ in range(d["updates"])]
+    done = 0
+    for d in h["context_draws"]:
+        assert d["after_step"] == done
+        done += d["updates"]
+    # each table of a draw has that many context rows plus the launch's 64 queries
+    assert len(fake_tabpfn["tables"]) == len(drawn)
+    for rows, n in zip(fake_tabpfn["tables"], drawn):
+        assert rows and all(r == n + 64 for r in rows)
+    # every length drawn is in the log, in order
+    printed = [int(n) for line in out.splitlines() if "contexts drawn" in line
+               for n in line.split("contexts drawn")[1].split("(")[0].split()]
+    assert printed == drawn and "context 80:140 (drawn per draw of the prior)+64" in out
+    # recorded: the range, and no fixed length
+    prov = json.load(open("r0/provenance.json"))["finetune"]
+    assert prov["n_context_range"] == [80, 140] and prov["n_context"] is None
+    fields = fake_tabpfn["saved"][-1][1]["neuro_prior_finetune"]
+    assert fields["n_context_range"] == [80, 140] and fields["n_context"] is None
+    # the same seed draws the same lengths; another seed, others
+    ft.main(opts + ["--out", "r0_again", "--n-context-range", "80:140"])
+    again = json.load(open("r0_again/history.json"))
+    assert again["context_draws"] == h["context_draws"] and again["history"] == h["history"]
+    os.environ["SEED"] = "1"                                                 # restored by the fixture
+    ft.main(opts + ["--out", "r1", "--n-context-range", "80:140"])
+    assert [d["n_context"] for d in json.load(open("r1/history.json"))["context_draws"]][:7] != drawn[:7]
+    os.environ["SEED"] = "0"
+    # the lengths come from a generator of their own: a range of one length is the fixed length, update for update
+    ft.main(opts + ["--out", "one", "--n-context-range", "96:96"])
+    ft.main(opts + ["--out", "fixed", "--n-context", "96"])
+    assert _losses("one") == _losses("fixed")
+    assert ft.context_length_rng(3).integers(0, 10 ** 9) == ft.context_length_rng(3).integers(0, 10 ** 9)
+    assert ft.context_length_rng(3).integers(0, 10 ** 9) != np.random.default_rng(3).integers(0, 10 ** 9)
+
+
+def test_the_range_and_the_guard_are_refused_where_they_do_not_apply(capsys):
+    ap = ft.build_parser()
+    ok = ENV_OK + ["--n-context-range", "256:3000", "--l2sp-alpha", "0.003"]
+    args = ap.parse_args(ok)
+    ft.check_args(ap, args, ok)
+    assert args.n_context_range == (256, 3000) and args.l2sp_alpha == 0.003 and args.n_context is None
+    plain = ap.parse_args(ENV_OK)
+    ft.check_args(ap, plain, ENV_OK)
+    assert plain.n_context_range is None and plain.l2sp_alpha == 0.0 and plain.n_context == 2000
+    # the range together with a fixed length: refused, also when the fixed length is the default value
+    for n in ("1500", "2000"):
+        argv = ok + ["--n-context", n]
+        with pytest.raises(SystemExit) as e:
+            ft.check_args(ap, ap.parse_args(argv), argv)
+        assert e.value.code == 2 and "give one of the two" in capsys.readouterr().err
+        with pytest.raises(SystemExit):
+            ft.main(argv)
+    # values that are not a range or not a weight
+    for bad in (["--n-context-range", "3000:256"], ["--n-context-range", "0:10"], ["--n-context-range", "256"],
+                ["--n-context-range", "256-3000"], ["--n-context-range", "2.5:10"], ["--l2sp-alpha", "-0.1"],
+                ["--l2sp-alpha", "strong"], ["--l2sp-alpha", "inf"], ["--l2sp-alpha", "nan"],
+                ["--l2sp-alpha", "1e999"]):
+        with pytest.raises(SystemExit) as e:
+            ap.parse_args(ENV_OK + bad)
+        assert e.value.code == 2
+    # the same weight written in other ways is the same weight; 0 in any form is 0, not -0
+    assert ft.parse_alpha("3e-3") == ft.parse_alpha("0.003") == 0.003
+    for zero in ("0", "0.000", "-0", "1e-999"):
+        assert ft.parse_alpha(zero) == 0.0 and str(ft.parse_alpha(zero)) == "0.0"
+    # they belong to the launch-environment mode
+    for extra in (["--l2sp-alpha", "0.003"], ["--n-context-range", "256:3000"]):
+        argv = ["--cache", "pool.npz", "--out", "o"] + extra
+        with pytest.raises(SystemExit) as e:
+            ft.check_args(ap, ap.parse_args(argv), argv)
+        assert e.value.code == 2 and "need --prior-from-env" in capsys.readouterr().err
+
+
+def test_a_finished_model_is_compared_on_the_guard_and_the_range(fake_tabpfn, final_prior_launch, capsys):
+    ranged = _without(final_prior_launch, "--n-context")
+    asked = ranged + ["--out", "run", "--l2sp-alpha", "0.5", "--n-context-range", "80:140"]
+    ft.main(asked)
+    made = len(_FakeClassifier.made)
+    prov = json.load(open("run/provenance.json"))
+    assert prov["finetune"]["l2sp_alpha"] == 0.5 and prov["finetune"]["n_context_range"] == [80, 140]
+    ident = ft.run_identity(prov)
+    assert ident["finetune.l2sp_alpha"] == 0.5 and ident["finetune.n_context_range"] == [80, 140]
+    ft.main(asked)                                                           # the same settings: left as it is
+    assert len(_FakeClassifier.made) == made and "already finished" in capsys.readouterr().out
+    for change, said in (
+            (ranged + ["--l2sp-alpha", "0.1", "--n-context-range", "80:140"], "finetune.l2sp_alpha: 0.5 -> 0.1"),
+            (ranged + ["--n-context-range", "80:140"], "finetune.l2sp_alpha: 0.5 -> 0.0"),
+            (ranged + ["--l2sp-alpha", "0.5", "--n-context-range", "80:141"], "finetune.n_context_range"),
+            (final_prior_launch + ["--l2sp-alpha", "0.5"], "finetune.n_context_range")):
+        with pytest.raises(SystemExit, match=said):
+            ft.main(change + ["--out", "run"])
+    # and the other way: a model finished without the settings is not the one asked for with them
+    ft.main(final_prior_launch + ["--out", "plain"])
+    for change in (final_prior_launch + ["--l2sp-alpha", "0.003"], ranged + ["--n-context-range", "96:96"]):
+        with pytest.raises(SystemExit, match="another configuration"):
+            ft.main(change + ["--out", "plain"])
+    assert len(_FakeClassifier.made) == made + 1
+
+
+@pytest.mark.skipif(not all(NEEDS), reason="needs bash, git and the coreutils the launch scripts use")
+def test_the_launch_passes_the_guard_and_the_context_range(launch_dir):
+    tmp_path = launch_dir
+    repo, venv, atlas, pool = _launch_repo(tmp_path)
+    common = dict(VENV=venv.as_posix(), POOL=pool.as_posix(), ATLAS=atlas.as_posix(), **_digests(atlas))
+    o = tmp_path / "out"
+    r = _run(repo, "tabpfn_final_launch.sh", O=o.as_posix(), SEEDS="0", STEPS=20000, LR="3e-7",
+             N_CONTEXT_RANGE="256:3000", L2SP_ALPHA="0.003", **common)
+    assert r.returncode == 0, r.stdout + r.stderr
+    args, _ = _call(o / "s0" / "call_finetune_tabpfn_prior.txt")
+    assert args.endswith("--steps 20000 --lr 3e-7 --processes-per-draw 4 --n-context-range 256:3000 "
+                         "--n-estimators 1 --model-version v3.5 --l2sp-alpha 0.003")
+    assert "--n-context " not in args                                        # no fixed length beside the range
+    assert "context 256:3000, L2-SP alpha 0.003, estimators 1" in r.stdout
+    # unset: neither option is passed (the exact command line is in the first launch test)
+    o2 = tmp_path / "out_unset"
+    r = _run(repo, "tabpfn_final_launch.sh", O=o2.as_posix(), SEEDS="0", **common)
+    args, _ = _call(o2 / "s0" / "call_finetune_tabpfn_prior.txt")
+    assert "l2sp" not in args and "range" not in args and "--n-context 1500 " in args
+    assert "context 1500, L2-SP alpha none" in r.stdout
+    # a fixed length with the guard, and a guard of 0 written out
+    o3 = tmp_path / "out_fixed"
+    r = _run(repo, "tabpfn_final_launch.sh", O=o3.as_posix(), SEEDS="0", N_CONTEXT=3000, L2SP_ALPHA="0", **common)
+    args, _ = _call(o3 / "s0" / "call_finetune_tabpfn_prior.txt")
+    assert "--n-context 3000 " in args and args.endswith("--l2sp-alpha 0")
+    assert "L2-SP alpha 0 (zero: no term)" in r.stdout
+    r = _run(repo, "tabpfn_final_launch.sh", O=(tmp_path / "out_tiny").as_posix(), SEEDS="0", L2SP_ALPHA="1e-999",
+             **common)
+    assert r.returncode == 0 and "L2-SP alpha 1e-999 (zero: no term)" in r.stdout    # said, not hidden
+    # refused before anything starts: both lengths, a range that is not one, a weight that is not one
+    for bad in (dict(N_CONTEXT_RANGE="256:3000", N_CONTEXT=1500), dict(N_CONTEXT_RANGE="3000:256"),
+                dict(N_CONTEXT_RANGE="256-3000"), dict(N_CONTEXT_RANGE="0:10"), dict(N_CONTEXT_RANGE="256"),
+                dict(L2SP_ALPHA="-0.003"), dict(L2SP_ALPHA="strong"), dict(L2SP_ALPHA="1e999"),
+                dict(L2SP_ALPHA="-0")):
+        o_bad = tmp_path / "bad"
+        r = _run(repo, "tabpfn_final_launch.sh", O=o_bad.as_posix(), **{**common, **bad})
+        assert r.returncode != 0 and not o_bad.exists(), bad
+    r = _run(repo, "tabpfn_final_launch.sh", O=o_bad.as_posix(), N_CONTEXT_RANGE="256:3000", N_CONTEXT=1500, **common)
+    assert "set one of the two" in r.stderr
+
+
+def test_a_draw_that_gives_no_table_is_recorded_with_no_update(fake_tabpfn, final_prior_launch, monkeypatch, capsys):
+    """The prior can return a draw from which no table can be made. Its
+    length was drawn, so it is recorded and printed, with 0 updates."""
+    real, calls = ft.datasets_from_batch, []
+
+    def sometimes_empty(b, rng, learner="s"):
+        calls.append(len(b["Xc"][0]))
+        sets = real(b, rng, learner=learner)                                 # the outcome draws are made either way
+        return [] if len(calls) in (2, 3) else sets
+
+    monkeypatch.setattr(ft, "datasets_from_batch", sometimes_empty)
+    ft.main(_without(final_prior_launch, "--n-context") + ["--out", "gaps", "--n-context-range", "80:140"])
+    out = capsys.readouterr().out
+    h = json.load(open("gaps/history.json"))
+    draws = h["context_draws"]
+    assert [d["n_context"] for d in draws] == calls                          # the length the prior was asked for
+    assert [d["updates"] for d in draws] == [2, 0, 0, 2, 2]
+    assert [d["after_step"] for d in draws] == [0, 2, 2, 2, 4]               # three draws at the same update count
+    assert sum(d["updates"] for d in draws) == 6 == len(h["history"])
+    assert [u["n_context"] for u in h["history"]] == [d["n_context"] for d in draws for _ in range(d["updates"])]
+    printed = [int(n) for line in out.splitlines() if "contexts drawn" in line
+               for n in line.split("contexts drawn")[1].split("(")[0].split()]
+    assert printed == calls
+
+
+def test_under_mixed_precision_the_guard_is_measured_on_unscaled_gradients_before_clipping(
+        fake_tabpfn, final_prior_launch, monkeypatch):
+    """On a card the loop scales the loss (GradScaler) and unscales the
+    gradients before clipping. With a stand-in scaler that multiplies by
+    1,024, the recorded quantities must be those of the plain path; and a
+    clip far below the gradient's norm must not show in them."""
+    import torch
+
+    events = []
+
+    class Scaler:
+        factor = 1024.0
+
+        def scale(self, x):
+            return x * self.factor
+
+        def unscale_(self, optimizer):
+            events.append("unscale")
+            for group in optimizer.param_groups:
+                for p in group["params"]:
+                    if p.grad is not None:
+                        p.grad.div_(self.factor)
+
+        def step(self, optimizer):
+            events.append("step")
+            optimizer.step()
+
+        def update(self):
+            pass
+
+    class Stays(torch.nn.Sequential):                                        # "cuda" without a card: stay where it is
+        def to(self, *a, **kw):
+            return self
+
+    def init(self):
+        self.model_ = Stays(torch.nn.Dropout(0.5), torch.nn.Linear(9, 2))
+
+    real_stats, real_clip, real_loss = ft.L2SP.stats, torch.nn.utils.clip_grad_norm_, ft.ce_loss_from_raw_logits
+
+    def stats(self):
+        events.append("stats")
+        return real_stats(self)
+
+    def clip(*a, **kw):
+        events.append("clip")
+        return real_clip(*a, **kw)
+
+    monkeypatch.setattr(_FakeClassifier, "_initialize_model_variables", init)
+    monkeypatch.setattr(ft.L2SP, "stats", stats)
+    monkeypatch.setattr(torch.nn.utils, "clip_grad_norm_", clip)
+    opts = final_prior_launch + ["--lr", "0.05", "--l2sp-alpha", "2", "--save-every", "0"]
+    ft.main(opts + ["--out", "plain"])                                       # the path without a scaler
+    assert events[:3] == ["stats", "clip", "stats"] and "unscale" not in events
+    del events[:]
+    monkeypatch.setattr(sys.modules["tabpfn.finetuning._torch_compat"], "GradScaler", Scaler)
+    monkeypatch.setattr(ft, "ce_loss_from_raw_logits", lambda logits, y, device: real_loss(logits, y, "cpu"))
+    ft.main(opts + ["--out", "amp", "--device", "cuda"])
+    assert events[:4] == ["unscale", "stats", "clip", "step"] and events.count("stats") == 6
+    plain, amp = (json.load(open(f"{d}/history.json"))["history"] for d in ("plain", "amp"))
+    for a, b in zip(plain, amp):
+        for k in ("loss", "l2sp_term", "l2sp_grad_norm", "loss_grad_norm", "rel_dist"):
+            assert b[k] == pytest.approx(a[k], rel=1e-4, abs=1e-12), k       # not 1,024 times larger
+    # before clipping: a clip of 1e-6 changes the updates, not the first update's recorded gradient
+    ft.main(opts + ["--out", "amp_clipped", "--device", "cuda", "--grad-clip", "1e-6"])
+    clipped = json.load(open("amp_clipped/history.json"))["history"]
+    assert amp[0]["loss_grad_norm"] > 1e-3                                   # a thousand times the clip
+    assert clipped[0]["loss_grad_norm"] == pytest.approx(amp[0]["loss_grad_norm"], rel=1e-4)
+    assert clipped[-1]["rel_dist"] != pytest.approx(amp[-1]["rel_dist"], rel=1e-3)

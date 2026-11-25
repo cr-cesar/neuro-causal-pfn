@@ -47,6 +47,28 @@ In that mode the script refuses what it cannot account for:
 The global torch generator is seeded with the seed, and checkpoints written
 before the last step are named ``tabpfn_ft.partial.pth``.
 
+Two settings of that mode (25 Nov), both off unless given:
+
+- ``--l2sp-alpha A``: a guard against forgetting. Each update's loss gains
+  (A / 2) * sum ||w - w0||^2 over the trainable weights, w0 being those
+  weights as the run starts (copied once, before the first update). Unset or
+  0: no term, no copy, the loop as it was. With the term, every update
+  records the loss, the term, A * ||w - w0|| (the norm of the term's
+  gradient), the norm of the loss's own gradient before clipping (the whole
+  gradient minus A (w - w0)) and ||w - w0|| / ||w0||, and the log lines print
+  them;
+- ``--n-context-range LO:HI``: each draw of the prior takes its context
+  length uniformly from the integers LO to HI, from a generator of its own
+  seeded by the seed (so the prior's and the outcomes' streams are not
+  touched). Every length drawn is printed with the log lines and recorded in
+  ``history.json`` (``context_draws``: the length, the updates done when it
+  was drawn and the updates that used it, 0 when the draw gave no usable
+  table; and ``n_context`` in each update).
+  Unset: the one length of ``--n-context``. Given together with
+  ``--n-context`` the script refuses to start.
+
+Both enter ``provenance.json`` and the comparison with a finished model.
+
 The script reads the pool cache and the atlas and nothing else: no fold, no
 image, no outcome of a real patient; it scores nothing.
 
@@ -251,6 +273,68 @@ def finished_checkpoint(out: str, requested: Dict) -> Optional[str]:
     return path
 
 
+class L2SP:
+    """The L2-SP guard: (alpha / 2) * sum ||w - w0||^2 over the trainable
+    weights, towards the weights ``w0`` held when this object is made. ``w0``
+    is a detached copy, never given to the optimizer."""
+
+    def __init__(self, parameters, alpha: float):
+        import torch
+
+        self.alpha = float(alpha)
+        self.params = [p for p in parameters if p.requires_grad]
+        self.w0 = [p.detach().clone() for p in self.params]
+        if not self.params:
+            raise ValueError("L2-SP needs trainable weights; the model has none")
+        self.w0_norm = sum(float((w.double() ** 2).sum()) for w in self.w0) ** 0.5
+
+    def term(self):
+        """The term, a tensor that carries its gradient alpha * (w - w0)."""
+        return 0.5 * self.alpha * sum(((p - w) ** 2).sum() for p, w in zip(self.params, self.w0))
+
+    def stats(self) -> Dict[str, float]:
+        """After the backward pass of loss + term and before clipping: the
+        distance to w0 relative to ||w0||, the norm of the term's gradient
+        alpha * ||w - w0||, and the norm of the loss's own gradient, the whole
+        gradient minus alpha * (w - w0)."""
+        import torch
+
+        with torch.no_grad():
+            dist2, own2 = 0.0, 0.0
+            for p, w in zip(self.params, self.w0):
+                d = (p - w).double()
+                dist2 += float((d ** 2).sum())
+                g = p.grad.double() if p.grad is not None else torch.zeros_like(d)
+                own2 += float(((g - self.alpha * d) ** 2).sum())
+        dist = dist2 ** 0.5
+        return {"l2sp_term": 0.5 * self.alpha * dist2, "l2sp_grad_norm": self.alpha * dist,
+                "loss_grad_norm": own2 ** 0.5,
+                "rel_dist": dist / self.w0_norm if self.w0_norm > 0 else float("nan")}
+
+
+def context_length_rng(seed: int) -> np.random.Generator:
+    """The generator of the drawn context lengths: seeded by the run's seed,
+    and its own stream, apart from the prior's and the outcome draws'."""
+    return np.random.default_rng(np.random.SeedSequence(entropy=int(seed), spawn_key=(1,)))
+
+
+def parse_context_range(text: str) -> Tuple[int, int]:
+    lo, sep, hi = str(text).partition(":")
+    if not sep or not lo.isdigit() or not hi.isdigit() or not 1 <= int(lo) <= int(hi):
+        raise argparse.ArgumentTypeError(f"{text!r} is not LO:HI with whole numbers 1 <= LO <= HI, e.g. 256:3000")
+    return int(lo), int(hi)
+
+
+def parse_alpha(text: str) -> float:
+    try:
+        a = float(text)
+    except ValueError:
+        a = float("nan")
+    if not (a >= 0.0 and a != float("inf")):
+        raise argparse.ArgumentTypeError(f"{text!r} is not a number >= 0")
+    return a + 0.0                                          # -0 is 0
+
+
 def provenance_record(args, cfg: Dict, pools: List[Dict], base: Dict, step: int, finished: bool) -> Dict:
     """What a checkpoint of the launch-environment mode records beside it: the
     code and launch of ``launch_cfg.provenance`` (commit, dirty flag, launch
@@ -265,7 +349,8 @@ def provenance_record(args, cfg: Dict, pools: List[Dict], base: Dict, step: int,
                  "tabpfn": base, "torch_seed": int(args.seed),
                  "finetune": {k: getattr(args, k) for k in (
                      "steps", "lr", "weight_decay", "grad_clip", "n_context", "n_query", "n_estimators",
-                     "processes_per_draw", "query_ratio", "learner", "seed", "save_every", "model_path")},
+                     "processes_per_draw", "query_ratio", "learner", "seed", "save_every", "model_path",
+                     "l2sp_alpha", "n_context_range")},
                  "cfg": {"seed": cfg["seed"], "prior": cfg["prior"],
                          "pfn": {k: cfg["pfn"].get(k) for k in ("n_query", "context_max")}},
                  "steps_done": int(step), "finished": bool(finished)})
@@ -357,8 +442,10 @@ def finetune(args) -> str:
                                           family=args.family, family_weights=args.family_weights,
                                           giles_hyper_text=args.giles_hyper)
     rng = np.random.default_rng(args.seed)
+    ctx_range = getattr(args, "n_context_range", None)
+    ctx_text = str(args.n_context) if not ctx_range else f"{ctx_range[0]}:{ctx_range[1]} (drawn per draw of the prior)"
     print(f"prior: family {args.family}" + (f" {cfg['prior'].get('family_weights')}" if args.family == "mixture" else "")
-          + f", giles hyper {cfg['prior'].get('hyper_giles', {})}, d_x={d_x}, context {args.n_context}+{args.n_query}, "
+          + f", giles hyper {cfg['prior'].get('hyper_giles', {})}, d_x={d_x}, context {ctx_text}+{args.n_query}, "
           f"{getattr(prior, 'describe', lambda: '')()}", flush=True)
 
     kw = dict(device=device, n_estimators=args.n_estimators, random_state=args.seed,
@@ -382,11 +469,25 @@ def finetune(args) -> str:
     split_fn = partial(_ratio_ctx_query_split, query_ratio=args.query_ratio, min_query_size=2,
                        random_state=args.seed)
 
+    # L2-SP: the starting weights are copied here, before the first update
+    alpha = float(getattr(args, "l2sp_alpha", 0.0) or 0.0)
+    l2sp = L2SP(model.parameters(), alpha) if alpha > 0 else None
+    if l2sp is not None:
+        print(f"L2-SP: alpha {alpha:g} towards the starting weights, {len(l2sp.params)} tensors, "
+              f"||w0|| {l2sp.w0_norm:.6g}", flush=True)
+    ctx_rng = context_length_rng(args.seed) if ctx_range else None
+    draws, unprinted = [], []                              # every context length drawn; those not yet in a log line
+
     history = []
     step, t0 = 0, time.time()
     model.train()
     while step < total:
-        b = prior.sample_batch(args.processes_per_draw, n_context=args.n_context)
+        n_ctx = args.n_context
+        if ctx_rng is not None:
+            n_ctx = int(ctx_rng.integers(ctx_range[0], ctx_range[1] + 1))
+            draws.append({"after_step": step, "n_context": n_ctx, "updates": 0})
+            unprinted.append(n_ctx)
+        b = prior.sample_batch(args.processes_per_draw, n_context=n_ctx)
         sets = datasets_from_batch(b, rng, learner=args.learner)
         if not sets:
             continue
@@ -408,27 +509,48 @@ def finetune(args) -> str:
             with autocast(enabled=use_amp), sdpa_kernel_context():
                 logits = est.forward(batch.X_query, return_raw_logits=True)
                 loss = ce_loss_from_raw_logits(logits, batch.y_query, device)
+            # without L2-SP the objective is the loss itself, the same tensor as before
+            objective = loss if l2sp is None else loss + l2sp.term()
+            guard = None
             if scaler is not None:
                 with sdpa_kernel_context():
-                    scaler.scale(loss).backward()
+                    scaler.scale(objective).backward()
                 scaler.unscale_(optimizer)
+                if l2sp is not None:
+                    guard = l2sp.stats()                   # on the unscaled gradients, before clipping
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
                 scaler.step(optimizer); scaler.update()
             else:
                 with sdpa_kernel_context():
-                    loss.backward()
+                    objective.backward()
+                if l2sp is not None:
+                    guard = l2sp.stats()                   # before clipping
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.grad_clip)
                 optimizer.step()
             scheduler.step()
             step += 1
             history.append({"step": step, "loss": float(loss.item()), "lr": float(scheduler.get_last_lr()[0])})
+            if guard is not None:
+                history[-1].update(guard)
+            if ctx_rng is not None:
+                history[-1]["n_context"] = n_ctx
+                draws[-1]["updates"] += 1
             if step % args.log_every == 0 or step == total:
                 recent = np.mean([h["loss"] for h in history[-args.log_every:]])
-                print(f"step {step}/{total}  loss {recent:.4f}  lr {history[-1]['lr']:.2e}  "
+                more = ""
+                if guard is not None:
+                    more += (f"  l2sp {guard['l2sp_term']:.3e}  |grad l2sp| {guard['l2sp_grad_norm']:.3e}  "
+                             f"|grad loss| {guard['loss_grad_norm']:.3e}  |w-w0|/|w0| {guard['rel_dist']:.3e}")
+                if ctx_rng is not None:
+                    more += "  contexts drawn " + " ".join(str(n) for n in unprinted)
+                    unprinted = []
+                print(f"step {step}/{total}  loss {recent:.4f}  lr {history[-1]['lr']:.2e}{more}  "
                       f"({(time.time() - t0) / 60:.1f} min)", flush=True)
             if args.save_every and step % args.save_every == 0 and step < total:
-                _save(est, args.out, step, history, cfg, args, save_tabpfn_model)
-    path = _save(est, args.out, step, history, cfg, args, save_tabpfn_model, finished=True)
+                _save(est, args.out, step, history, cfg, args, save_tabpfn_model,
+                      extra={"context_draws": draws} if ctx_rng is not None else None)
+    path = _save(est, args.out, step, history, cfg, args, save_tabpfn_model, finished=True,
+                 extra={"context_draws": draws} if ctx_rng is not None else None)
     print(f"wrote {path} ({step} steps, {(time.time() - t0) / 60:.1f} min)", flush=True)
     return path
 
@@ -437,19 +559,22 @@ def checkpoint_fields(step: int, cfg: Dict, args) -> Dict:
     """The ``neuro_prior_finetune`` record inside the checkpoint. With the
     prior given by options: those options, as before. With --prior-from-env:
     the cfg's prior, the seed and the commit."""
-    rec = {"steps": int(step), "learner": args.learner, "n_context": int(args.n_context)}
+    ctx_range = getattr(args, "n_context_range", None)
+    rec = {"steps": int(step), "learner": args.learner, "n_context": None if ctx_range else int(args.n_context)}
     if getattr(args, "prior_from_env", False):
         from neurocausalpfn.train.launch_cfg import _git
 
         rec.update(prior=cfg["prior"], seed=int(cfg["seed"]), n_query=int(cfg["pfn"]["n_query"]),
-                   git_commit=_git("rev-parse", "HEAD"))
+                   git_commit=_git("rev-parse", "HEAD"), l2sp_alpha=float(getattr(args, "l2sp_alpha", 0.0) or 0.0),
+                   n_context_range=list(ctx_range) if ctx_range else None)
     else:
         rec.update(prior_hyper=args.prior_hyper, family=args.family, family_weights=args.family_weights,
                    giles_hyper=args.giles_hyper, cache=os.path.basename(args.cache))
     return rec
 
 
-def _save(est, out, step, history, cfg, args, save_tabpfn_model, finished: bool = False) -> str:
+def _save(est, out, step, history, cfg, args, save_tabpfn_model, finished: bool = False,
+          extra: Optional[Dict] = None) -> str:
     env_mode = getattr(args, "provenance", None) is not None
     path, partial = os.path.join(out, "tabpfn_ft.pth"), os.path.join(out, "tabpfn_ft.partial.pth")
     # with --prior-from-env only the last step is written as tabpfn_ft.pth, so
@@ -462,7 +587,7 @@ def _save(est, out, step, history, cfg, args, save_tabpfn_model, finished: bool 
     skip = ("provenance",) if env_mode else ("provenance",) + ENV_MODE_OPTIONS
     with open(os.path.join(out, "history.json"), "w") as f:
         json.dump({"history": history, "config": {k: v for k, v in vars(args).items() if k not in skip},
-                   "prior": cfg["prior"]}, f, indent=1)
+                   "prior": cfg["prior"], **(extra or {})}, f, indent=1)
     if env_mode:
         # written after the checkpoint, so "finished": true means the last step is on disk
         with open(os.path.join(out, "provenance.json"), "w") as f:
@@ -475,7 +600,8 @@ def _save(est, out, step, history, cfg, args, save_tabpfn_model, finished: bool 
 # options that belong to one way of giving the prior
 PRIOR_OPTIONS = ("cache", "family", "family_weights", "prior_hyper", "giles_hyper", "n_query", "context_pool",
                  "atlas_dir")
-ENV_MODE_OPTIONS = ("prior_from_env", "pool_md5", "atlas_md5", "model_version", "model_md5")
+ENV_MODE_OPTIONS = ("prior_from_env", "pool_md5", "atlas_md5", "model_version", "model_md5", "l2sp_alpha",
+                    "n_context_range")
 
 
 def explicit_options(ap, argv) -> set:
@@ -514,6 +640,10 @@ def check_args(ap, args, argv=None) -> None:
         if not args.pool_md5 or not args.atlas_md5:
             ap.error("--prior-from-env needs --pool-md5 (checked against the pool) and --atlas-md5 (the digest "
                      "the launch computed, recorded)")
+        if args.n_context_range is not None:
+            if "n_context" in given:
+                ap.error("--n-context-range draws the context length and --n-context fixes it: give one of the two")
+            args.n_context = None                           # no fixed length in this run
     else:
         if not args.cache:
             ap.error("--cache is required (or --prior-from-env)")
@@ -539,6 +669,12 @@ def build_parser() -> argparse.ArgumentParser:
                          "the package must be set to it (TABPFN_MODEL_VERSION) and its file for it is used by path")
     ap.add_argument("--model-md5", default=None,
                     help="with --prior-from-env: the starting checkpoint's md5 (or its first characters) must be this")
+    ap.add_argument("--l2sp-alpha", type=parse_alpha, default=0.0,
+                    help="with --prior-from-env: L2-SP, (alpha / 2) * sum ||w - w0||^2 over the trainable weights "
+                         "added to each update's loss, w0 the starting weights. 0 (default): no term")
+    ap.add_argument("--n-context-range", type=parse_context_range, default=None, metavar="LO:HI",
+                    help="with --prior-from-env: each draw of the prior takes its context length uniformly from the "
+                         "integers LO to HI (seeded by the seed), instead of --n-context; not together with it")
     ap.add_argument("--prior-hyper", default="two_arms=1 effect_scale=0.2:1 d_source=network s_source=genetics_1 "
                                             "s_b_source=genetics_2 effect_headroom=1 generic_weight=0.5")
     ap.add_argument("--family", default="theory", choices=["theory", "giles", "mixture"],

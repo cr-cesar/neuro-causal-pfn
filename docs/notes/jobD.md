@@ -1,6 +1,6 @@
 # Job D: TabPFN continued on the final prior (code only)
 
-Branch `jobD-tabpfn-final-prior`, cut from `scale-budget-ckpt` (`8fa4b74`). Written 16 November 2026, revised 17 November after the audit of the branch.
+Branch `jobD-tabpfn-final-prior`, cut from `scale-budget-ckpt` (`8fa4b74`). Written 16 November 2026, revised 17 November after the audit of the branch; L2-SP and the drawn context length added 25 November.
 Nothing was trained or scored. No pool, latent, image or participant file was opened; tests use random arrays.
 The experiment (what is run, how it is read) is not fixed here.
 
@@ -91,6 +91,36 @@ Second round (17 Nov), after the audit of the branch (`audit_branch_jobD.md`, it
     `tabpfn_ft.partial.pth` in the `--prior-from-env` mode, so `tabpfn_ft.pth` there is always a finished model
     [19]; `LR=0` is refused and the output folder is created after the checks, not before [27, 4].
 
+Third round (25 Nov), two settings asked for by the registered request for job D
+(`request_job_D_tabpfn_final_prior.md`, section "Two settings need code that the branch does not have").
+Both are off unless set, and both belong to the `--prior-from-env` mode:
+
+14. **L2-SP** (`--l2sp-alpha`, `L2SP_ALPHA` in the wrapper). Each update's loss gains
+    (alpha / 2) * sum ||w - w0||^2 over the trainable weights; w0 is a copy of those weights made once, before the
+    first update, never given to the optimizer. Unset or 0: no term and no copy; the updates are those of `6a7c6c3`
+    (tested, loss for loss). With the term, every update records in `history.json` the loss (the cross-entropy, as
+    before, without the term), the term (`l2sp_term`), alpha * ||w - w0|| (`l2sp_grad_norm`), the norm of the loss's
+    own gradient before clipping, computed as the whole gradient minus alpha (w - w0) (`loss_grad_norm`), and
+    ||w - w0|| / ||w0|| (`rel_dist`); each log line prints them for its last update.
+15. **A drawn context length** (`--n-context-range LO:HI`, `N_CONTEXT_RANGE` in the wrapper). Each draw of the
+    prior takes one length, uniform on the integers LO to HI inclusive, from a generator of its own seeded by the
+    seed. Every length is printed with the log lines and recorded in `history.json` (`context_draws`: the length,
+    the update count at which it was drawn and the number of updates that used it, 0 when the draw gave no usable
+    table; and `n_context` in each update). Unset: the one length of `N_CONTEXT`.
+    **Set together with `N_CONTEXT` (or `--n-context`) the launch refuses to start.** That is a proposal, the
+    request left it to the commit: the other choice was to let the range win, which hides a variable that was set.
+16. Both enter `provenance.json` (`finetune.l2sp_alpha`, `finetune.n_context_range`), the record inside the
+    checkpoint, and the comparison with a finished model: another alpha or another range stops the rerun.
+17. What an unset run writes compared with `6a7c6c3`: the same updates, and the same files plus those two keys
+    recorded as off (`l2sp_alpha: 0.0`, `n_context_range: null`) in `history.json`'s `config`, in
+    `provenance.json` and in the checkpoint's record. Nothing else differs (tested). The mode without
+    `--prior-from-env` refuses both options and writes what it wrote.
+18. Not checked by the code: the range against the launch's `CONTEXT_MAX` (3,000). A range above it is accepted,
+    as a fixed `N_CONTEXT` above it already was. A range that starts at 1 is accepted too.
+19. With mixed precision (a card), an update the scaler skips for a gradient that is not finite records guard
+    quantities that are not finite either, while its loss stays finite. The loss is the quantity to read for
+    "any loss nan or inf".
+
 What stays as it was without the new option: the training loop, the prior of the other mode, the files written
 and their names, `--seed` defaulting to 0, no torch seed, the package's default checkpoint.
 Two visible differences remain in that mode: the message when `--cache` is missing, and the help text.
@@ -108,7 +138,9 @@ VENV=<environment with tabpfn> POOL=<the E13a KCH pool> ATLAS=<atlas folder> O=<
 | `STEPS` | 2000 | updates; each reads one simulated trial |
 | `LR` | 1e-5 | learning rate |
 | `TRIALS_PER_DRAW` | 4 | simulated trials one draw of the prior holds (`--processes-per-draw`); not a batch |
-| `N_CONTEXT` | 1500 | context rows drawn per trial |
+| `N_CONTEXT` | 1500 | context rows drawn per trial, one length for the run |
+| `N_CONTEXT_RANGE` | unset | `lo:hi`: the context length of each draw of the prior, uniform on the integers; not with `N_CONTEXT` |
+| `L2SP_ALPHA` | unset (no term) | weight of the L2-SP term towards the starting weights |
 | `N_EST` | 1 | tabpfn estimators |
 | `TABPFN_VERSION` | `v3.5` | model version the run starts from |
 | `MODEL_PATH`, `MODEL_MD5` | unset | another starting checkpoint by path, and its expected md5 |
@@ -129,8 +161,8 @@ Scoring is not part of this branch. The existing panel reads one checkpoint for 
 
 ## Tests
 
-`tests/test_tabpfn_final_prior.py`, 29 tests (14 of them one refused option each), all passing here (Windows,
-Python 3.12, CPU, torch 2.3.1, tabpfn 6.3.1):
+`tests/test_tabpfn_final_prior.py`, 38 tests (the 29 of 17 Nov, 14 of them one refused option each, and 9 of
+25 Nov), all passing here (Windows, Python 3.12, CPU, torch 2.3.1, tabpfn 6.3.1):
 
 - the old options and defaults are unchanged; the old mode writes no new file;
 - every prior option is refused with `--prior-from-env`, also when given its default value;
@@ -154,9 +186,28 @@ Python 3.12, CPU, torch 2.3.1, tabpfn 6.3.1):
   in the shell): the gate's command line, every exported variable at the gate and at the trainer, and the printed
   lines are equal.
 
-The tests that need commit `8fa4b74` fail, with a message, in a clone that does not have it.
+The 9 of 25 Nov, on a toy model and on the stand-ins:
 
-Full suite on this branch: 435 passed, 5 failed, 2 skipped. The 5 failures are the 5 listed at the end of this note; they fail at `8fa4b74` too (the audit reran the suite there: 406 passed, the same 5 failed).
+- the term and its gradient against the formula, tensor by tensor; the recorded loss-gradient norm against the
+  gradient of the loss taken alone; the starting weights left untouched by training, a frozen weight left out;
+- alpha unset or 0 and no range: the script of `6a7c6c3`, taken from git history, and this one give the same
+  losses and rates, exactly, and the files differ only by the two keys;
+- the guard inside `finetune()`: the four quantities at every update and log line, zero distance before the first
+  update, a stronger guard keeping the weights closer;
+- the same quantities with a stand-in scaler that multiplies the loss by 1,024: measured after unscaling and before
+  clipping (the order of the calls is checked), equal to the plain path, unchanged by a clip of 1e-6;
+- lengths in the range, differing between draws, the same with the same seed, others with another seed, each
+  printed and recorded, each table having that many context rows; a range of one length equal to the fixed length
+  update for update; a draw that gives no table recorded with 0 updates;
+- the range with a fixed length refused (also when the fixed length is the default value), bad ranges and weights
+  refused, both options refused without `--prior-from-env`;
+- a finished model compared on both settings, in both directions;
+- the wrapper passing both, printing them, and refusing both lengths set, bad ranges and bad weights before the
+  output folder exists.
+
+The tests that need commit `8fa4b74` or `6a7c6c3` fail, with a message, in a clone that does not have it.
+
+Full suite on this branch: 444 passed, 5 failed, 2 skipped (17 Nov: 435 passed, 5 failed, 2 skipped). The 5 failures are the 5 listed at the end of this note; they fail at `8fa4b74` too (the audit reran the suite there: 406 passed, the same 5 failed).
 
 ## With the job G branch
 
@@ -177,6 +228,11 @@ tree (97 tests with `test_prior_families.py`). `RUN_TRAINER=tabpfn` with four fa
   stand-ins.
 - The scorer on a checkpoint written here.
 - Memory: whether one card holds three seeds at once (`PARALLEL=1`).
+- L2-SP on a card: the real mixed-precision path (tested with a stand-in scaler only), and its cost. The guard
+  holds a second copy of the trainable weights and, at each update, the differences from it; it reads every
+  weight once more per update for the recorded quantities. Peak memory and seconds per update with the guard are
+  for the dry run.
+- A context of 3,000 rows plus the queries in the real loop: memory and time.
 - Bit-for-bit repeatability on a GPU: the generators are seeded, the GPU kernels are not forced to be deterministic.
 
 ## Choices to confirm
@@ -205,6 +261,16 @@ tree (97 tests with `test_prior_families.py`). `RUN_TRAINER=tabpfn` with four fa
     not matter. The strict reading; the other was to compare the configuration only.
 12. **An unfinished folder is trained again from the start**, over what is there.
 13. **Commit messages are "trial"**, as in the rest of the history; this note is the description.
+14. **Both a range and a fixed length set: the launch refuses to start** (item 15 above). A proposal.
+15. **The recorded `loss` is the cross-entropy without the L2-SP term**, so losses compare across values of alpha;
+    the term is beside it.
+16. **The lengths come from a generator of their own**, seeded by the seed, so a run with a range of one length is
+    the run with that fixed length, update for update.
+17. **The second-instance check of 25 Nov** (a reader given the diff and the request's section) asked for: a test
+    of the mixed-precision path (added); the files of an unset run to be stated (item 17 above, tested); draws
+    without updates to be told apart (the `updates` count, tested); a weight too large to be a number refused by
+    the wrapper and a zero weight said to be no term (done); list equality on tensors replaced (done). Stated and
+    not changed: items 18 and 19 above, and the cost of the guard (under "Not run anywhere").
 
 Not changed, from the same audit: `ATLAS` and the default paths are siena's [26]; `POOL_MD5` and `ATLAS_MD5` can be
 overridden by the caller, as in `final1m_launch.sh` [28]; no library list beyond python, torch, numpy and tabpfn in
